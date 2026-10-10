@@ -175,21 +175,14 @@ describe('add_bill', () => {
 });
 
 describe('approve', () => {
-  it('records the member\'s own approval and marks only their proposal approved', async () => {
+  it("records the member's own approval and acts only on their proposal", async () => {
     const { proposalIds } = await addElectricity();
     expect(await run('mason', { kind: 'approve', proposalId: proposalIds.mason, proposalVersion: 1 })).toEqual({ kind: 'accepted' });
 
-    expect(ledger.proposal(proposalIds.mason)!.status).toBe('approved');
+    expect(ledger.proposal(proposalIds.mason)!.status).toBe('confirmed');
     expect(ledger.proposal(proposalIds.alex)!.status).toBe('proposed');
     expect(ledger.proposal(proposalIds.jordan)!.status).toBe('proposed');
     expect(store.approvalsFor(proposalIds.mason, 1)).toEqual(['mason']);
-  });
-
-  it('approval alone does not touch the bank', async () => {
-    const { proposalIds } = await addElectricity();
-    await run('mason', { kind: 'approve', proposalId: proposalIds.mason, proposalVersion: 1 });
-    expect(bank.submitCalls).toHaveLength(0);
-    expect(await bank.getBalance('acct-mason')).toBe(100_000);
   });
 
   it("rejects approval of someone else's proposal", async () => {
@@ -242,9 +235,8 @@ describe('approve', () => {
   it('announces the approval to the group', async () => {
     const { proposalIds } = await addElectricity();
     await run('mason', { kind: 'approve', proposalId: proposalIds.mason, proposalVersion: 1 });
-    const last = store.pendingOutbox().at(-1)!;
-    expect(last.audience).toEqual({ kind: 'group', spaceId: 'space-1' });
-    expect(last.text).toBe('Mason approved $48.00 for Electricity.');
+    const ack = store.pendingOutbox().find((m) => m.text === 'Mason approved $48.00 for Electricity.');
+    expect(ack?.audience).toEqual({ kind: 'group', spaceId: 'space-1' });
   });
 });
 
@@ -307,7 +299,9 @@ describe('correct_bill', () => {
 
   it('re-splits, bumps every proposal version and invalidates old approvals', async () => {
     const { billId, proposalIds } = await addElectricity();
-    await run('mason', { kind: 'approve', proposalId: proposalIds.mason, proposalVersion: 1 });
+    // An approval whose transfer was never sent (for example the app stopped right after recording it).
+    store.recordApproval(proposalIds.mason, 1, 'mason', NOW);
+    ledger.setProposalStatus(proposalIds.mason, 'approved', NOW);
 
     expect(await run('alex', correction(billId))).toEqual({ kind: 'accepted' });
 
@@ -322,8 +316,11 @@ describe('correct_bill', () => {
       code: 'STALE_PROPOSAL',
     });
     expect(await run('mason', { kind: 'approve', proposalId: proposalIds.mason, proposalVersion: 2 })).toEqual({ kind: 'accepted' });
-    expect(ledger.proposal(proposalIds.mason)!.status).toBe('approved');
+    // Only the v2 approval counts, and exactly one transfer of the new amount is sent.
+    expect(ledger.proposal(proposalIds.mason)!.status).toBe('confirmed');
     expect(store.approvalsFor(proposalIds.mason, 2)).toEqual(['mason']);
+    expect(bank.submitCalls).toHaveLength(1);
+    expect(bank.submitCalls[0].amountCents).toBe(5_000);
   });
 
   it('re-requests a member who had declined, at the new version', async () => {
@@ -368,7 +365,7 @@ describe('correct_bill', () => {
     expect(ledger.bill(billId)!.amountCents).toBe(14_400);
   });
 
-  it.each(['submitted', 'pending', 'unknown', 'prepared'] as const)(
+  it.each(['submitted', 'pending', 'unknown'] as const)(
     'refuses while a bank operation is %s',
     async (status) => {
       const { billId, proposalIds } = await addElectricity();
@@ -385,11 +382,32 @@ describe('correct_bill', () => {
         },
         NOW,
       );
-      if (status !== 'prepared') store.updateBankOperation('op-live', { status }, NOW);
+      store.updateBankOperation('op-live', { status }, NOW);
       expect(await run('mason', correction(billId))).toMatchObject({ code: 'ALREADY_SUBMITTED' });
       expect(ledger.bill(billId)!.amountCents).toBe(14_400);
     },
   );
+
+  it('cancels an operation that was never sent, then corrects the bill', async () => {
+    const { billId, proposalIds } = await addElectricity();
+    store.insertBankOperation(
+      {
+        operationId: 'op-unsent',
+        householdId: 'demo-house',
+        proposalId: proposalIds.alex,
+        proposalVersion: 1,
+        fromAccountId: 'acct-alex',
+        toAccountId: 'acct-house',
+        amountCents: 4_800,
+        description: 'x',
+      },
+      NOW,
+    );
+    expect(await run('mason', correction(billId))).toEqual({ kind: 'accepted' });
+    expect(store.getBankOperation('op-unsent')).toMatchObject({ status: 'failed' });
+    expect(store.unresolvedBankOperations()).toEqual([]);
+    expect(bank.submitCalls).toHaveLength(0);
+  });
 
   it('allows a correction after a failed bank operation (no money moved)', async () => {
     const { billId, proposalIds } = await addElectricity();

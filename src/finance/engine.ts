@@ -265,6 +265,20 @@ export class FinanceEngine {
     const approvals = this.store.approvalsFor(proposalId, version);
     if (proposal.requiredActorIds.every((id) => approvals.includes(id)) && proposal.status === 'proposed') {
       this.ledger.setProposalStatus(proposalId, 'approved', ctx.now);
+      // Persist the operation before anything is sent. The processor sends it after this commits.
+      this.store.insertBankOperation(
+        {
+          operationId: this.newId('op'),
+          householdId: ctx.householdId,
+          proposalId,
+          proposalVersion: version,
+          fromAccountId: proposal.sourceAccountId,
+          toAccountId: proposal.destinationAccountId,
+          amountCents: proposal.amountCents,
+          description: proposal.description,
+        },
+        ctx.now,
+      );
     }
 
     const bill = this.ledger.bill(proposal.billId);
@@ -320,6 +334,9 @@ export class FinanceEngine {
     if (blocking) {
       return reject('ALREADY_SUBMITTED', 'A coverage or payment request is open for that bill, so it can\'t be edited.');
     }
+
+    // Operations that were never sent are void once the terms change.
+    this.ledger.cancelPreparedOperations(bill.billId, 'cancelled: bill corrected before submission', ctx.now);
 
     const requests = splitEqual(amountCents, ctx.members.map((m) => m.userId));
     this.ledger.updateBillTerms(bill.billId, { title, amountCents, dueDate, recipientId });

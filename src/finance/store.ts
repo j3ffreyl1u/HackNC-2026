@@ -459,6 +459,17 @@ export class LedgerStore {
     if (result.changes !== 1) throw new Error(`unknown bank operation ${operationId}`);
   }
 
+  /**
+   * Atomically move a never-sent operation to `submitted` just before the bank call.
+   * Returns false if someone else already claimed it or it was cancelled, so it is sent at most once.
+   */
+  claimOperationForSubmission(operationId: string, now: string): boolean {
+    const result = this.db
+      .prepare(`UPDATE bank_operations SET status = 'submitted', updated_at = ? WHERE operation_id = ? AND status = 'prepared'`)
+      .run(now, operationId);
+    return result.changes === 1;
+  }
+
   getBankOperation(operationId: string): BankOperationRecord | null {
     const row = this.db.prepare('SELECT * FROM bank_operations WHERE operation_id = ?').get(operationId) as
       | BankOperationRow

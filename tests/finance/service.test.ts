@@ -174,7 +174,6 @@ describe('durable inbound and outbox', () => {
 
 describe('milestones not built yet', () => {
   it('fails loudly instead of reporting success', async () => {
-    await expect(service.reconcile('demo-house')).rejects.toThrow(NotImplementedError);
     await expect(service.advanceDemoCycle('demo-house', '2026-11')).rejects.toThrow(NotImplementedError);
   });
 });

@@ -8,6 +8,7 @@ import type {
   OutboundMessage,
 } from './contracts-local';
 import { FinanceEngine } from './engine';
+import { BankProcessor } from './reconcile';
 import { FinanceConfigError, NotImplementedError, type Clock, type IdGenerator } from './runtime';
 import { LedgerStore } from './store';
 
@@ -92,14 +93,27 @@ export function createFinanceService(dependencies: FinanceDependencies): Finance
   const { store, bank, clock } = dependencies;
   const nowIso = () => clock.now().toISOString();
   const engine = new FinanceEngine(store, clock, dependencies.newId);
+  const processor = new BankProcessor(store, bank, clock, dependencies.newId);
+
+  // Bank work runs one pass at a time so an operation is never sent or settled twice concurrently.
+  let queue: Promise<unknown> = Promise.resolve();
+  const serialize = <T>(task: () => Promise<T>): Promise<T> => {
+    const run = queue.then(task, task);
+    queue = run.catch(() => undefined);
+    return run;
+  };
 
   return {
     async execute(command: Command): Promise<ExecuteResult> {
-      return engine.execute(command);
+      const result = engine.execute(command);
+      // An accepted command may have approved a transfer; send it now. The result is already durable,
+      // so a bank outcome never changes what `execute` reports.
+      if (result.kind === 'accepted') await serialize(() => processor.pump(command.householdId));
+      return result;
     },
 
-    async reconcile(_householdId: string): Promise<void> {
-      throw new NotImplementedError('FinanceService.reconcile');
+    async reconcile(householdId: string): Promise<void> {
+      await serialize(() => processor.pump(householdId));
     },
 
     async getSnapshot(_householdId: string): Promise<HouseholdSnapshot> {

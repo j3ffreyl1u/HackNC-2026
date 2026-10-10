@@ -320,15 +320,51 @@ export class Ledger {
       .run(revision.version, revision.amountCents, JSON.stringify(revision.allocation), revision.description, now, proposalId);
   }
 
-  /** Bank operations on a bill's proposals that have not failed (money may be, or may become, moved). */
+  /**
+   * Bank operations on a bill's proposals that were sent and have not failed (money may have moved,
+   * or may yet move). A `prepared` operation was never sent, so it does not count.
+   */
   liveBankOperationCount(billId: string): number {
     const row = this.db
       .prepare(
         `SELECT COUNT(*) AS n FROM bank_operations o JOIN proposals p ON p.proposal_id = o.proposal_id
-          WHERE p.bill_id = ? AND o.status != 'failed'`,
+          WHERE p.bill_id = ? AND o.status NOT IN ('failed', 'prepared')`,
       )
       .get(billId) as { n: number };
     return row.n;
+  }
+
+  /** Cancel never-sent operations on a bill (for example because its terms changed). Returns how many. */
+  cancelPreparedOperations(billId: string, reason: string, now: string): number {
+    const result = this.db
+      .prepare(
+        `UPDATE bank_operations SET status = 'failed', reason = ?, updated_at = ?
+          WHERE status = 'prepared'
+            AND proposal_id IN (SELECT proposal_id FROM proposals WHERE bill_id = ?)`,
+      )
+      .run(reason, now, billId);
+    return result.changes;
+  }
+
+  insertAllocation(
+    allocation: AllocationLine & { allocationId: string; billId: string; operationId: string },
+    now: string,
+  ): void {
+    this.db
+      .prepare(
+        `INSERT INTO allocations (allocation_id, bill_id, payer_id, beneficiary_id, amount_cents, operation_id, kind, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        allocation.allocationId,
+        allocation.billId,
+        allocation.payerId,
+        allocation.beneficiaryId,
+        allocation.amountCents,
+        allocation.operationId,
+        allocation.kind,
+        now,
+      );
   }
 
   // ---- debts --------------------------------------------------------------
