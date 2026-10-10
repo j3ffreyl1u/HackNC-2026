@@ -1,0 +1,16 @@
+{
+  "householdId": "demo-house",
+  "groupSpaceId": "mock-space",
+  "designatedPayerId": "mason",
+  "householdAccountId": "mock-household",
+  "members": [
+    { "userId": "mason", "displayName": "Mason", "providerUserId": "mock-mason", "bankAccountId": "mock-mason" },
+    { "userId": "alex", "displayName": "Alex", "providerUserId": "mock-alex", "bankAccountId": "mock-alex" },
+    { "userId": "jordan", "displayName": "Jordan", "providerUserId": "mock-jordan", "bankAccountId": "mock-jordan" }
+  ],
+  "recipients": [{ "recipientId": "electric", "displayName": "Electricity Provider", "bankAccountId": "mock-electric" }],
+  "demoCycles": [
+    { "cycleId": "2026-10", "bills": [{ "title": "Electricity", "amountCents": 14400, "dueDate": "2026-10-15", "recipientId": "electric" }] },
+    { "cycleId": "2026-11", "bills": [{ "title": "Electricity", "amountCents": 15000, "dueDate": "2026-11-15", "recipientId": "electric" }] }
+  ]
+}

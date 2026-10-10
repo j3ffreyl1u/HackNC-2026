@@ -1,0 +1,47 @@
+import { afterEach, describe, expect, it } from 'vitest';
+import type { FinanceService, HouseholdConfig, HouseholdSnapshot } from '../../src/contracts/index.js';
+import { createAppServer } from '../../src/app/server.js';
+
+const config: HouseholdConfig = {
+  householdId: 'demo-house', groupSpaceId: 'space', designatedPayerId: 'mason', householdAccountId: 'house',
+  members: [
+    { userId: 'mason', displayName: 'Mason', providerUserId: 'p1', bankAccountId: 'b1' },
+    { userId: 'alex', displayName: 'Alex', providerUserId: 'p2', bankAccountId: 'b2' },
+    { userId: 'jordan', displayName: 'Jordan', providerUserId: 'p3', bankAccountId: 'b3' },
+  ],
+  recipients: [{ recipientId: 'electric', displayName: 'Electricity', bankAccountId: 'recipient' }],
+  demoCycles: [{ cycleId: '2026-10', bills: [] }],
+};
+const snapshot: HouseholdSnapshot = {
+  householdId: 'demo-house', cycleId: '2026-10', currency: 'USD', balanceCents: 500,
+  bills: [], contributions: [], debts: [], activity: [],
+};
+let close: (() => Promise<void>) | undefined;
+afterEach(async () => { await close?.(); close = undefined; });
+
+async function start(demoMode = true) {
+  const finance = { getSnapshot: async () => snapshot } as unknown as FinanceService;
+  const server = createAppServer({ finance, config, demoMode });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('test server did not bind');
+  close = () => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  return `http://127.0.0.1:${address.port}`;
+}
+
+describe('app HTTP routes', () => {
+  it('returns only the public snapshot DTO for the enrolled household', async () => {
+    const base = await start();
+    expect(await (await fetch(`${base}/api/config`)).json()).toEqual({ householdId: 'demo-house', demoMode: true });
+    const response = await fetch(`${base}/api/households/demo-house/snapshot`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(snapshot);
+    expect(JSON.stringify(snapshot)).not.toContain('bankAccountId');
+  });
+
+  it('keeps demo controls local-only and disabled outside demo mode', async () => {
+    const base = await start(false);
+    expect((await fetch(`${base}/api/demo/advance-cycle`, { method: 'POST', body: '{}' })).status).toBe(404);
+    expect((await fetch(`${base}/api/households/other/snapshot`)).status).toBe(404);
+  });
+});
