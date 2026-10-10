@@ -66,6 +66,11 @@ export interface ResearchResult {
   evidence: SourceEvidence[];
   /** Things the provider could not establish, shown to the group rather than hidden. */
   limitations: string[];
+  /**
+   * HTML the search provider requires to be shown alongside grounded answers (Google's "search suggestions").
+   * Pass to whatever renders the answer; absent for fixtures.
+   */
+  searchSuggestionsHtml?: string[];
 }
 
 export interface ResearchProvider {
