@@ -14,7 +14,7 @@ import { formatCents } from './money.js';
 import type { ConversationDependencies } from './types.js';
 
 const APPROVE_REACTIONS = new Set(['👍', '👍🏻', '👍🏼', '👍🏽', '👍🏾', '👍🏿', '❤️', '❤', '✅', '✔️', 'like', 'love', 'thumbsup', '+1']);
-const YES = /^(yes|yep|yeah|yup|sure|ok|okay|accept|accepted|i accept|i'?m in|count me in|sounds good|works for me|let'?s do it|do it|confirm|confirmed)[.!]*$/i;
+const YES = /^(?:(?:yes|yep|yeah|yup|sure)(?:[ ,]+(?:it is|that is|that'?s right|that'?s it|correct|exactly|please|firm))?|ok|okay|accept|accepted|i accept|i'?m in|count me in|sounds good|works for me|let'?s do it|do it|confirm|confirmed|correct|that'?s right|exactly)[.!]*$/i;
 const NO = /^(no|nope|nah|decline|i decline|not for me|not now|no thanks|pass)[.!]*$/i;
 const ID = '([A-Za-z0-9][\\w:.\\-]*)';
 const REQUEST_PLANS = /^(?:(?:please|pls|ok|okay|alright|so)[,\s]+)?(?:(?:can|could) you\s+)?(?:(?:show|give|get|send)\s+(?:me\s+|us\s+)?(?:the\s+)?(?:trip\s+)?(?:options|plans|proposals|itineraries)|(?:plan|research)\s+(?:it|this|the trip|our trip)|find\s+(?:us\s+)?(?:trip\s+)?options|what are (?:our|the) options)$/i;
@@ -73,6 +73,7 @@ export function createParser(deps: ConversationDependencies) {
     const commands: TripCommand[] = [];
     const asks: string[] = [];
     let private_ = false;
+    let hedgedBudget: number | undefined;
 
     for (const item of items) {
       const v = item.value;
@@ -91,6 +92,7 @@ export function createParser(deps: ConversationDependencies) {
         if (v.field === 'budget') {
           asks.push(`Is ${formatCents(v.value).replace(/\.00$/, '')} your firm maximum for the whole trip, including food and travel? Say "my max is $X" to lock it in.`);
           private_ = true;
+          hedgedBudget = v.value;
         } else {
           asks.push('Which dates can you actually do? Tell me plainly, e.g. "free Oct 17-19".');
         }
@@ -100,9 +102,10 @@ export function createParser(deps: ConversationDependencies) {
     }
 
     const clarification = asks.length ? replyMessage(msg, asks.join('\n'), 'clarify', private_) : undefined;
-    if (commands.length === 0) return clarification ? { kind: 'reply', message: clarification } : { kind: 'ignored', reason: 'nothing to record' };
+    const expects = hedgedBudget !== undefined ? { expects: { field: 'budget' as const, valueCents: hedgedBudget } } : {};
+    if (commands.length === 0) return clarification ? { kind: 'reply', message: clarification, ...expects } : { kind: 'ignored', reason: 'nothing to record' };
     if (commands.length === 1 && !clarification) return { kind: 'command', command: commands[0]! };
-    return { kind: 'commands', commands, ...(clarification ? { clarification } : {}) };
+    return { kind: 'commands', commands, ...(clarification ? { clarification } : {}), ...expects };
   }
 
   // ----- plan selection / acceptance -----
@@ -129,6 +132,12 @@ export function createParser(deps: ConversationDependencies) {
   }
 
   function resolveAnswer(msg: InboundMessage, ctx: TripConversationContext, yes: boolean): ParseResult {
+    const pending = ctx.pendingConfirmation;
+    if (pending && ctx.actionable.length === 0) {
+      if (!yes) return reply(msg, 'No problem. What is your firm maximum for the whole trip, including food and travel?', 'budget-no', true);
+      // They confirmed the exact amount we asked about, so it is recorded as confirmed (it is still their own budget).
+      return { kind: 'command', command: updateCommand(msg, ctx, { field: 'budget', value: pending.valueCents }, false) };
+    }
     const list = ctx.actionable;
     if (list.length === 0) return { kind: 'ignored', reason: 'nothing to answer' };
     if (!yes) {

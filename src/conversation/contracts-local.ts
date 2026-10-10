@@ -66,6 +66,15 @@ export interface OutboundMessage {
 }
 
 /**
+ * A yes/no question we just asked this member. The app stores it (per member) and passes it back as
+ * `TripConversationContext.pendingConfirmation` so a later "yes" has meaning. Clear it once answered.
+ */
+export interface PendingConfirmation {
+  field: 'budget';
+  valueCents: number;
+}
+
+/**
  * - `command`: exactly one command and nothing to say.
  * - `commands`: several updates from one message, and/or updates plus a clarification (additive to the spec).
  * - `reply`: a clarification or help text, no state change.
@@ -73,8 +82,8 @@ export interface OutboundMessage {
  */
 export type ParseResult =
   | { kind: 'command'; command: TripCommand }
-  | { kind: 'commands'; commands: TripCommand[]; clarification?: OutboundMessage }
-  | { kind: 'reply'; message: OutboundMessage }
+  | { kind: 'commands'; commands: TripCommand[]; clarification?: OutboundMessage; expects?: PendingConfirmation }
+  | { kind: 'reply'; message: OutboundMessage; expects?: PendingConfirmation }
   | { kind: 'ignored'; reason: string };
 
 export interface SendResult {
@@ -130,6 +139,8 @@ export interface TripConversationContext {
   targetProposal?: { kind: 'select' | 'accept'; candidateId: string; revision: number };
   /** The field this actor was last asked about, so a bare "200" or "Oct 17-19" has meaning. */
   pendingQuestion?: { field: ConstraintField };
+  /** Set from the `expects` of the last reply to this member, e.g. "Is $250 your firm maximum?". */
+  pendingConfirmation?: PendingConfirmation;
 }
 
 export interface ConversationService {

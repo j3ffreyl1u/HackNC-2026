@@ -213,3 +213,29 @@ describe('gating', () => {
     expect((await service.parseInbound(msg({ text: '  ' }))).kind).toBe('ignored');
   });
 });
+
+describe('confirming a hedged budget', () => {
+  it('exposes what it asked so the app can store it, and records nothing yet', async () => {
+    const { service } = setup();
+    const r = await service.parseInbound(msg({ text: 'My budget max might be $250' }));
+    expect(r.kind).toBe('reply');
+    expect(r.kind === 'reply' && r.expects).toEqual({ field: 'budget', valueCents: 25000 });
+  });
+  it('"yes it is" afterwards records that exact amount as confirmed, for the sender only', async () => {
+    const { service } = setup({ pendingConfirmation: { field: 'budget', valueCents: 25000 } });
+    for (const t of ['Yes it is', 'yes', "that's right"]) {
+      const r = await service.parseInbound(msg({ senderId: 'alex', text: t }));
+      expect(updates(r)[0]).toMatchObject({ memberId: 'alex', field: 'budget', value: 25000, certainty: 'confirmed' });
+    }
+  });
+  it('"no" asks again privately; a pending question never turns into a plan acceptance', async () => {
+    const { service } = setup({ pendingConfirmation: { field: 'budget', valueCents: 25000 } });
+    const r = await service.parseInbound(msg({ text: 'no' }));
+    expect(cmds(r)).toEqual([]);
+    expect(r.kind === 'reply' && r.message.audience).toEqual({ kind: 'private', memberId: 'mason' });
+  });
+  it('yes without any pending question is still ignored', async () => {
+    const { service } = setup();
+    expect((await service.parseInbound(msg({ text: 'yes it is' }))).kind).toBe('ignored');
+  });
+});

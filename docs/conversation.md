@@ -26,6 +26,7 @@ Pivoting is a config change (`mode: 'direct'`). In `direct`, `groupSpaceId` is o
 - **Constraints** (deterministic, per sentence, no AI): budget in cents, availability windows (`Oct 17-19`, `2026-10-17 to 2026-10-19`, `10/17-10/19`), nights, origin, region (`within 3 hours`), vehicle access, preferences, must-dos/dietary. Gemini is only used when the rules find nothing.
 - **Tentative wording**: budget and dates are never recorded from hedged text (`maybe`, `might`, `?`, ...): the sender is asked to state it plainly. Low-stakes fields (preferences, region, origin, duration, transport) from hedged text are emitted with `certainty: 'tentative'`. Ordinary chatter produces nothing and the bot stays quiet in a group.
 - **Budgets**: only the sender's own; a message naming another member never sets a budget. Budget confirmations/questions are always sent privately and never contain a group-visible amount.
+- **Confirming a hedged budget**: the reply carries `expects: { field: 'budget', valueCents }`. The app stores it per member and passes it back as `pendingConfirmation`; a later "yes" then records exactly that amount (confirmed), "no" asks again. With nothing pending, "yes" is ignored.
 - **Selection vs acceptance**: `pick 2` / `pick <id> [v<n>]` -> `select_candidate`; `accept <id> v<n>` or a "yes" -> `accept_candidate`, always bound to the revision in `actionable`. A stale revision, a plan not awaiting acceptance, or "yes" with nothing pending produces no command. "yes" with several pending asks which. "no" records nothing.
 - **Reactions**: only positive emoji; the app-resolved target must match an `actionable` item of the same kind, id and revision. Anything else is ignored. A `select` reaction is a preference, not an acceptance.
 - Explicit forms (no AI): `show options`, `plan the trip`, `guide: <question>`, `request contributions`.
@@ -38,9 +39,9 @@ Pivoting is a config change (`mode: 'direct'`). In `direct`, `groupSpaceId` is o
 | Manual availability, free-window suggestions | **Tested** |
 | Google free/busy adapter | Tested with a mocked `fetch` only. **Unverified live** (needs per-member OAuth token with free/busy scope) |
 | Spectrum payload mapping | Mapped to the 12.10.1 typings, tested with shaped objects. The adapter itself has **not run live** |
-| Spectrum DM, live | Verified by hand 2026-10-10 with a throwaway probe (inbound DM with E.164 `senderId`, `space.type` `dm`, reply delivered). Adapter not yet run live |
+| Spectrum DM, live | **Verified 2026-10-10 with this repo's adapter** (`spectrum.ts` + normalizer + parser, driven by a throwaway probe outside the repo): inbound DM parsed to a command, replies delivered, send returns a provider message id. One `ECONNRESET` on the stream recovered by itself |
 | Spectrum group chat, live | **Not working on the shared line** (no events reached the app). Photon docs list group creation/events as dedicated-line only. `direct` mode is the fallback |
-| Spectrum reactions, live | **Unverified** (needs a thumbs-up on a bot message). Removed-tapback surfacing also unverified |
+| Spectrum reactions, live (DM) | **Verified 2026-10-10**: a thumbs-up on a bot message arrived as a reaction bound to that message's provider id and parsed to `select_candidate`. Removed-tapback surfacing still unverified |
 | Gemini request/response | Request shape from the structured-output docs; response layout extraction is tolerant. **Unverified live**; prompt/schema retargeted but never run against the API |
 
 Known limits: dates are calendar days in the trip timezone (no departure/return times yet); relative dates ("next weekend") are not parsed by rules, only by Gemini with explicit-date output; `src/finance` has 41 pre-existing `tsc` errors unrelated to this module.
@@ -48,7 +49,7 @@ Known limits: dates are calendar days in the trip timezone (no departure/return 
 ## For C
 1. Add dependency `spectrum-ts@12.10.1` (only for `CHAT_MODE=photon`; imported lazily). Env names the SDK scaffold uses: `PROJECT_ID`, `PROJECT_SECRET`; plus `GEMINI_API_KEY`, `GEMINI_MODEL`. Node needs `--env-file=.env`.
 2. Map a new env (suggest `CHAT_TOPOLOGY=group|direct`) to `TripConfig.mode`.
-3. Provide `TripConversationContext` per actor (including `pendingQuestion` and `targetProposal`), and bind each `deliveries[].providerMessageId` to the proposal so reactions resolve.
+3. Provide `TripConversationContext` per actor (including `pendingQuestion`, `pendingConfirmation` from the last reply's `expects`, and `targetProposal`), and bind each `deliveries[].providerMessageId` to the proposal so reactions resolve.
 4. Record the additive `commands` ParseResult and `SendResult` shapes in `docs/integration.md`.
 
 ## Run
