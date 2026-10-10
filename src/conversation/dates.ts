@@ -112,3 +112,38 @@ export function parseDateWindows(input: string, reference: string): ParsedWindow
     .sort((a, b) => a.start.localeCompare(b.start))
     .slice(0, 6);
 }
+
+/** Throws a clear error for an unknown IANA timezone (so a bad config fails at startup, not mid-chat). */
+export function assertTimeZone(timeZone: string): void {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone });
+  } catch {
+    throw new Error(`Invalid trip timezone: ${timeZone}`);
+  }
+}
+
+/** The UTC instant (ISO) at which `date` (YYYY-MM-DD) begins in `timeZone`. DST-safe. */
+export function localMidnight(date: string, timeZone: string): string {
+  const target = Date.parse(`${date}T00:00:00Z`);
+  const fmt = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
+  let instant = target;
+  for (let i = 0; i < 3; i++) {
+    const p = Object.fromEntries(fmt.formatToParts(instant).map((x) => [x.type, x.value]));
+    instant += target - Date.parse(`${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}Z`);
+  }
+  return new Date(instant).toISOString();
+}
+
+export interface IntervalWindow { startAt: string; endAt: string; timeZone: string }
+
+/**
+ * Inclusive date windows -> real intervals: local midnight of the start date to local midnight of the day
+ * AFTER the end date, in the trip timezone. We never invent hours from casual texting.
+ */
+export function toIntervalWindows(windows: ParsedWindow[], timeZone: string): IntervalWindow[] {
+  return windows.map((w) => ({
+    startAt: localMidnight(w.start, timeZone),
+    endAt: localMidnight(new Date(Date.parse(`${w.end}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10), timeZone),
+    timeZone,
+  }));
+}

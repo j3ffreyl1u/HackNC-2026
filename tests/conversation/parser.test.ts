@@ -49,6 +49,17 @@ describe('three actors update their own constraints', () => {
   });
 });
 
+describe('availability leaves the parser as intervals in the trip timezone', () => {
+  it('"free Oct 24-26" becomes local-midnight instants, and a Gemini-proposed window is converted the same way', async () => {
+    const { service } = setup();
+    const a = await service.parseInbound(msg({ text: "I'm free Oct 24-26" }));
+    expect(updates(a)[0]).toMatchObject({ field: 'availability', value: [{ startAt: '2026-10-24T04:00:00.000Z', endAt: '2026-10-27T04:00:00.000Z', timeZone: 'America/New_York' }] });
+    const { service: g } = setup({}, () => ({ intent: 'constraints', items: [{ field: 'availability', windows: [{ start: '2026-10-31', end: '2026-11-01' }] }] }));
+    const b = await g.parseInbound(msg({ text: 'the weekend of halloween works great' }));
+    expect(updates(b)[0]).toMatchObject({ value: [{ startAt: '2026-10-31T04:00:00.000Z', endAt: '2026-11-02T05:00:00.000Z' }] });
+  });
+});
+
 describe('tentative wording', () => {
   it('asks about a hedged budget privately, without recording it', async () => {
     const { service } = setup();

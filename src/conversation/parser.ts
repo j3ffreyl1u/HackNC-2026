@@ -9,6 +9,7 @@ import type {
   TripConversationContext,
 } from './contracts-local.js';
 import { extractConstraints, HEDGE, type Extracted } from './constraints.js';
+import { assertTimeZone, toIntervalWindows } from './dates.js';
 import { validateIntent } from './intent.js';
 import { formatCents } from './money.js';
 import type { ConversationDependencies } from './types.js';
@@ -27,6 +28,7 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 export function createParser(deps: ConversationDependencies) {
   const { trip } = deps;
+  assertTimeZone(trip.timezone);
 
   const reply = (msg: InboundMessage, text: string, tag: string, forcePrivate = false): ParseResult => ({
     kind: 'reply',
@@ -54,10 +56,16 @@ export function createParser(deps: ConversationDependencies) {
 
   const one = (msg: InboundMessage, ctx: TripConversationContext, action: TripAction): ParseResult => ({ kind: 'command', command: command(msg, ctx, action) });
 
+  /** Availability leaves this module as real intervals in the trip timezone; everything else is unchanged. */
+  function normalize(v: ConstraintValue): ConstraintValue {
+    if (v.field !== 'availability') return v;
+    return { field: 'availability', value: toIntervalWindows(v.value.filter((w): w is { start: string; end: string } => 'start' in w), trip.timezone) };
+  }
+
   function updateCommand(msg: InboundMessage, ctx: TripConversationContext, v: ConstraintValue, hedged: boolean): TripCommand {
     return command(msg, ctx, {
       kind: 'update_constraint',
-      update: { ...v, memberId: msg.senderId, sourceMessageId: msg.messageId, certainty: hedged ? 'tentative' : 'confirmed' } as never,
+      update: { ...normalize(v), memberId: msg.senderId, sourceMessageId: msg.messageId, certainty: hedged ? 'tentative' : 'confirmed' } as never,
     }, `:${v.field}`);
   }
 
