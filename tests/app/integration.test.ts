@@ -12,6 +12,37 @@ import { SqliteTripRepository } from '../../src/storage/sqlite-repository.js';
 import { resolveGroupField } from '../../src/planning/constraints.js';
 
 describe('integrated chat planner', () => {
+  it('exercises the $520/$560/$600 preset, keeps $328 and excludes $500 after a $450 revision', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'realistic-demo-'));
+    const repository = SqliteTripRepository.open(join(dir, 'trip.sqlite'));
+    try {
+      const trip = await loadDemoTrip('tests/fixtures/realistic-demo.json');
+      expect(trip.state.memberConstraints.filter(r => r.field === 'budget').map(r => r.value)).toEqual([52000, 56000, 60000]);
+      const result = await runMockDemo(repository, trip.enrollment, trip.state, { realistic: true });
+      expect(result.totals).toEqual([32800, 50000]);
+      expect(result.state.memberConstraints.filter(r => r.memberId === 'mason' && r.field === 'budget').at(-1)?.value).toBe(45000);
+      expect(result.state.status).toBe('approved');
+      expect(result.state.candidates.filter(c => c.feasibility.feasible).map(c => c.perPersonTotals[0].highCents)).toEqual([32800]);
+    } finally { repository.close(); rmSync(dir, { recursive: true, force: true }); }
+  });
+  it('intercepts cost text before A and uses explicit B question fields', async () => {
+    const trip = await loadDemoTrip('tests/fixtures/trip.json');
+    const { conversation } = await createChatAdapter(trip.enrollment, 'America/New_York', 'mock', {});
+    const parsed = await conversation.parseInbound({ eventId: 'cost', messageId: 'cost-message', senderId: 'mason', spaceId: trip.enrollment.groupSpaceId, visibility: 'group', occurredAt: '2026-10-10T16:00:00Z', text: 'confirm cost manual-1 v1 lodging $240-$300' }, { tripId: trip.state.tripId, revision: 1, status: 'gathering', actionable: [] });
+    expect(parsed.kind).toBe('command');
+    if (parsed.kind === 'command') expect(parsed.command.action).toMatchObject({ kind: 'confirm_cost', lowCents: 24000, highCents: 30000 });
+    trip.state.groupConstraints = [];
+    const planner = createPlannerAdapter(createResearchProvider({ mode: 'mock', fixtures: defaultFixtures }), trip.enrollment.groupSpaceId);
+    const result = planner.applyCommand(trip.state, { commandId: 'plans', eventId: 'plans', actorId: 'mason', tripId: trip.state.tripId, action: { kind: 'request_plans' } }, { now: '2026-10-10T16:00:00Z' });
+    expect(result.state.pendingQuestions.map(q => q.field).sort()).toEqual(['duration', 'origin']);
+  });
+  it('supports a direct-mode shared broadcast through individual DM receipts', async () => {
+    const trip = await loadDemoTrip('tests/fixtures/trip.json');
+    const { conversation } = await createChatAdapter({ ...trip.enrollment, mode: 'direct' }, 'America/New_York', 'mock', {});
+    const receipts = await conversation.sendMessage({ deliveryId: 'broadcast', audience: { kind: 'group', spaceId: trip.enrollment.groupSpaceId }, text: 'Plan version 1' });
+    expect(receipts).toHaveLength(3);
+    expect(new Set(receipts.map(r => r.providerMessageId)).size).toBe(3);
+  });
   it('keeps conflicting group positions attributed to their original members', async () => {
     const trip = await loadDemoTrip('tests/fixtures/trip.json');
     const planner = createPlannerAdapter(createResearchProvider({ mode: 'mock', fixtures: defaultFixtures }), trip.enrollment.groupSpaceId);

@@ -60,6 +60,8 @@ export class SqliteTripRepository implements Repository {
         delivery_id TEXT NOT NULL REFERENCES message_outbox(delivery_id)
       );
     `);
+    const enrollmentColumns = db.prepare('PRAGMA table_info(trip_enrollments)').all() as Array<{ name: string }>;
+    if (!enrollmentColumns.some(column => column.name === 'chat_mode')) db.exec("ALTER TABLE trip_enrollments ADD COLUMN chat_mode TEXT NOT NULL DEFAULT 'group'");
     // Preserve reaction lookup for deliveries written by the original single-receipt schema.
     const legacyDeliveries = db.prepare("SELECT delivery_id, provider_message_id, message_json FROM message_outbox WHERE status = 'delivered' AND provider_message_id IS NOT NULL").all() as
       Array<{ delivery_id: string; provider_message_id: string; message_json: string }>;
@@ -86,8 +88,8 @@ export class SqliteTripRepository implements Repository {
     validateEnrollment(enrollment, initialState);
     const now = new Date().toISOString();
     this.db.transaction(() => {
-      const existing = this.db.prepare('SELECT group_space_id, participants_json FROM trip_enrollments WHERE trip_id = ?').get(enrollment.tripId) as
-        | { group_space_id: string; participants_json: string }
+      const existing = this.db.prepare('SELECT group_space_id, participants_json, chat_mode FROM trip_enrollments WHERE trip_id = ?').get(enrollment.tripId) as
+        | { group_space_id: string; participants_json: string; chat_mode: string }
         | undefined;
       if (existing) {
         const stored = JSON.parse(existing.participants_json) as TripEnrollment['participants'];
@@ -95,13 +97,13 @@ export class SqliteTripRepository implements Repository {
           const current = enrollment.participants.find((member) => member.memberId === p.memberId);
           return current?.providerUserId === p.providerUserId;
         });
-        if (existing.group_space_id !== enrollment.groupSpaceId || !sameMembers) {
+        if (existing.group_space_id !== enrollment.groupSpaceId || !sameMembers || existing.chat_mode !== (enrollment.mode ?? 'group')) {
           throw new Error(`Enrollment identity for trip ${enrollment.tripId} cannot be changed by bootstrap.`);
         }
         return;
       }
-      this.db.prepare('INSERT INTO trip_enrollments (trip_id, group_space_id, participants_json) VALUES (?, ?, ?)')
-        .run(enrollment.tripId, enrollment.groupSpaceId, JSON.stringify(enrollment.participants));
+      this.db.prepare('INSERT INTO trip_enrollments (trip_id, group_space_id, participants_json, chat_mode) VALUES (?, ?, ?, ?)')
+        .run(enrollment.tripId, enrollment.groupSpaceId, JSON.stringify(enrollment.participants), enrollment.mode ?? 'group');
       const stateJson = JSON.stringify(initialState);
       this.db.prepare('INSERT INTO trips (trip_id, revision, state_json, updated_at) VALUES (?, ?, ?, ?)')
         .run(initialState.tripId, initialState.revision, stateJson, now);
@@ -111,11 +113,11 @@ export class SqliteTripRepository implements Repository {
   }
 
   async getEnrollment(tripId: TripId): Promise<TripEnrollment | null> {
-    const row = this.db.prepare('SELECT group_space_id, participants_json FROM trip_enrollments WHERE trip_id = ?').get(tripId) as
-      | { group_space_id: string; participants_json: string }
+    const row = this.db.prepare('SELECT group_space_id, participants_json, chat_mode FROM trip_enrollments WHERE trip_id = ?').get(tripId) as
+      | { group_space_id: string; participants_json: string; chat_mode: 'group' | 'direct' }
       | undefined;
     return row
-      ? { tripId, groupSpaceId: row.group_space_id, participants: JSON.parse(row.participants_json) as TripEnrollment['participants'] }
+      ? { tripId, groupSpaceId: row.group_space_id, ...(row.chat_mode === 'direct' ? { mode: 'direct' as const } : {}), participants: JSON.parse(row.participants_json) as TripEnrollment['participants'] }
       : null;
   }
 

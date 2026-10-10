@@ -19,7 +19,7 @@ export async function startApp(): Promise<() => Promise<void>> {
     throw new Error('Calendar and funding extensions are not integrated. Select manual calendar and disabled funding.');
   }
   const trip = config.chatMode === 'photon' ? await loadEnrolledTrip(config.tripConfigPath) : await loadDemoTrip(config.tripConfigPath);
-  if (config.chatMode === 'photon' && (trip.enrollment.groupSpaceId.startsWith('mock-') || trip.enrollment.participants.some(p => p.providerUserId.startsWith('mock-')))) throw new Error('Live chat needs a trip config with the actual group space ID and enrolled provider identities.');
+  if (config.chatMode === 'photon' && ((trip.enrollment.mode !== 'direct' && trip.enrollment.groupSpaceId.startsWith('mock-')) || trip.enrollment.participants.some(p => p.providerUserId.startsWith('mock-')))) throw new Error('Live chat needs a trip config with actual enrolled provider identities and, in group mode, the actual group space ID.');
   await mkdir(dirname(config.databasePath), { recursive: true });
   const repository = SqliteTripRepository.open(config.databasePath);
   const display = config.researchMode === 'gemini' ? new LiveResearchDisplay(process.env.GEMINI_API_KEY!, process.env.GEMINI_MODEL || 'gemini-3.8-flash', `http://127.0.0.1:${config.port}`) : undefined;

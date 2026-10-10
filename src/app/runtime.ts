@@ -103,7 +103,7 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
 
   async function handleMessage(message: InboundMessage): Promise<void> {
     if (await repository.hasProcessedEvent(message.eventId)) return;
-    for (let attempt = 0; attempt < 3; attempt += 1) {
+    eventAttempt: for (let attempt = 0; attempt < 3; attempt += 1) {
       const enrollment = await repository.getEnrollment(tripId);
       const state = await repository.loadTrip(tripId);
       if (!enrollment || !state) return;
@@ -156,7 +156,19 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
           replies.push(makeMessage(tripId, `guide:${message.eventId}:${index}`, { audience: message.visibility === 'private' || planner.guidePrivate ? { kind: 'private', memberId: member.memberId } : { kind: 'group', spaceId: enrollment.groupSpaceId }, text }));
           continue;
         }
-        const applied = planner.applyCommand(nextState, command, { now: message.occurredAt });
+        let applied: ReturnType<PlannerAdapter['applyCommand']>;
+        try {
+          applied = planner.applyCommand(nextState, command, { now: message.occurredAt });
+        } catch (error) {
+          const text = error instanceof Error && error.message.includes('group constraint has no author')
+            ? 'This saved trip has group constraints with missing author information. An operator needs to migrate that information or start a separate trip before planning can continue. The saved plan is unchanged.'
+            : 'I could not apply that trip update. Please ask the operator to inspect the integration and retry. The saved plan is unchanged.';
+          const failure = makeMessage(tripId, `domain-failed:${message.eventId}`, { audience: { kind: 'private', memberId: member.memberId }, text });
+          const result = await repository.commitEvent({ eventId: message.eventId, state, expectedRevision: state.revision, messages: [failure] });
+          if (result === 'stale') continue eventAttempt;
+          if (result === 'committed') await runtime.drainOutbox();
+          return;
+        }
         if (applied.state.tripId !== tripId || applied.state.revision < nextState.revision || applied.state.revision > nextState.revision + 1) {
           throw new Error('Planner returned a state for another trip or an invalid revision step.');
         }
@@ -297,7 +309,7 @@ async function conversationContext(repository: Repository, state: TripState, mes
     actionable,
     pendingConfirmation: state.pendingConfirmations?.[actorId],
     ...(targetProposal ? { targetProposal } : {}),
-    ...(pendingQuestion ? { pendingQuestion: { questionId: pendingQuestion.questionId, field: pendingQuestion.field === ('dates' as string) ? 'availability' : pendingQuestion.field } } : {}),
+    ...(pendingQuestion?.field ? { pendingQuestion: { questionId: pendingQuestion.questionId, field: pendingQuestion.field } } : {}),
   };
 }
 
