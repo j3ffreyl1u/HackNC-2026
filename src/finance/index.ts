@@ -1,43 +1,25 @@
-import { isBankSeeder, type BankingAdapter } from './bank';
+import { isBankSeeder, type BankingAdapter } from './bank.js';
 import type {
   Command,
-  ConversationContext,
   ExecuteResult,
+  FinanceService,
   HouseholdConfig,
   HouseholdSnapshot,
   OutboundMessage,
-} from './contracts-local';
-import { FinanceEngine } from './engine';
-import { BankProcessor } from './reconcile';
-import { FinanceConfigError, NotImplementedError, type Clock, type IdGenerator } from './runtime';
-import { LedgerStore } from './store';
+} from '../contracts/index.js';
+import { FinanceEngine } from './engine.js';
+import { BankProcessor } from './reconcile.js';
+import { FinanceConfigError, NotImplementedError, type Clock, type IdGenerator } from './runtime.js';
+import { LedgerStore } from './store.js';
 
 export { FinanceConfigError, NotImplementedError };
-export type { Clock, IdGenerator };
+export type { Clock, IdGenerator, FinanceService };
 
 export interface FinanceDependencies {
   store: LedgerStore;
   bank: BankingAdapter;
   clock: Clock;
   newId: IdGenerator;
-}
-
-export interface FinanceService {
-  execute(command: Command): Promise<ExecuteResult>;
-  reconcile(householdId: string): Promise<void>;
-  getSnapshot(householdId: string): Promise<HouseholdSnapshot>;
-  pendingMessages(): Promise<OutboundMessage[]>;
-  enqueueMessage(message: OutboundMessage): Promise<void>;
-  recordDelivery(deliveryId: string, providerMessageId: string): Promise<void>;
-  lookupProposal(providerMessageId: string): Promise<{ proposalId: string; proposalVersion: number } | null>;
-  advanceDemoCycle(householdId: string, cycleId: string): Promise<void>;
-  getConversationContext(actorId: string, spaceId: string, targetMessageId?: string): Promise<ConversationContext>;
-  processReminders(householdId: string): Promise<void>;
-  bootstrapHousehold(config: HouseholdConfig): Promise<void>;
-  seedDemoBanking(config: HouseholdConfig): Promise<HouseholdConfig>;
-  claimInbound(eventId: string): Promise<boolean>;
-  completeInbound(eventId: string): Promise<void>;
-  close(): Promise<void>;
 }
 
 const MEMBER_COUNT = 3;

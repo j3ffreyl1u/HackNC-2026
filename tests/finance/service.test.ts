@@ -1,14 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { BankingAdapter } from '../../src/finance/bank';
-import type { HouseholdConfig, OutboundMessage } from '../../src/finance/contracts-local';
+import type { BankingAdapter } from '../../src/finance/bank.js';
+import type { HouseholdConfig, OutboundMessage } from '../../src/contracts/index.js';
 import {
   FinanceConfigError,
   NotImplementedError,
   createFinanceService,
   type FinanceService,
-} from '../../src/finance/index';
-import { MockBank } from '../../src/finance/mock-bank';
-import { LedgerStore } from '../../src/finance/store';
+} from '../../src/finance/index.js';
+import { MockBank } from '../../src/finance/mock-bank.js';
+import { LedgerStore } from '../../src/finance/store.js';
 
 const config: HouseholdConfig = {
   householdId: 'demo-house',

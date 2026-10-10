@@ -1,4 +1,4 @@
-import type { LedgerStore } from './store';
+import type { LedgerStore } from './store.js';
 
 // Typed queries over the ledger tables, shared by the engine, coverage and reconciliation.
 // Everything here is synchronous so callers can compose it inside `store.tx`.

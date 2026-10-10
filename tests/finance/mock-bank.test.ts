@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { transferMatches, type SubmitTransferInput } from '../../src/finance/bank';
-import { MockBank } from '../../src/finance/mock-bank';
+import { transferMatches, type SubmitTransferInput } from '../../src/finance/bank.js';
+import { MockBank } from '../../src/finance/mock-bank.js';
 
 const input = (overrides: Partial<SubmitTransferInput> = {}): SubmitTransferInput => ({
   operationId: 'op-1',

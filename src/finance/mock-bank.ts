@@ -1,4 +1,4 @@
-import type { BankSeeder, BankTransferResult, BankingAdapter, SubmitTransferInput } from './bank';
+import type { BankSeeder, BankTransferResult, BankingAdapter, SubmitTransferInput } from './bank.js';
 
 /** What the next submitTransfer call should do, consumed in FIFO order. */
 export type InjectedBehavior =

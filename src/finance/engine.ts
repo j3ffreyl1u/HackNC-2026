@@ -1,5 +1,5 @@
-import { formatUsd, splitEqual } from './accounting';
-import type { Command, DomainErrorCode, ExecuteResult, OutboundMessage } from './contracts-local';
+import { formatUsd, splitEqual } from './accounting.js';
+import type { Command, DomainErrorCode, ExecuteResult, OutboundMessage } from '../contracts/index.js';
 import {
   Ledger,
   TERMINAL_PROPOSAL_STATUSES,
@@ -7,9 +7,9 @@ import {
   type BillRecord,
   type MemberRecord,
   type ProposalRecord,
-} from './ledger';
-import { NotImplementedError, type Clock, type IdGenerator } from './runtime';
-import type { LedgerStore } from './store';
+} from './ledger.js';
+import { NotImplementedError, type Clock, type IdGenerator } from './runtime.js';
+import type { LedgerStore } from './store.js';
 
 /** An ordinary invalid user action. Thrown inside a transaction so every write rolls back. */
 class Rejection extends Error {

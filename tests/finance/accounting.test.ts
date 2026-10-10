@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AccountingError, planCarryover, splitEqual } from '../../src/finance/accounting';
+import { AccountingError, planCarryover, splitEqual } from '../../src/finance/accounting.js';
 
 const members = ['mason', 'alex', 'jordan'];
 

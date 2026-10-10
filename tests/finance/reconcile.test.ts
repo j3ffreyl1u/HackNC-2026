@@ -2,12 +2,12 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { BankTransferResult, BankingAdapter, SubmitTransferInput } from '../../src/finance/bank';
-import type { Command, CommandPayload, ExecuteResult, HouseholdConfig } from '../../src/finance/contracts-local';
-import { createFinanceService, type FinanceService } from '../../src/finance/index';
-import { Ledger } from '../../src/finance/ledger';
-import { MockBank } from '../../src/finance/mock-bank';
-import { LedgerStore } from '../../src/finance/store';
+import type { BankTransferResult, BankingAdapter, SubmitTransferInput } from '../../src/finance/bank.js';
+import type { Command, CommandPayload, ExecuteResult, HouseholdConfig } from '../../src/contracts/index.js';
+import { createFinanceService, type FinanceService } from '../../src/finance/index.js';
+import { Ledger } from '../../src/finance/ledger.js';
+import { MockBank } from '../../src/finance/mock-bank.js';
+import { LedgerStore } from '../../src/finance/store.js';
 
 const config: HouseholdConfig = {
   householdId: 'demo-house',

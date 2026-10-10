@@ -1,8 +1,8 @@
-import { formatUsd } from './accounting';
-import { transferMatches, type BankTransferResult, type BankingAdapter } from './bank';
-import { Ledger, type ProposalRecord } from './ledger';
-import type { Clock, IdGenerator } from './runtime';
-import type { BankOperationRecord, LedgerStore } from './store';
+import { formatUsd } from './accounting.js';
+import { transferMatches, type BankTransferResult, type BankingAdapter } from './bank.js';
+import { Ledger, type ProposalRecord } from './ledger.js';
+import type { Clock, IdGenerator } from './runtime.js';
+import type { BankOperationRecord, LedgerStore } from './store.js';
 
 /**
  * Sends prepared bank operations and reconciles uncertain ones.

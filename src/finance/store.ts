@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import type { HouseholdConfig, OutboundMessage } from './contracts-local';
+import type { HouseholdConfig, OutboundMessage } from '../contracts/index.js';
 
 // SQLite ledger owned by B. Synchronous (better-sqlite3), so every command's state and
 // outbox changes can share one local transaction via `tx`.
