@@ -2,6 +2,7 @@
  * C-owned conversation contracts. These preserve A's published shapes.
  * The index exports chat-specific aliases where persistence contracts use different nested values.
  */
+import type { AvailabilityWindow } from './index.js';
 
 export interface InboundMessage {
   eventId: string;
@@ -25,7 +26,8 @@ export interface DateWindow {
 /** Typed value per field. Budget is a safe integer number of cents (all-in maximum, not a contribution promise). */
 export type ConstraintValue =
   | { field: 'budget'; value: number }
-  | { field: 'availability'; value: DateWindow[] }
+  /** Date-only windows are accepted during migration; normalized commands use real intervals. */
+  | { field: 'availability'; value: DateWindow[] | AvailabilityWindow[] }
   | { field: 'preferences'; value: string[] }
   | { field: 'must_dos'; value: string[] }
   | { field: 'transport'; value: string; vehicleAvailable?: boolean }

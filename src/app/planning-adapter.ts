@@ -13,14 +13,17 @@ export function toPlanningState(state: C.TripState): B.TripState {
     ...state,
     roster: state.roster ?? [...new Set(records.map(r => r.memberId))].map(memberId => ({ memberId, displayName: memberId, consented: true })),
     memberConstraints: Object.fromEntries([...new Set(records.map(r => r.memberId))].map(id => [id, records.filter(r => r.memberId === id)])),
-    groupConstraints: state.groupConstraints.map(r => ({ ...toPlanningUpdate({ ...r, memberId: (r as { memberId?: string }).memberId ?? state.roster?.[0]?.memberId ?? records[0]?.memberId ?? '' } as C.ConstraintUpdate), recordedAt: (r as { updatedAt?: string }).updatedAt ?? records[0]?.recordedAt ?? '', revision: (r as { revision?: number }).revision ?? state.revision })),
+    groupConstraints: state.groupConstraints.map(r => {
+      if (!r.memberId) throw new Error('A saved group constraint has no author. Confirm it again with recorded member identity before planning.');
+      return { ...toPlanningUpdate(r), recordedAt: (r as { updatedAt?: string }).updatedAt ?? records[0]?.recordedAt ?? '', revision: (r as { revision?: number }).revision ?? state.revision };
+    }),
     candidates: state.candidates.map(toPlanningCandidate),
     acceptances: state.acceptances.map(a => ({ memberId: a.actorId, candidateId: a.candidateId, revision: a.revision })),
     pendingQuestions: state.pendingQuestions.map(q => ({ ...q, key: q.questionId.split('|')[0], audience: q.audience === 'group' ? { kind: 'group' } : { kind: 'private', memberId: q.memberId! } })),
   };
 }
 
-export function toPlanningUpdate(update: C.ConstraintUpdate): B.ConstraintUpdate {
+export function toPlanningUpdate(update: C.StoredConstraintUpdate): B.ConstraintUpdate {
   let value: unknown;
   switch (update.field) {
     case 'budget': value = { cents: update.value }; break;
@@ -34,13 +37,27 @@ export function toPlanningUpdate(update: C.ConstraintUpdate): B.ConstraintUpdate
   return { ...update, value } as B.ConstraintUpdate;
 }
 
+export function toPlanningCommandUpdate(update: C.ConstraintUpdate): B.ConstraintUpdate {
+  let value: unknown;
+  switch (update.field) {
+    case 'budget': value = { cents: update.value }; break;
+    case 'availability': value = { intervals: update.value.map(({ startAt, endAt }) => ({ startAt, endAt })) }; break;
+    case 'preferences': case 'must_dos': value = { items: update.value }; break;
+    case 'region': value = { searchRegion: update.value, ...(update.maxTravelMinutes !== undefined ? { maxTravelMinutes: update.maxTravelMinutes } : {}) }; break;
+    case 'transport': value = { mode: 'car', vehicleAvailable: update.vehicleAvailable ?? (update.value === 'own_vehicle' ? true : update.value === 'no_vehicle' ? false : undefined) }; break;
+    case 'origin': value = { city: update.value }; break;
+    case 'duration': value = { nights: update.value }; break;
+  }
+  return { ...update, value, ...(update.field === 'transport' ? { rawText: update.value } : {}) } as B.ConstraintUpdate;
+}
+
 function fromUpdate(r: B.ConstraintRecord, timeZone: string): C.MemberConstraintRecord {
   let value: unknown;
   switch (r.field) {
     case 'budget': value = r.value.cents; break;
     case 'availability': value = r.value.intervals.map(w => ({ ...w, timeZone })); break;
     case 'preferences': case 'must_dos': value = r.value.items; break;
-    case 'transport': value = { mode: 'road_trip', hasVehicle: r.value.vehicleAvailable }; break;
+    case 'transport': value = { mode: 'road_trip', hasVehicle: r.value.vehicleAvailable, ...((r as { rawText?: string }).rawText ? { notes: (r as { rawText?: string }).rawText } : {}) }; break;
     case 'region': value = { label: r.value.searchRegion ?? r.value.destination ?? '', ...(r.value.maxTravelMinutes !== undefined ? { maxTravelMinutes: r.value.maxTravelMinutes } : {}) }; break;
     case 'origin': value = { city: r.value.city, region: '', timeZone }; break;
     case 'duration': value = r.value; break;
@@ -107,16 +124,14 @@ export function createPlannerAdapter(provider: ResearchProvider, spaceId: string
         const cost = candidate?.costs.find(c => c.costId === a.costId);
         if (!candidate || !cost || (cost.allocation === 'personal' && cost.memberId !== command.actorId) || !Number.isSafeInteger(a.lowCents) || !Number.isSafeInteger(a.highCents) || a.lowCents < 0 || a.highCents < a.lowCents || !a.sourceMessageId) return reject('INVALID_CONSTRAINT', 'Confirm an existing cost with a valid nonnegative dollar range; personal costs can only be confirmed by their owner.');
         const revision = state.revision + 1;
-        const evidenceId = `manual:${command.commandId}`;
         const priced = reprice({ ...before, revision }, { ...candidate, revision,
-          costs: candidate.costs.map(c => c.costId === cost.costId ? { ...c, lowCents: a.lowCents, highCents: a.highCents, priceStatus: 'estimate', evidenceIds: [...c.evidenceIds, evidenceId] } : c),
-          evidence: [...candidate.evidence, { evidenceId, url: '', title: 'Participant-confirmed estimate', retrievedAt: options?.now ?? new Date().toISOString(), kind: 'estimate', claim: 'A participant confirmed this cost range in chat.', uncertainty: 'Manual estimate; not independently verified or booked.' }],
+          costs: candidate.costs.map(c => c.costId === cost.costId ? { ...c, lowCents: a.lowCents, highCents: a.highCents, priceStatus: 'estimate', evidenceIds: [] } : c),
         });
         const next = { ...before, revision, status: 'proposed' as const, acceptances: [], candidates: before.candidates.map(c => c.candidateId === candidate.candidateId ? priced : reprice({ ...before, revision }, { ...c, revision })) };
         delete next.selectedCandidateId;
         return { state: { ...fromState(next, state), costConfirmations: [...state.costConfirmations ?? [], { actorId: command.actorId, candidateId: candidate.candidateId, costId: cost.costId, revision, sourceMessageId: a.sourceMessageId, confirmedAt: options?.now ?? new Date().toISOString() }] }, researchRequested: false, replies: replies([{ audience: { kind: 'group' }, text: `A cost estimate was confirmed for ${candidate.title}. Review revision ${revision}; everyone must accept it again. ${publicFeasibilitySummary(priced.feasibility)}`, proposalRef: { candidateId: candidate.candidateId, revision } }]) };
       }
-      const action = command.action.kind === 'update_constraint' ? { ...command.action, update: toPlanningUpdate(command.action.update) } : command.action;
+      const action = command.action.kind === 'update_constraint' ? { ...command.action, update: toPlanningCommandUpdate(command.action.update) } : command.action;
       const result = applyCommand(before, { ...command, action }, options);
       return { ...result, state: result.state === before ? state : fromState(result.state, state), replies: replies(result.replies) };
     },

@@ -16,6 +16,7 @@ describe('live grounding display boundary', () => {
     expect(display.has(token)).toBe(false);
     await expect(display.render(token)).rejects.toThrow(/expired/);
     expect(JSON.parse(fetchImpl.mock.calls[0][1].body).tools).toEqual([{ type: 'google_search' }]);
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body).generation_config).toEqual({ thinking_level: 'low' });
   });
   it('rejects output without suggestions', async () => {
     const display = new LiveResearchDisplay('key', 'model', 'http://127.0.0.1:3000', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ steps: [{ type: 'model_output', content: [{ type: 'text', text: 'Answer' }] }] }) }));
