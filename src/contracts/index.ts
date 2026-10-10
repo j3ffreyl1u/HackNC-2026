@@ -1,58 +1,298 @@
+/** Shared, provider-neutral contracts for the group trip planner. IDs are opaque strings. */
+export type {
+  DateWindow, ConstraintValue, PendingConfirmation, SendResult, TripMember, TripConfig,
+  ActionableItem, TripConversationContext,
+  ConstraintUpdate as ChatConstraintUpdate,
+  TripAction as ChatTripAction,
+  TripCommand as ChatTripCommand,
+  ParseResult as ChatParseResult,
+  ConversationService as ChatConversationService,
+  ChatMode as ChatTopology,
+} from './conversation.js';
+export type ISODateTime = string;
+export type MemberId = string;
+export type TripId = string;
+
 export interface InboundMessage {
-  eventId: string; messageId: string; senderId: string; spaceId: string;
-  visibility: 'group' | 'private'; occurredAt: string; text?: string;
-  imageUrls?: string[]; reaction?: { targetMessageId: string; emoji: string };
+  eventId: string;
+  messageId: string;
+  senderId: MemberId;
+  spaceId: string;
+  visibility: 'group' | 'private';
+  occurredAt: ISODateTime;
+  text?: string;
+  reaction?: { targetMessageId: string; emoji: string };
 }
-export type CommandPayload =
-  | { kind: 'add_bill'; amountCents: number; title: string; dueDate: string; recipientId: string; cycleId: string }
-  | { kind: 'approve'; proposalId: string; proposalVersion: number }
-  | { kind: 'decline'; proposalId: string; proposalVersion: number }
-  | { kind: 'request_coverage'; billId: string }
-  | { kind: 'share_coverage_request'; requestId: string; consent: boolean }
-  | { kind: 'offer_coverage'; requestId: string; amountCents: number }
-  | { kind: 'correct_bill'; billId: string; amountCents: number; title: string; dueDate: string; recipientId: string }
-  | { kind: 'get_summary'; cycleId: string };
-export interface Command { commandId: string; actorId: string; householdId: string; sourceEventId: string; payload: CommandPayload }
+
+export interface AvailabilityWindow {
+  startAt: ISODateTime;
+  endAt: ISODateTime;
+  timeZone: string;
+}
+
+export interface ConstraintValueByField {
+  budget: number;
+  availability: AvailabilityWindow[];
+  preferences: string[];
+  must_dos: string[];
+  transport: { mode: 'road_trip'; hasVehicle: boolean; notes?: string };
+  region: { label: string; maxTravelMinutes: number };
+  duration: { nights: number };
+  origin: { city: string; region: string; timeZone: string };
+}
+
+export type ConstraintField = keyof ConstraintValueByField;
+export type ConstraintUpdate = {
+  [Field in ConstraintField]: {
+    memberId: MemberId;
+    field: Field;
+    value: ConstraintValueByField[Field];
+    sourceMessageId: string;
+    certainty: 'tentative' | 'confirmed';
+  }
+}[ConstraintField];
+
+export type TripAction =
+  | { kind: 'update_constraint'; update: ConstraintUpdate }
+  | { kind: 'request_plans' }
+  | { kind: 'select_candidate'; candidateId: string; revision: number }
+  | { kind: 'accept_candidate'; candidateId: string; revision: number }
+  | { kind: 'ask_guide'; question: string }
+  | { kind: 'confirm_cost'; candidateId: string; revision: number; costId: string; lowCents: number; highCents: number; sourceMessageId: string }
+  | { kind: 'confirm_stop'; candidateId: string; revision: number; item: ItineraryItem; sourceMessageId: string }
+  | { kind: 'request_funding' };
+
+export interface TripCommand {
+  commandId: string;
+  eventId: string;
+  actorId: MemberId;
+  tripId: TripId;
+  action: TripAction;
+}
+
+export interface SourceEvidence {
+  evidenceId: string;
+  url: string;
+  title: string;
+  retrievedAt: ISODateTime;
+  publishedAt?: ISODateTime;
+  kind: 'official' | 'community' | 'estimate' | 'web';
+  claim: string;
+  uncertainty?: string;
+}
+
+export interface CostItem {
+  costId: string;
+  category: 'accommodation' | 'transport' | 'food' | 'activity' | 'taxes_fees' | 'other';
+  label: string;
+  lowCents: number;
+  highCents: number;
+  allocation: 'equal_shared' | 'personal';
+  memberId?: MemberId;
+  evidenceIds: string[];
+  priceStatus: 'verified' | 'estimate' | 'unknown';
+  essential?: boolean;
+}
+
+export interface ItineraryItem {
+  itemId: string;
+  location: string;
+  startAt: ISODateTime;
+  endAt: ISODateTime;
+  travelMinutesEstimate?: number;
+  evidenceIds: string[];
+  notes?: string;
+  tags?: string[];
+  label?: string;
+}
+
+export interface PersonCostTotal {
+  memberId: MemberId;
+  lowCents: number;
+  highCents: number;
+}
+
+export interface FeasibilityResult {
+  feasible: boolean;
+  violatedConstraints: Array<{ memberId?: MemberId; constraint: string; explanation: string }>;
+  unknownEssentials: string[];
+}
+
+export interface TripCandidate {
+  itineraryConfirmed?: boolean;
+  dataSource?: 'fixture' | 'live';
+  candidateId: string;
+  revision: number;
+  title: string;
+  startAt: ISODateTime;
+  endAt: ISODateTime;
+  itinerary: ItineraryItem[];
+  costs: CostItem[];
+  contingencyCents: number;
+  perPersonTotals: PersonCostTotal[];
+  evidence: SourceEvidence[];
+  tradeoffs: string[];
+  feasibility: FeasibilityResult;
+}
+
+export type MemberConstraintRecord = {
+  [Field in ConstraintField]: {
+    memberId: MemberId;
+    field: Field;
+    value: ConstraintValueByField[Field];
+    sourceMessageId: string;
+    certainty: 'tentative' | 'confirmed';
+    updatedAt: ISODateTime;
+  }
+}[ConstraintField];
+
+export type GroupConstraintRecord = {
+  [Field in 'origin' | 'region' | 'duration' | 'transport']: {
+    field: Field;
+    value: ConstraintValueByField[Field];
+    sourceMessageId: string;
+    certainty: 'tentative' | 'confirmed';
+  }
+}['origin' | 'region' | 'duration' | 'transport'];
+
+export interface Acceptance {
+  actorId: MemberId;
+  candidateId: string;
+  revision: number;
+  acceptedAt: ISODateTime;
+}
+
+export interface PendingQuestion {
+  questionId: string;
+  audience: 'group' | 'private';
+  memberId?: MemberId;
+  field: ConstraintField;
+  text: string;
+  askedAt: ISODateTime;
+}
+
+export interface TripState {
+  pendingConfirmations?: Record<MemberId, { field: 'budget'; valueCents: number }>;
+  costConfirmations?: Array<{ actorId: MemberId; candidateId: string; costId: string; revision: number; sourceMessageId: string; confirmedAt: string }>;
+  itineraryConfirmations?: Array<{ actorId: MemberId; candidateId: string; itemId: string; revision: number; sourceMessageId: string; confirmedAt: string }>;
+  roster?: Array<{ memberId: MemberId; displayName: string; consented: boolean }>;
+  timeZone?: string;
+  tripId: TripId;
+  revision: number;
+  status: 'gathering' | 'researching' | 'proposed' | 'awaiting_acceptance' | 'approved';
+  memberConstraints: MemberConstraintRecord[];
+  groupConstraints: GroupConstraintRecord[];
+  candidates: TripCandidate[];
+  selectedCandidateId?: string;
+  acceptances: Acceptance[];
+  pendingQuestions: PendingQuestion[];
+  fundingStatus: 'disabled' | 'requesting' | 'partially_funded' | 'funded' | 'unknown' | 'failed';
+}
+
+export interface ReadinessResult {
+  ready: boolean;
+  missing: string[];
+  conflicts: string[];
+  questions: Array<{ audience: 'group' | 'private'; memberId?: MemberId; text: string }>;
+}
+
 export interface OutboundMessage {
-  deliveryId: string; householdId: string;
-  audience: { kind: 'group'; spaceId: string } | { kind: 'private'; userId: string };
-  text: string; proposalRef?: { proposalId: string; proposalVersion: number };
+  deliveryId: string;
+  audience: { kind: 'group'; spaceId: string } | { kind: 'private'; memberId: MemberId };
+  text: string;
+  proposalRef?: { candidateId: string; revision: number; kind?: 'select' | 'accept' };
 }
-export type DomainErrorCode = 'UNAUTHORIZED_ACTOR' | 'UNKNOWN_RESOURCE' | 'INVALID_AMOUNT' | 'AMBIGUOUS_ACTION' | 'STALE_PROPOSAL' | 'ALREADY_SUBMITTED' | 'COVERAGE_UNAVAILABLE' | 'INSUFFICIENT_HOUSE_FUNDS' | 'BANK_UNAVAILABLE' | 'BANK_OUTCOME_UNKNOWN' | 'INVALID_CYCLE_TRANSITION';
-export type ExecuteResult = { kind: 'accepted' | 'duplicate' } | { kind: 'rejected'; code: DomainErrorCode; userMessage: string };
-export interface HouseholdSnapshot {
-  householdId: string; cycleId: string; currency: 'USD'; balanceCents: number;
-  bills: Array<{ billId: string; title: string; amountCents: number; dueDate: string; status: 'draft' | 'collecting' | 'ready' | 'paid' | 'failed' }>;
-  contributions: Array<{ billId: string; userId: string; agreedCents: number; confirmedCents: number; coveredForUserId?: string }>;
-  debts: Array<{ debtId: string; debtorId: string; creditorId: string; originalCents: number; remainingCents: number }>;
-  activity: Array<{ activityId: string; occurredAt: string; description: string; status: 'pending' | 'confirmed' | 'failed' | 'unknown' }>;
+
+export interface ActionablePlan {
+  candidateId: string;
+  revision: number;
+  title: string;
+  actions: Array<'pick' | 'accept'>;
 }
+
+export interface ProposalReference {
+  kind?: 'select' | 'accept';
+  candidateId: string;
+  revision: number;
+}
+
+export type ParseResult =
+  | { kind: 'command'; command: TripCommand }
+  | { kind: 'commands'; commands: TripCommand[]; clarificationQuestion?: string; expects?: { field: 'budget'; valueCents: number } }
+  | { kind: 'reply'; message: OutboundMessage; expects?: { field: 'budget'; valueCents: number } }
+  | { kind: 'ignored'; reason: string };
+
 export interface ConversationContext {
-  householdId: string; cycleId: string; openBills: Array<{ billId: string; title: string }>;
-  actionableProposals: Array<{ proposalId: string; proposalVersion: number; description: string }>;
-  privateCoverageRequestId?: string; targetProposal?: { proposalId: string; proposalVersion: number };
+  pendingConfirmation?: { field: 'budget'; valueCents: number };
+  tripId: TripId;
+  revision: number;
+  status: TripState['status'];
+  actionable: ActionablePlan[];
+  targetProposal?: ProposalReference;
+  pendingQuestion?: { questionId: string; field: ConstraintField };
 }
-export interface HouseholdConfig {
-  householdId: string; groupSpaceId: string; designatedPayerId: string; householdAccountId: string;
-  members: Array<{ userId: string; displayName: string; providerUserId: string; bankAccountId: string }>;
-  recipients: Array<{ recipientId: string; displayName: string; bankAccountId: string }>;
-  demoCycles: Array<{ cycleId: string; bills: Array<{ title: string; amountCents: number; dueDate: string; recipientId: string }> }>;
-}
-export type ParseResult = { kind: 'command'; command: Command } | { kind: 'reply'; message: OutboundMessage } | { kind: 'ignored'; reason: string };
+
 export interface ConversationService {
-  parseInbound(message: InboundMessage): Promise<ParseResult>;
-  sendMessage(message: OutboundMessage): Promise<{ providerMessageId: string }>;
+  parseInbound(message: InboundMessage, context: ConversationContext): Promise<ParseResult>;
+  sendMessage(message: OutboundMessage): Promise<Array<{ providerMessageId: string }>>;
   start(onMessage: (message: InboundMessage) => Promise<void>): Promise<void>;
   stop(): Promise<void>;
 }
-export interface FinanceService {
-  execute(command: Command): Promise<ExecuteResult>; reconcile(householdId: string): Promise<void>;
-  getSnapshot(householdId: string): Promise<HouseholdSnapshot>; pendingMessages(): Promise<OutboundMessage[]>;
-  enqueueMessage(message: OutboundMessage): Promise<void>; recordDelivery(deliveryId: string, providerMessageId: string): Promise<void>;
-  lookupProposal(providerMessageId: string): Promise<{ proposalId: string; proposalVersion: number } | null>;
-  advanceDemoCycle(householdId: string, cycleId: string): Promise<void>;
-  getConversationContext(actorId: string, spaceId: string, targetMessageId?: string): Promise<ConversationContext>;
-  processReminders(householdId: string): Promise<void>; bootstrapHousehold(config: HouseholdConfig): Promise<void>;
-  seedDemoBanking(config: HouseholdConfig): Promise<HouseholdConfig>; claimInbound(eventId: string): Promise<boolean>;
-  completeInbound(eventId: string): Promise<void>; close(): Promise<void>;
+
+export interface AvailabilityProvider {
+  getBusyIntervals(memberId: MemberId, from: ISODateTime, to: ISODateTime): Promise<AvailabilityWindow[]>;
+}
+
+export type DomainRejectionCode =
+  | 'UNKNOWN_MEMBER'
+  | 'INVALID_CONSTRAINT'
+  | 'AMBIGUOUS_ACTION'
+  | 'STALE_REVISION'
+  | 'NOT_READY'
+  | 'INFEASIBLE_PLAN'
+  | 'MISSING_APPROVAL'
+  | 'RESEARCH_UNAVAILABLE';
+
+export interface ParticipantEnrollment {
+  memberId: MemberId;
+  displayName: string;
+  providerUserId: string;
+  consentedAt?: ISODateTime;
+}
+
+export interface TripEnrollment {
+  tripId: TripId;
+  groupSpaceId: string;
+  participants: ParticipantEnrollment[];
+}
+
+export interface PublicTripSnapshot {
+  tripId: TripId;
+  revision: number;
+  status: TripState['status'];
+  participants: Array<{ memberId: MemberId; displayName: string }>;
+  selectedCandidate?: TripCandidate;
+  candidates: TripCandidate[];
+  acceptances: Acceptance[];
+  fundingStatus: TripState['fundingStatus'];
+}
+
+export interface Repository {
+  bootstrapTrip(enrollment: TripEnrollment, initialState: TripState): Promise<void>;
+  getEnrollment(tripId: TripId): Promise<TripEnrollment | null>;
+  loadTrip(tripId: TripId): Promise<TripState | null>;
+  saveTripIfRevision(state: TripState, expectedRevision: number): Promise<boolean>;
+  hasProcessedEvent(eventId: string): Promise<boolean>;
+  recordEvent(eventId: string): Promise<boolean>;
+  commitEvent(input: {
+    eventId: string;
+    state: TripState;
+    expectedRevision: number;
+    messages: OutboundMessage[];
+  }): Promise<'committed' | 'duplicate' | 'stale'>;
+  enqueueMessages(messages: OutboundMessage[]): Promise<void>;
+  pendingMessages(): Promise<OutboundMessage[]>;
+  recordDelivery(deliveryId: string, providerMessageIds: string[]): Promise<void>;
+  lookupProposal(providerMessageId: string): Promise<ProposalReference | null>;
+  getPublicSnapshot(tripId: TripId): Promise<PublicTripSnapshot | null>;
 }
