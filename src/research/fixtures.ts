@@ -135,7 +135,8 @@ export function searchFixtures(data: FixtureData, request: ResearchRequest, retr
   const matches = data.options.filter((o) => {
     const isGuideOnly = o.tags.includes('rain');
     if (request.purpose === 'plan' && isGuideOnly) return false;
-    if (request.purpose === 'guide' && isGuideOnly !== rainy) return false;
+    // Guide questions are answered only from sources about the question; the fixture knows only about rain.
+    if (request.purpose === 'guide' && !(isGuideOnly && rainy)) return false;
     if (destination && !`${o.name} ${o.region} ${o.stops.map((s) => s.location).join(' ')}`.toLowerCase().includes(destination)) return false;
     if (!destination && region && !o.region.toLowerCase().includes(region)) return false;
     if (request.maxTravelMinutes !== undefined && o.driveMinutesFromOrigin !== undefined && o.driveMinutesFromOrigin > request.maxTravelMinutes) return false;
