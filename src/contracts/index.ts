@@ -30,7 +30,7 @@ export interface AvailabilityWindow {
   timeZone: string;
 }
 
-export interface ConstraintValueByField {
+export interface StoredConstraintValueByField {
   budget: number;
   availability: AvailabilityWindow[];
   preferences: string[];
@@ -41,16 +41,39 @@ export interface ConstraintValueByField {
   origin: { city: string; region: string; timeZone: string };
 }
 
-export type ConstraintField = keyof ConstraintValueByField;
-export type ConstraintUpdate = {
+export type ConstraintField = keyof StoredConstraintValueByField;
+
+/** Canonical command values. Parsed region/transport metadata lives beside value. */
+export interface ConstraintValueByField {
+  budget: number;
+  availability: AvailabilityWindow[];
+  preferences: string[];
+  must_dos: string[];
+  transport: string;
+  region: string;
+  duration: number;
+  origin: string;
+}
+/** Storage format retained for existing SQLite records; command values below are flat. */
+export type StoredConstraintUpdate = {
   [Field in ConstraintField]: {
     memberId: MemberId;
     field: Field;
-    value: ConstraintValueByField[Field];
+    value: StoredConstraintValueByField[Field];
     sourceMessageId: string;
     certainty: 'tentative' | 'confirmed';
   }
 }[ConstraintField];
+
+export type ConstraintUpdate = (
+  | { field: 'budget'; value: number }
+  | { field: 'availability'; value: AvailabilityWindow[] }
+  | { field: 'preferences' | 'must_dos'; value: string[] }
+  | { field: 'region'; value: string; maxTravelMinutes?: number }
+  | { field: 'transport'; value: string; vehicleAvailable?: boolean }
+  | { field: 'origin'; value: string }
+  | { field: 'duration'; value: number }
+) & { memberId: MemberId; sourceMessageId: string; certainty: 'tentative' | 'confirmed' };
 
 export type TripAction =
   | { kind: 'update_constraint'; update: ConstraintUpdate }
@@ -139,7 +162,7 @@ export type MemberConstraintRecord = {
   [Field in ConstraintField]: {
     memberId: MemberId;
     field: Field;
-    value: ConstraintValueByField[Field];
+    value: StoredConstraintValueByField[Field];
     sourceMessageId: string;
     certainty: 'tentative' | 'confirmed';
     updatedAt: ISODateTime;
@@ -148,8 +171,9 @@ export type MemberConstraintRecord = {
 
 export type GroupConstraintRecord = {
   [Field in 'origin' | 'region' | 'duration' | 'transport']: {
+    memberId: MemberId;
     field: Field;
-    value: ConstraintValueByField[Field];
+    value: StoredConstraintValueByField[Field];
     sourceMessageId: string;
     certainty: 'tentative' | 'confirmed';
   }

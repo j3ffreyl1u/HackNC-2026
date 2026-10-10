@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import type {
   AvailabilityWindow,
-  ConstraintValueByField,
+  StoredConstraintValueByField as ConstraintValueByField,
   MemberConstraintRecord,
   TripEnrollment,
   TripState,
@@ -107,6 +107,7 @@ export function buildDemoTrip(fixture: DemoTripFixture): DemoTripData {
     ] as MemberConstraintRecord[];
   });
   const sourceMessageId = 'fixture:group-constraints';
+  const memberId = fixture.participants[0].memberId;
   const state: TripState = {
     timeZone: firstOrigin.timeZone,
     roster: enrollment.participants.map(p => ({ memberId: p.memberId, displayName: p.displayName, consented: Boolean(p.consentedAt) })),
@@ -115,10 +116,10 @@ export function buildDemoTrip(fixture: DemoTripFixture): DemoTripData {
     status: 'gathering',
     memberConstraints,
     groupConstraints: [
-      { field: 'origin', value: firstOrigin, sourceMessageId, certainty: 'confirmed' },
-      { field: 'region', value: fixture.groupConstraints.destinationRegion, sourceMessageId, certainty: 'confirmed' },
-      { field: 'duration', value: { nights: fixture.groupConstraints.durationNights }, sourceMessageId, certainty: 'confirmed' },
-      { field: 'transport', value: fixture.groupConstraints.transport, sourceMessageId, certainty: 'confirmed' },
+      { memberId, field: 'origin', value: firstOrigin, sourceMessageId, certainty: 'confirmed' },
+      { memberId, field: 'region', value: fixture.groupConstraints.destinationRegion, sourceMessageId, certainty: 'confirmed' },
+      { memberId, field: 'duration', value: { nights: fixture.groupConstraints.durationNights }, sourceMessageId, certainty: 'confirmed' },
+      { memberId, field: 'transport', value: fixture.groupConstraints.transport, sourceMessageId, certainty: 'confirmed' },
     ],
     candidates: [],
     acceptances: [],

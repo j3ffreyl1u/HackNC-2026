@@ -9,17 +9,31 @@ import { localMidnight, createChatAdapter, convert } from '../../src/app/convers
 import { createResearchProvider } from '../../src/research/provider.js';
 import { defaultFixtures } from '../../src/research/fixtures.js';
 import { SqliteTripRepository } from '../../src/storage/sqlite-repository.js';
+import { resolveGroupField } from '../../src/planning/constraints.js';
 
 describe('integrated chat planner', () => {
+  it('keeps conflicting group positions attributed to their original members', async () => {
+    const trip = await loadDemoTrip('tests/fixtures/trip.json');
+    const planner = createPlannerAdapter(createResearchProvider({ mode: 'mock', fixtures: defaultFixtures }), trip.enrollment.groupSpaceId);
+    const result = planner.applyCommand(trip.state, { commandId: 'origin', eventId: 'origin', actorId: 'alex', tripId: trip.state.tripId, action: { kind: 'update_constraint', update: { memberId: 'alex', field: 'origin', value: 'Durham', sourceMessageId: 'alex-origin', certainty: 'confirmed' } } }, { now: '2026-10-10T16:00:00Z' });
+    expect(result.state.groupConstraints.filter(r => r.field === 'origin').map(r => r.memberId).sort()).toEqual(['alex', 'mason']);
+    expect(resolveGroupField(toPlanningState(result.state), 'origin').status).toBe('conflict');
+  });
+  it('normalizes inclusive dates across DST once and preserves already-normalized intervals', () => {
+    const base = { commandId: 'dates', eventId: 'dates', actorId: 'alex', tripId: 'trip' };
+    const command = convert({ ...base, action: { kind: 'update_constraint', update: { memberId: 'alex', field: 'availability', value: [{ start: '2026-11-01', end: '2026-11-01' }], sourceMessageId: 'dates', certainty: 'confirmed' } } }, 'America/New_York');
+    if (command.action.kind === 'update_constraint') expect(command.action.update.value).toEqual([{ startAt: '2026-11-01T04:00:00.000Z', endAt: '2026-11-02T05:00:00.000Z', timeZone: 'America/New_York' }]);
+    expect(convert(command, 'America/New_York')).toEqual(command);
+  });
   it('preserves A explicit drive limits and vehicle availability without inventing a limit', () => {
     const base = { commandId: 'cmd', eventId: 'evt', actorId: 'alex', tripId: 'trip' };
     const source = { memberId: 'alex', sourceMessageId: 'message', certainty: 'confirmed' as const };
     const region = convert({ ...base, action: { kind: 'update_constraint', update: { ...source, field: 'region', value: 'NC mountains', maxTravelMinutes: 90 } } }, 'America/New_York');
-    if (region.action.kind === 'update_constraint') expect(region.action.update.value).toEqual({ label: 'NC mountains', maxTravelMinutes: 90 });
+    if (region.action.kind === 'update_constraint') expect(region.action.update).toMatchObject({ value: 'NC mountains', maxTravelMinutes: 90 });
     const unbounded = convert({ ...base, action: { kind: 'update_constraint', update: { ...source, field: 'region', value: 'NC mountains' } } }, 'America/New_York');
-    if (unbounded.action.kind === 'update_constraint') expect(unbounded.action.update.value).toEqual({ label: 'NC mountains' });
+    if (unbounded.action.kind === 'update_constraint') { expect(unbounded.action.update.value).toBe('NC mountains'); expect(unbounded.action.update).not.toHaveProperty('maxTravelMinutes'); }
     const transport = convert({ ...base, action: { kind: 'update_constraint', update: { ...source, field: 'transport', value: 'own_vehicle', vehicleAvailable: false } } }, 'America/New_York');
-    if (transport.action.kind === 'update_constraint') expect(transport.action.update.value).toEqual({ mode: 'road_trip', hasVehicle: false });
+    if (transport.action.kind === 'update_constraint') expect(transport.action.update).toMatchObject({ value: 'own_vehicle', vehicleAvailable: false });
   });
   it('runs three actors, revises $190/$180 options, renews approval, answers guide, and persists safely', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'trip-integration-'));
@@ -77,6 +91,7 @@ describe('integrated chat planner', () => {
     expect(applied.state.acceptances).toEqual([]);
     const repriced = toPlanningState(applied.state).candidates.find(c => c.candidateId === candidate.candidateId)!;
     expect(repriced.feasibility.unknownEssentials).not.toContain(cost.label);
-    expect(repriced.evidence.at(-1)?.title).toBe('Participant-confirmed estimate');
+    expect(repriced.evidence.some(e => e.url === '')).toBe(false);
+    expect(applied.state.costConfirmations?.at(-1)?.sourceMessageId).toBe('cost-message');
   });
 });
