@@ -1,0 +1,341 @@
+import { describe, expect, it } from 'vitest';
+import { recordConstraint } from '../../src/planning/constraints.js';
+import { checkReadiness, openQuestionKeys } from '../../src/planning/readiness.js';
+import {
+  BUDGET_QUESTION,
+  MAX_QUESTIONS_PER_TURN,
+  QUESTION_COOLDOWN_MS,
+  clearAnsweredQuestions,
+  recordQuestions,
+} from '../../src/planning/questions.js';
+import { createTrip } from '../../src/planning/state.js';
+import type { Certainty, ConstraintField, ConstraintUpdate, ConstraintValues, TripState } from '../../src/planning/types.js';
+
+const roster = [
+  { memberId: 'mason', displayName: 'Mason', consented: true },
+  { memberId: 'alex', displayName: 'Alex', consented: true },
+  { memberId: 'jordan', displayName: 'Jordan', consented: true },
+];
+const members = roster.map((m) => m.memberId);
+
+const NOW = '2026-10-10T12:00:00.000Z';
+const CAPS: Record<string, number> = { mason: 20_000, alex: 25_000, jordan: 30_000 };
+// Friday 17:00 to Sunday 20:00 UTC: 51 hours, enough for two nights.
+const WEEKEND = { startAt: '2026-10-16T17:00:00.000Z', endAt: '2026-10-18T20:00:00.000Z' };
+const OTHER_WEEKEND = { startAt: '2026-10-23T17:00:00.000Z', endAt: '2026-10-25T20:00:00.000Z' };
+
+let counter = 0;
+function put<F extends ConstraintField>(
+  state: TripState,
+  memberId: string,
+  field: F,
+  value: ConstraintValues[F],
+  certainty: Certainty = 'confirmed',
+): TripState {
+  const update = { memberId, field, value, sourceMessageId: `m-${++counter}`, certainty } as ConstraintUpdate;
+  return recordConstraint(state, update, NOW);
+}
+
+type Slot = 'origin' | 'duration' | 'region' | 'transport' | 'availability' | 'budget' | 'preferences';
+
+/** The canonical three-person fixture, with any listed slots left unanswered. */
+function trip(omit: Slot[] = [], people = roster): TripState {
+  let state = createTrip('trip-1', people);
+  const ids = people.map((m) => m.memberId);
+  for (const id of ids) {
+    if (!omit.includes('availability')) state = put(state, id, 'availability', { intervals: [WEEKEND, OTHER_WEEKEND] });
+    if (!omit.includes('budget')) state = put(state, id, 'budget', { cents: CAPS[id] ?? 20_000 });
+    if (!omit.includes('preferences')) state = put(state, id, 'preferences', { items: ['hiking'] });
+    if (!omit.includes('origin')) state = put(state, id, 'origin', { city: 'Chapel Hill' });
+    if (!omit.includes('duration')) state = put(state, id, 'duration', { nights: 2 });
+    if (!omit.includes('region')) state = put(state, id, 'region', { searchRegion: 'NC mountains', maxTravelMinutes: 240 });
+    if (!omit.includes('transport')) state = put(state, id, 'transport', { mode: 'car', vehicleAvailable: true });
+  }
+  return state;
+}
+
+describe('checkReadiness: the complete fixture', () => {
+  it('is ready with nothing missing, no conflicts and nothing to ask', () => {
+    expect(checkReadiness(trip())).toEqual({ ready: true, missing: [], conflicts: [], questions: [] });
+  });
+
+  it('accepts "no preference" as a stated preference', () => {
+    let state = trip(['preferences']);
+    for (const id of members) state = put(state, id, 'preferences', { items: ['no preference'] });
+    expect(checkReadiness(state).ready).toBe(true);
+  });
+
+  it('does not depend on how much has been said, only on recorded constraints', () => {
+    const quiet = trip();
+    const chatty = { ...quiet, revision: quiet.revision + 50 };
+    expect(checkReadiness(chatty)).toEqual(checkReadiness(quiet));
+  });
+});
+
+describe('checkReadiness: every required slot blocks readiness', () => {
+  it.each([
+    ['origin', 'origin'],
+    ['duration', 'duration'],
+    ['region', 'region'],
+    ['transport', 'transport'],
+  ] as const)('missing %s is reported', (slot, key) => {
+    const result = checkReadiness(trip([slot]));
+    expect(result.ready).toBe(false);
+    expect(result.missing).toContain(key);
+    expect(result.questions.length).toBeGreaterThan(0);
+  });
+
+  it('missing availability is reported per participant', () => {
+    const result = checkReadiness(trip(['availability']));
+    expect(result.ready).toBe(false);
+    expect(result.missing).toEqual(members.map((id) => `availability:${id}`));
+  });
+
+  it('a single missing availability names only that person', () => {
+    let state = trip(['availability']);
+    for (const id of ['mason', 'alex']) state = put(state, id, 'availability', { intervals: [WEEKEND] });
+    const result = checkReadiness(state);
+    expect(result.missing).toEqual(['availability:jordan']);
+    expect(result.questions[0].text).toContain('Jordan');
+    expect(result.questions[0].text).not.toContain('Mason');
+  });
+
+  it('missing budgets are reported per participant', () => {
+    const result = checkReadiness(trip(['budget']));
+    expect(result.ready).toBe(false);
+    expect(result.missing).toEqual(members.map((id) => `budget:${id}`));
+  });
+
+  it('missing preferences are reported per participant', () => {
+    const result = checkReadiness(trip(['preferences']));
+    expect(result.ready).toBe(false);
+    expect(result.missing).toEqual(members.map((id) => `preferences:${id}`));
+  });
+
+  it('a car is required for the road-trip MVP', () => {
+    let state = trip(['transport']);
+    for (const id of members) state = put(state, id, 'transport', { mode: 'car', vehicleAvailable: false });
+    const result = checkReadiness(state);
+    expect(result.ready).toBe(false);
+    expect(result.missing).toContain('vehicle');
+    expect(result.missing).not.toContain('transport');
+  });
+
+  it('a destination alone, or a travel-time bound alone, satisfies the region', () => {
+    for (const region of [{ destination: 'Asheville' }, { maxTravelMinutes: 180 }]) {
+      let state = trip(['region']);
+      for (const id of members) state = put(state, id, 'region', region);
+      expect(checkReadiness(state).missing).not.toContain('region');
+    }
+  });
+});
+
+describe('checkReadiness: people', () => {
+  it('waits for a member who has not consented and never counts them', () => {
+    const people = roster.map((m) => (m.memberId === 'jordan' ? { ...m, consented: false } : m));
+    const result = checkReadiness(trip([], people));
+    expect(result.ready).toBe(false);
+    expect(result.missing).toContain('consent:jordan');
+    expect(result.questions[0].text).toContain('Jordan');
+    // Only consenting people are asked for details.
+    expect(result.missing.some((k) => k.endsWith(':jordan') && !k.startsWith('consent'))).toBe(false);
+  });
+
+  it('needs at least two participants', () => {
+    const result = checkReadiness(trip([], roster.slice(0, 1)));
+    expect(result.ready).toBe(false);
+    expect(result.missing).toContain('roster');
+  });
+});
+
+describe('checkReadiness: tentative and conflicting answers', () => {
+  it('a tentative group answer is not an answer, and the question asks to confirm it', () => {
+    let state = trip(['origin']);
+    state = put(state, 'mason', 'origin', { city: 'Raleigh' }, 'tentative');
+    const result = checkReadiness(state);
+    expect(result.missing).toContain('origin');
+    expect(result.questions[0].text).toMatch(/confirm/i);
+  });
+
+  it.each([
+    ['origin', { city: 'Chapel Hill' }, { city: 'Durham' }],
+    ['duration', { nights: 2 }, { nights: 3 }],
+    ['region', { searchRegion: 'NC mountains' }, { searchRegion: 'NC coast' }],
+  ] as const)('different %s positions are a conflict with a targeted question, not a missing slot', (field, a, b) => {
+    let state = trip([field]);
+    state = put(state, 'mason', field, a as never);
+    state = put(state, 'alex', field, b as never);
+    state = put(state, 'jordan', field, a as never);
+    const result = checkReadiness(state);
+    expect(result.ready).toBe(false);
+    expect(result.conflicts).toContain(field);
+    expect(result.missing).not.toContain(field);
+    expect(result.questions[0].text).toMatch(/which/i);
+  });
+
+  it('a restated agreement resolves the conflict', () => {
+    let state = trip(['duration']);
+    state = put(state, 'mason', 'duration', { nights: 2 });
+    state = put(state, 'alex', 'duration', { nights: 3 });
+    state = put(state, 'jordan', 'duration', { nights: 2 });
+    state = put(state, 'alex', 'duration', { nights: 2 });
+    expect(checkReadiness(state).ready).toBe(true);
+  });
+
+  it('a tentative budget change after a confirmed one asks privately and does not leak to the group', () => {
+    const state = put(trip(), 'mason', 'budget', { cents: 15_000 }, 'tentative');
+    const result = checkReadiness(state);
+    expect(result.ready).toBe(false);
+    expect(result.conflicts).toEqual(['budget_unconfirmed:mason']);
+    expect(result.questions).toHaveLength(1);
+    expect(result.questions[0].audience).toEqual({ kind: 'private', memberId: 'mason' });
+  });
+
+  it('a tentative availability change asks the person privately', () => {
+    const state = put(trip(), 'alex', 'availability', { intervals: [OTHER_WEEKEND] }, 'tentative');
+    const result = checkReadiness(state);
+    expect(result.conflicts).toEqual(['availability_unconfirmed:alex']);
+    expect(result.questions[0].audience).toEqual({ kind: 'private', memberId: 'alex' });
+  });
+
+  it('a floated must-do is not silently dropped', () => {
+    const state = put(trip(), 'jordan', 'must_dos', { items: ['vegetarian food'] }, 'tentative');
+    const result = checkReadiness(state);
+    expect(result.conflicts).toEqual(['must_dos_unconfirmed:jordan']);
+    expect(result.questions[0].audience).toEqual({ kind: 'private', memberId: 'jordan' });
+  });
+});
+
+describe('checkReadiness: dates', () => {
+  it('overlapping windows long enough for the trip are valid', () => {
+    let state = trip(['availability']);
+    state = put(state, 'mason', 'availability', { intervals: [WEEKEND] });
+    state = put(state, 'alex', 'availability', { intervals: [WEEKEND, OTHER_WEEKEND] });
+    state = put(state, 'jordan', 'availability', { intervals: [OTHER_WEEKEND, WEEKEND] });
+    expect(checkReadiness(state).ready).toBe(true);
+  });
+
+  it('disjoint windows are a date conflict that asks which dates are right', () => {
+    let state = trip(['availability']);
+    state = put(state, 'mason', 'availability', { intervals: [WEEKEND] });
+    state = put(state, 'alex', 'availability', { intervals: [OTHER_WEEKEND] });
+    state = put(state, 'jordan', 'availability', { intervals: [WEEKEND, OTHER_WEEKEND] });
+    const result = checkReadiness(state);
+    expect(result.ready).toBe(false);
+    expect(result.conflicts).toContain('dates');
+    expect(result.questions[0].audience).toEqual({ kind: 'group' });
+    expect(result.questions[0].text).toMatch(/which of the dates/i);
+  });
+
+  it('an overlap too short for the trip length is a conflict', () => {
+    let state = trip(['availability']);
+    state = put(state, 'mason', 'availability', { intervals: [WEEKEND] });
+    state = put(state, 'alex', 'availability', { intervals: [{ startAt: '2026-10-18T12:00:00.000Z', endAt: '2026-10-18T20:00:00.000Z' }] });
+    state = put(state, 'jordan', 'availability', { intervals: [WEEKEND] });
+    expect(checkReadiness(state).conflicts).toContain('dates');
+  });
+
+  it('the same overlap works for a shorter trip', () => {
+    let state = trip(['availability', 'duration']);
+    for (const id of members) state = put(state, id, 'duration', { nights: 1 });
+    state = put(state, 'mason', 'availability', { intervals: [WEEKEND] });
+    state = put(state, 'alex', 'availability', { intervals: [{ startAt: '2026-10-17T12:00:00.000Z', endAt: '2026-10-18T20:00:00.000Z' }] });
+    state = put(state, 'jordan', 'availability', { intervals: [WEEKEND] });
+    expect(checkReadiness(state).ready).toBe(true);
+  });
+
+  it('does not report a date conflict while someone still owes their dates', () => {
+    let state = trip(['availability']);
+    state = put(state, 'mason', 'availability', { intervals: [WEEKEND] });
+    state = put(state, 'alex', 'availability', { intervals: [OTHER_WEEKEND] });
+    const result = checkReadiness(state);
+    expect(result.conflicts).not.toContain('dates');
+    expect(result.missing).toEqual(['availability:jordan']);
+  });
+});
+
+describe('questions', () => {
+  it('asks for a missing budget in the exact words, privately', () => {
+    const result = checkReadiness(trip(['budget']));
+    expect(BUDGET_QUESTION).toBe("What's your maximum total for this trip, including food and travel?");
+    for (const q of result.questions) {
+      expect(q.text).toBe(BUDGET_QUESTION);
+      expect(q.audience.kind).toBe('private');
+    }
+  });
+
+  it('asks at most two questions in one turn, all about one topic', () => {
+    const result = checkReadiness(createTrip('empty', roster));
+    expect(result.questions.length).toBeGreaterThan(0);
+    expect(result.questions.length).toBeLessThanOrEqual(MAX_QUESTIONS_PER_TURN);
+    // The most basic gap comes first: the trip basics, not tastes or money.
+    expect(result.questions[0].key).toBe('origin');
+    expect(result.questions.map((q) => q.key)).toEqual(['origin', 'duration']);
+  });
+
+  it('asks people to confirm their consent before anything else', () => {
+    const people = roster.map((m) => (m.memberId === 'alex' ? { ...m, consented: false } : m));
+    const result = checkReadiness(createTrip('t', people));
+    expect(result.questions[0].key).toBe('consent');
+  });
+
+  it('never puts a private cap in a group question', () => {
+    const states = [trip(['budget']), put(trip(), 'mason', 'budget', { cents: 15_000 }, 'tentative')];
+    for (const state of states) {
+      for (const q of checkReadiness(state).questions) {
+        if (q.audience.kind === 'group') expect(q.text).not.toMatch(/\$|\d{4,}/);
+      }
+    }
+  });
+
+  it('does not repeat a recently asked unanswered question', () => {
+    const state = trip(['origin']);
+    const first = checkReadiness(state, { now: NOW });
+    expect(first.questions.map((q) => q.key)).toEqual(['origin']);
+
+    const asked = recordQuestions(state, first.questions, NOW);
+    const soon = new Date(Date.parse(NOW) + 60_000).toISOString();
+    const second = checkReadiness(asked, { now: soon });
+    // Still missing, but not nagged about.
+    expect(second.missing).toContain('origin');
+    expect(second.questions).toEqual([]);
+  });
+
+  it('asks again once the cooldown has passed', () => {
+    const state = trip(['origin']);
+    const asked = recordQuestions(state, checkReadiness(state, { now: NOW }).questions, NOW);
+    const later = new Date(Date.parse(NOW) + QUESTION_COOLDOWN_MS + 1).toISOString();
+    expect(checkReadiness(asked, { now: later }).questions.map((q) => q.key)).toEqual(['origin']);
+  });
+
+  it('moves on to the next unasked question while an earlier one is cooling down', () => {
+    const state = trip(['origin', 'duration', 'region']);
+    const firstTurn = checkReadiness(state, { now: NOW });
+    expect(firstTurn.questions.map((q) => q.key)).toEqual(['origin', 'duration']);
+    const asked = recordQuestions(state, firstTurn.questions, NOW);
+    expect(checkReadiness(asked, { now: NOW }).questions.map((q) => q.key)).toEqual(['region']);
+  });
+
+  it('recordQuestions replaces an earlier entry for the same key and leaves the input unchanged', () => {
+    const state = trip(['origin']);
+    const q = checkReadiness(state).questions;
+    const once = recordQuestions(state, q, NOW);
+    const twice = recordQuestions(once, q, '2026-10-11T12:00:00.000Z');
+    expect(state.pendingQuestions).toEqual([]);
+    expect(twice.pendingQuestions).toHaveLength(1);
+    expect(twice.pendingQuestions[0].askedAt).toBe('2026-10-11T12:00:00.000Z');
+  });
+
+  it('forgets a question once its answer arrives', () => {
+    const state = trip(['origin']);
+    const asked = recordQuestions(state, checkReadiness(state).questions, NOW);
+    expect(asked.pendingQuestions).toHaveLength(1);
+
+    const stillOpen = clearAnsweredQuestions(asked, openQuestionKeys(asked));
+    expect(stillOpen).toBe(asked);
+
+    let answered = asked;
+    for (const id of members) answered = put(answered, id, 'origin', { city: 'Chapel Hill' });
+    expect(clearAnsweredQuestions(answered, openQuestionKeys(answered)).pendingQuestions).toEqual([]);
+  });
+});
