@@ -42,12 +42,12 @@ Pivoting is a config change (`mode: 'direct'`). In `direct`, `groupSpaceId` is o
 | Spectrum DM, live | **Verified 2026-10-10 with this repo's adapter** (`spectrum.ts` + normalizer + parser, driven by a throwaway probe outside the repo): inbound DM parsed to a command, replies delivered, send returns a provider message id. One `ECONNRESET` on the stream recovered by itself |
 | Spectrum group chat, live | **Not working on the shared line** (no events reached the app). Photon docs list group creation/events as dedicated-line only. `direct` mode is the fallback |
 | Spectrum reactions, live (DM) | **Verified 2026-10-10**: a thumbs-up on a bot message arrived as a reaction bound to that message's provider id and parsed to `select_candidate`. Removed-tapback surfacing still unverified |
-| Gemini request/response | Request shape from the structured-output docs; response layout extraction is tolerant. **Unverified live**; prompt/schema retargeted but never run against the API |
+| Gemini, live | **Verified 2026-10-10** with `gemini-3.8-flash` via `models/{model}:generateContent` (JSON-schema output): chatter -> none; dates, preferences, dietary, spelled-out budget, plan requests and guide questions extracted; prompt-injection text and "Alex said his budget is 50" produced nothing. The first guessed endpoint (Interactions) and `gemini-2.5-flash` (closed to new users) returned 404. Eight hand-written messages, not a benchmark |
 
 Known limits: dates are calendar days in the trip timezone (no departure/return times yet); relative dates ("next weekend") are not parsed by rules, only by Gemini with explicit-date output; `src/finance` has 41 pre-existing `tsc` errors unrelated to this module.
 
 ## For C
-1. Add dependency `spectrum-ts@12.10.1` (only for `CHAT_MODE=photon`; imported lazily). Env names the SDK scaffold uses: `PROJECT_ID`, `PROJECT_SECRET`; plus `GEMINI_API_KEY`, `GEMINI_MODEL`. Node needs `--env-file=.env`.
+1. Add dependency `spectrum-ts@12.10.1` (only for `CHAT_MODE=photon`; imported lazily). Env names the SDK scaffold uses: `PROJECT_ID`, `PROJECT_SECRET`; plus `GEMINI_API_KEY`, `GEMINI_MODEL` (use `gemini-3.8-flash`; check `GET /v1beta/models` since older models close to new users). The Spectrum names in the team `.env` are `SPECTRUM_PROJECT_ID`/`SPECTRUM_PROJECT_SECRET`, so C should read those (or map them). Node needs `--env-file=.env`.
 2. Map a new env (suggest `CHAT_TOPOLOGY=group|direct`) to `TripConfig.mode`.
 3. Provide `TripConversationContext` per actor (including `pendingQuestion`, `pendingConfirmation` from the last reply's `expects`, and `targetProposal`), and bind each `deliveries[].providerMessageId` to the proposal so reactions resolve.
 4. Record the additive `commands` ParseResult and `SendResult` shapes in `docs/integration.md`.
