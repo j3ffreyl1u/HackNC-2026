@@ -25,9 +25,14 @@ export class CoverageFlow {
 
   /** Cents a member still owes on a bill: agreed share minus what the bank has confirmed for them. */
   remainingShare(billId: string, userId: string): number {
-    const agreed = this.ledger.obligations(billId)[userId] ?? 0;
-    const confirmed = this.ledger.confirmedByBeneficiary(billId)[userId] ?? 0;
-    return Math.max(0, agreed - confirmed);
+    return this.ledger.remainingShare(billId, userId);
+  }
+
+  /** Coverage would replace requests that carry a repayment, so it is not offered on those bills. */
+  private refuseIfCredited(billId: string): void {
+    if (this.ledger.billHasCredit(billId)) {
+      reject('COVERAGE_UNAVAILABLE', "Coverage isn't available on a bill that includes a carried-over credit.");
+    }
   }
 
   private liveContribution(billId: string, userId: string): ProposalRecord | null {
@@ -63,6 +68,7 @@ export class CoverageFlow {
     if (bill.status === 'paid' || bill.status === 'failed') {
       return reject('COVERAGE_UNAVAILABLE', 'That bill is already settled.');
     }
+    this.refuseIfCredited(billId);
     const remaining = this.remainingShare(billId, me);
     if (remaining <= 0) return reject('COVERAGE_UNAVAILABLE', "You don't have anything left to pay on that bill.");
 
@@ -146,6 +152,7 @@ export class CoverageFlow {
       return reject('COVERAGE_UNAVAILABLE', 'That bill is already settled.');
     }
 
+    this.refuseIfCredited(bill.billId);
     const debtorRemaining = this.remainingShare(bill.billId, request.debtorId);
     if (debtorRemaining <= 0) return reject('COVERAGE_UNAVAILABLE', 'That share has already been paid.');
     if (!Number.isSafeInteger(amountCents) || amountCents !== debtorRemaining) {

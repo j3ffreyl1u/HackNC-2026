@@ -7,12 +7,16 @@ import type {
   HouseholdSnapshot,
   OutboundMessage,
 } from '../contracts/index.js';
+import { Billing } from './billing.js';
+import { CycleFlow } from './cycle.js';
 import { FinanceEngine } from './engine.js';
+import { Ledger } from './ledger.js';
+import { Notifier } from './support.js';
 import { BankProcessor } from './reconcile.js';
-import { FinanceConfigError, NotImplementedError, type Clock, type IdGenerator } from './runtime.js';
+import { CycleTransitionError, FinanceConfigError, NotImplementedError, type Clock, type IdGenerator } from './runtime.js';
 import { LedgerStore } from './store.js';
 
-export { FinanceConfigError, NotImplementedError };
+export { CycleTransitionError, FinanceConfigError, NotImplementedError };
 export type { Clock, IdGenerator, FinanceService };
 
 export interface FinanceDependencies {
@@ -75,6 +79,8 @@ export function createFinanceService(dependencies: FinanceDependencies): Finance
   const { store, bank, clock } = dependencies;
   const nowIso = () => clock.now().toISOString();
   const engine = new FinanceEngine(store, clock, dependencies.newId);
+  const ledger = new Ledger(store);
+  const cycles = new CycleFlow(store, ledger, new Billing(store, ledger, new Notifier(store, ledger), dependencies.newId), nowIso);
   const processor = new BankProcessor(store, bank, clock, dependencies.newId);
 
   // Bank work runs one pass at a time so an operation is never sent or settled twice concurrently.
@@ -118,8 +124,8 @@ export function createFinanceService(dependencies: FinanceDependencies): Finance
       return store.lookupProviderBinding(providerMessageId);
     },
 
-    async advanceDemoCycle(_householdId: string, _cycleId: string): Promise<void> {
-      throw new NotImplementedError('FinanceService.advanceDemoCycle');
+    async advanceDemoCycle(householdId: string, cycleId: string): Promise<void> {
+      cycles.advance(householdId, cycleId);
     },
 
     async getConversationContext(_actorId: string, _spaceId: string, _targetMessageId?: string) {

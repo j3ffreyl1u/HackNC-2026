@@ -87,6 +87,20 @@ export interface HouseholdRecord {
   householdAccountId: string;
 }
 
+export interface CreditApplication {
+  billId: string;
+  amountCents: number;
+}
+
+export interface SettlementRecord {
+  settlementId: string;
+  debtId: string;
+  cycleId: string;
+  amountCents: number;
+  status: 'pending' | 'applied';
+  applications: CreditApplication[];
+}
+
 export interface DebtRecord {
   debtId: string;
   householdId: string;
@@ -145,6 +159,44 @@ const toCoverage = (r: CoverageRow): CoverageRequestRecord => ({
   status: r.status,
   ...(r.proposal_id ? { proposalId: r.proposal_id } : {}),
   supersededProposalIds: JSON.parse(r.superseded_json) as string[],
+});
+
+interface DebtRow {
+  debt_id: string;
+  household_id: string;
+  debtor_id: string;
+  creditor_id: string;
+  original_cents: number;
+  remaining_cents: number;
+  source_bill_id: string;
+}
+
+const toDebt = (r: DebtRow): DebtRecord => ({
+  debtId: r.debt_id,
+  householdId: r.household_id,
+  debtorId: r.debtor_id,
+  creditorId: r.creditor_id,
+  originalCents: r.original_cents,
+  remainingCents: r.remaining_cents,
+  sourceBillId: r.source_bill_id,
+});
+
+interface SettlementRow {
+  settlement_id: string;
+  debt_id: string;
+  cycle_id: string;
+  amount_cents: number;
+  status: 'pending' | 'applied';
+  applications_json: string;
+}
+
+const toSettlement = (r: SettlementRow): SettlementRecord => ({
+  settlementId: r.settlement_id,
+  debtId: r.debt_id,
+  cycleId: r.cycle_id,
+  amountCents: r.amount_cents,
+  status: r.status,
+  applications: JSON.parse(r.applications_json) as CreditApplication[],
 });
 
 const toBill = (r: BillRow): BillRecord => ({
@@ -288,6 +340,24 @@ export class Ledger {
       agreed_cents: number;
     }>;
     return Object.fromEntries(rows.map((r) => [r.user_id, r.agreed_cents]));
+  }
+
+  /** Cents a member still owes on a bill: agreed share minus what the bank has confirmed for them. */
+  remainingShare(billId: string, userId: string): number {
+    const agreed = this.obligations(billId)[userId] ?? 0;
+    const confirmed = this.confirmedByBeneficiary(billId)[userId] ?? 0;
+    return Math.max(0, agreed - confirmed);
+  }
+
+  /** Confirmed carried-over credit that `debtorId` paid toward `creditorId`'s share of a bill. */
+  confirmedCredit(billId: string, debtorId: string, creditorId: string): number {
+    const row = this.db
+      .prepare(
+        `SELECT COALESCE(SUM(amount_cents), 0) AS cents FROM allocations
+          WHERE bill_id = ? AND payer_id = ? AND beneficiary_id = ? AND kind = 'credit_settlement'`,
+      )
+      .get(billId, debtorId, creditorId) as { cents: number };
+    return row.cents;
   }
 
   /** Confirmed cents credited to each beneficiary of a bill. */
@@ -519,6 +589,47 @@ export class Ledger {
   }
 
   // ---- debts --------------------------------------------------------------
+
+  /** Debts with something left to pay and no settlement yet (one settlement per debt in this MVP). */
+  unsettledDebts(householdId: string): DebtRecord[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM debts d WHERE d.household_id = ? AND d.remaining_cents > 0
+            AND NOT EXISTS (SELECT 1 FROM settlements s WHERE s.debt_id = d.debt_id)
+          ORDER BY d.created_at, d.debt_id`,
+      )
+      .all(householdId) as DebtRow[];
+    return rows.map(toDebt);
+  }
+
+  debt(debtId: string): DebtRecord | null {
+    const row = this.db.prepare('SELECT * FROM debts WHERE debt_id = ?').get(debtId) as DebtRow | undefined;
+    return row ? toDebt(row) : null;
+  }
+
+  reduceDebt(debtId: string, amountCents: number): void {
+    this.db.prepare('UPDATE debts SET remaining_cents = remaining_cents - ? WHERE debt_id = ?').run(amountCents, debtId);
+  }
+
+  pendingSettlements(householdId: string): SettlementRecord[] {
+    const rows = this.db
+      .prepare(
+        `SELECT s.* FROM settlements s JOIN debts d ON d.debt_id = s.debt_id
+          WHERE d.household_id = ? AND s.status = 'pending' ORDER BY s.created_at, s.settlement_id`,
+      )
+      .all(householdId) as SettlementRow[];
+    return rows.map(toSettlement);
+  }
+
+  markSettlementApplied(settlementId: string, now: string): void {
+    this.db.prepare(`UPDATE settlements SET status = 'applied', applied_at = ? WHERE settlement_id = ?`).run(now, settlementId);
+  }
+
+  /** True when a carried-over credit has been reserved against this bill. */
+  billHasCredit(billId: string): boolean {
+    const rows = this.db.prepare('SELECT applications_json FROM settlements').all() as Array<{ applications_json: string }>;
+    return rows.some((r) => (JSON.parse(r.applications_json) as CreditApplication[]).some((a) => a.billId === billId));
+  }
 
   insertDebt(debt: DebtRecord, now: string): void {
     this.db

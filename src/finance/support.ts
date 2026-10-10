@@ -30,6 +30,9 @@ export interface Context {
   now: string;
 }
 
+/** What messages and proposals need to know about where they are going. Contexts satisfy it. */
+export type Scope = Pick<Context, 'householdId' | 'groupSpaceId' | 'householdAccountId' | 'now'>;
+
 /** Builds and queues the household's messages and contribution proposals. */
 export class Notifier {
   constructor(
@@ -37,7 +40,7 @@ export class Notifier {
     private readonly ledger: Ledger,
   ) {}
 
-  toGroup(ctx: Context, deliveryId: string, text: string, proposalRef?: OutboundMessage['proposalRef']): void {
+  toGroup(ctx: Scope, deliveryId: string, text: string, proposalRef?: OutboundMessage['proposalRef']): void {
     this.store.enqueueOutbox(
       {
         deliveryId,
@@ -50,7 +53,7 @@ export class Notifier {
     );
   }
 
-  toPrivate(ctx: Context, userId: string, deliveryId: string, text: string): void {
+  toPrivate(ctx: Scope, userId: string, deliveryId: string, text: string): void {
     this.store.enqueueOutbox(
       { deliveryId, householdId: ctx.householdId, audience: { kind: 'private', userId }, text },
       ctx.now,
@@ -58,7 +61,7 @@ export class Notifier {
   }
 
   contributionProposal(
-    ctx: Context,
+    ctx: Scope,
     bill: BillRecord,
     member: MemberRecord,
     cents: number,
@@ -82,7 +85,7 @@ export class Notifier {
   }
 
   announceRequest(
-    ctx: Context,
+    ctx: Scope,
     bill: BillRecord,
     proposal: ProposalRecord,
     member: MemberRecord,

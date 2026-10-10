@@ -177,6 +177,8 @@ const MIGRATIONS: string[] = [
   // v2: remember which contribution proposals a coverage agreement replaced, so a declined
   // agreement can reopen them instead of leaving members with nothing to approve.
   `ALTER TABLE coverage_requests ADD COLUMN superseded_json TEXT NOT NULL DEFAULT '[]';`,
+  // v3: which bills a carried-over credit was applied to, and for how much.
+  `ALTER TABLE settlements ADD COLUMN applications_json TEXT NOT NULL DEFAULT '[]';`,
 ];
 
 export type BankOperationStatus = 'prepared' | 'submitted' | 'pending' | 'unknown' | 'confirmed' | 'failed';
@@ -409,13 +411,14 @@ export class LedgerStore {
     cycleId: string,
     amountCents: number,
     now: string,
+    applications: Array<{ billId: string; amountCents: number }> = [],
   ): boolean {
     const result = this.db
       .prepare(
-        `INSERT OR IGNORE INTO settlements (settlement_id, debt_id, cycle_id, amount_cents, status, created_at)
-         VALUES (?, ?, ?, ?, 'pending', ?)`,
+        `INSERT OR IGNORE INTO settlements (settlement_id, debt_id, cycle_id, amount_cents, status, created_at, applications_json)
+         VALUES (?, ?, ?, ?, 'pending', ?, ?)`,
       )
-      .run(settlementId, debtId, cycleId, amountCents, now);
+      .run(settlementId, debtId, cycleId, amountCents, now, JSON.stringify(applications));
     return result.changes === 1;
   }
 

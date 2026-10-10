@@ -7,6 +7,7 @@ import {
   type BillRecord,
   type ProposalRecord,
 } from './ledger.js';
+import { Billing } from './billing.js';
 import { CoverageFlow } from './coverage.js';
 import type { Clock, IdGenerator } from './runtime.js';
 import type { LedgerStore } from './store.js';
@@ -25,6 +26,7 @@ export class FinanceEngine {
   private readonly ledger: Ledger;
   private readonly notify: Notifier;
   private readonly coverage: CoverageFlow;
+  private readonly billing: Billing;
 
   constructor(
     private readonly store: LedgerStore,
@@ -33,6 +35,7 @@ export class FinanceEngine {
   ) {
     this.ledger = new Ledger(store);
     this.notify = new Notifier(store, this.ledger);
+    this.billing = new Billing(store, this.ledger, this.notify, newId);
     this.coverage = new CoverageFlow(store, this.ledger, this.notify, newId);
   }
 
@@ -107,35 +110,8 @@ export class FinanceEngine {
       return reject('INVALID_CYCLE_TRANSITION', `Bills can only be added for the current cycle, not ${cycleId}.`);
     }
 
-    const bill: BillRecord = {
-      billId: this.newId('bill'),
-      householdId: ctx.householdId,
-      cycleId,
-      title,
-      amountCents,
-      dueDate,
-      recipientId,
-      status: 'collecting',
-    };
-    this.createBill(ctx, bill, splitEqual(amountCents, ctx.members.map((m) => m.userId)));
+    this.billing.createBills(ctx, ctx.members, [{ title, amountCents, dueDate, recipientId, cycleId }]);
     return 'accepted';
-  }
-
-  /**
-   * Insert a bill with one contribution proposal per member who owes something.
-   * `requests` is what each member is asked to pay (carryover adjusts it; see cycle advance).
-   */
-  private createBill(ctx: Context, bill: BillRecord, requests: Record<string, number>): void {
-    this.ledger.insertBill(bill, ctx.now);
-    this.ledger.setObligations(bill.billId, requests);
-    const recipient = this.ledger.recipient(ctx.householdId, bill.recipientId);
-    for (const member of ctx.members) {
-      const cents = requests[member.userId] ?? 0;
-      if (cents <= 0) continue;
-      const proposal = this.notify.contributionProposal(ctx, bill, member, cents, this.newId('prop'), 1);
-      this.ledger.insertProposal(proposal, ctx.now);
-      this.notify.announceRequest(ctx, bill, proposal, member, recipient?.displayName ?? bill.recipientId, false);
-    }
   }
 
   private validateTerms(
@@ -270,6 +246,9 @@ export class FinanceEngine {
     }
     if (this.ledger.confirmedTotal(bill.billId) > 0) {
       return reject('ALREADY_SUBMITTED', 'Payments have already been confirmed for that bill, so it can no longer be edited.');
+    }
+    if (this.ledger.billHasCredit(bill.billId)) {
+      return reject('ALREADY_SUBMITTED', 'That bill includes a carried-over credit, so it can no longer be edited.');
     }
     if (this.ledger.liveBankOperationCount(bill.billId) > 0) {
       return reject('ALREADY_SUBMITTED', 'A payment for that bill is in progress, so it can\'t be edited right now.');

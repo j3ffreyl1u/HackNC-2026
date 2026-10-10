@@ -214,6 +214,8 @@ export class BankProcessor {
     if (!bill) return;
     if (proposal.purpose === 'coverage') this.recordCoverage(op, proposal, bill.title);
 
+    this.settleCredits(op.householdId);
+
     const funded = this.ledger.confirmedTotal(bill.billId);
     const payer = this.payerOf(op);
     const progress = `${formatUsd(funded)} of ${formatUsd(bill.amountCents)} funded`;
@@ -223,6 +225,41 @@ export class BankProcessor {
       this.ledger.setBillStatus(bill.billId, 'ready');
       this.groupMessage(op, `deliv:${bill.billId}:funded`, `${bill.title} is fully funded (${formatUsd(funded)}).`);
       this.proposePayment(op, bill);
+    }
+  }
+
+  /**
+   * Clear a carried-over debt, exactly once, when every payment it depends on is bank-confirmed: the
+   * debtor's repayment line on each bill and the creditor's own share of that bill. Until then the
+   * settlement stays pending and the debt stays open. Previewing adjusted requests clears nothing.
+   */
+  private settleCredits(householdId: string): void {
+    const members = new Map(this.ledger.members(householdId).map((m) => [m.userId, m.displayName]));
+    for (const settlement of this.ledger.pendingSettlements(householdId)) {
+      const debt = this.ledger.debt(settlement.debtId);
+      if (!debt || settlement.applications.length === 0) continue;
+      const complete = settlement.applications.every(
+        (a) =>
+          this.ledger.confirmedCredit(a.billId, debt.debtorId, debt.creditorId) >= a.amountCents &&
+          this.ledger.remainingShare(a.billId, debt.creditorId) === 0,
+      );
+      if (!complete) continue;
+
+      this.ledger.reduceDebt(debt.debtId, settlement.amountCents);
+      this.ledger.markSettlementApplied(settlement.settlementId, this.now());
+      const household = this.ledger.household(householdId);
+      if (!household) continue;
+      const debtor = members.get(debt.debtorId) ?? debt.debtorId;
+      const creditor = members.get(debt.creditorId) ?? debt.creditorId;
+      this.store.enqueueOutbox(
+        {
+          deliveryId: `deliv:${settlement.settlementId}:applied`,
+          householdId,
+          audience: { kind: 'group', spaceId: household.groupSpaceId },
+          text: `${debtor}'s ${formatUsd(settlement.amountCents)} repayment to ${creditor} is confirmed, so that earlier coverage debt is cleared.`,
+        },
+        this.now(),
+      );
     }
   }
 
