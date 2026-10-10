@@ -1,6 +1,7 @@
 import type { Command, CommandPayload, InboundMessage, OutboundMessage, ParseResult } from '../contracts/index.js';
 import { validateIntent, type ValidIntent } from './intent.js';
-import { formatCents, isValidIsoDate, parseDollarsToCents } from './money.js';
+import { parseDueDate } from './dates.js';
+import { formatCents, parseDollarsToCents } from './money.js';
 import type { ConversationDependencies, ParserContext } from './types.js';
 
 const APPROVE_REACTIONS = new Set(['👍', '👍🏻', '👍🏼', '👍🏽', '👍🏾', '👍🏿', '❤️', '❤', '✅', '✔️', 'like', 'love', 'thumbsup', '+1']);
@@ -145,31 +146,32 @@ export function createParser(deps: ConversationDependencies) {
       if (cents === null) return reply(msg, ctx.householdId, "I couldn't read that amount. Use dollars like $48 or $48.00.", 'badamt');
       return command(msg, ctx, { kind: 'offer_coverage', requestId: m[1]!, amountCents: cents });
     }
-    if ((m = new RegExp(`^(add|correct)\\s+(.+?)\\s+${AMT}\\s+due\\s+(\\S+)$`, 'i').exec(text))) {
+    if ((m = new RegExp(`^(add|correct)\\s+(.+?)\\s+${AMT}\\s+due\\s+(.+)$`, 'i').exec(text))) {
       return billCommand(msg, ctx, m[1]!.toLowerCase() as 'add' | 'correct', m[2]!, m[3]!, m[4]!);
     }
     if (/^(add|correct)\b/i.test(text) && !HEDGE.test(text)) {
-      return reply(msg, ctx.householdId, 'To add a bill, say e.g. "add electricity $144 due 2026-10-15".', 'addhelp');
+      return reply(msg, ctx.householdId, 'To add a bill, say e.g. "add electricity $144 due Oct 15".', 'addhelp');
     }
     return null;
   }
 
-  function billCommand(msg: InboundMessage, ctx: ParserContext, mode: 'add' | 'correct', titleIn: string, amount: string | number, dueDate: string): ParseResult {
+  function billCommand(msg: InboundMessage, ctx: ParserContext, mode: 'add' | 'correct', titleIn: string, amount: string | number, dueDateIn: string): ParseResult {
     const cents = parseDollarsToCents(amount);
     if (cents === null) return reply(msg, ctx.householdId, "I couldn't read that amount. Use dollars like $144 or $144.00.", 'badamt');
-    if (!isValidIsoDate(dueDate)) return reply(msg, ctx.householdId, 'What is the due date? Please use YYYY-MM-DD, e.g. 2026-10-15.', 'baddate');
+    const due = parseDueDate(dueDateIn, msg.occurredAt);
+    if (!due) return reply(msg, ctx.householdId, 'What is the due date? For example "Oct 15" or 2026-10-15.', 'baddate');
     const title = titleIn.trim();
     if (mode === 'add') {
       const recipientId = resolveRecipient(title);
       if (!recipientId) return reply(msg, ctx.householdId, recipientHelp(title), 'recipient');
-      return command(msg, ctx, { kind: 'add_bill', amountCents: cents, title, dueDate, recipientId, cycleId: ctx.cycleId });
+      return command(msg, ctx, { kind: 'add_bill', amountCents: cents, title, dueDate: due, recipientId, cycleId: ctx.cycleId });
     }
     // correct: title or id must match exactly one open bill.
     const bill = ctx.openBills.filter((b) => b.title.toLowerCase() === title.toLowerCase() || b.billId === title);
     if (bill.length !== 1) return reply(msg, ctx.householdId, `Which bill should I correct? ${ctx.openBills.map((b) => b.title).join(', ') || 'No open bills.'}`, 'whichbill');
     const recipientId = resolveRecipient(bill[0]!.title);
     if (!recipientId) return reply(msg, ctx.householdId, recipientHelp(bill[0]!.title), 'recipient');
-    return command(msg, ctx, { kind: 'correct_bill', billId: bill[0]!.billId, amountCents: cents, title: bill[0]!.title, dueDate, recipientId });
+    return command(msg, ctx, { kind: 'correct_bill', billId: bill[0]!.billId, amountCents: cents, title: bill[0]!.title, dueDate: due, recipientId });
   }
 
   function mapIntent(msg: InboundMessage, ctx: ParserContext, text: string, intent: ValidIntent): ParseResult {

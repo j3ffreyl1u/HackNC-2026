@@ -10,7 +10,7 @@ Files: `parser.ts` (commands/replies), `intent.ts` (validates untrusted model ou
 
 ## Behaviour
 - Actor comes from the enrolled `providerUserId` only. Unknown senders, unrelated groups, own/outgoing messages and removed reactions are dropped.
-- Fallback forms: `add electricity $144 due 2026-10-15`, `summary`, `cover <request-id> $48`, `approve <id> v1`, `decline <id> v1`. Title is mapped to a configured recipient (substring match on id/name, or `recipientAliases`); unknown payee -> clarification.
+- Fallback forms: `add electricity $144 due 2026-10-15` (also "due Oct 15", "10/15", "15 Oct"; deterministic, no AI), `summary`, `cover <request-id> $48`, `approve <id> v1`, `decline <id> v1`. Title is mapped to a configured recipient (substring match on id/name, or `recipientAliases`); unknown payee -> clarification.
 - "yes"/"no" resolve only to a single actionable proposal or the private share-consent question. Several candidates -> ask which. A group message never answers the private question and group replies never mention it.
 - Reactions resolve through `getConversationContext(actor, space, targetMessageId)`; the target must also appear in `actionableProposals` at the same version, otherwise ignored.
 - Hedged or question wording ("maybe I can cover", "should I approve?") yields a clarification, never a command. "What do I owe?" is a summary.
