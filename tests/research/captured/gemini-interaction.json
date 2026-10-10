@@ -1,0 +1,103 @@
+{
+ "id": "v1_ChdkcjNLYXFuSkw4aTExTWtQLV83QThROBIXZHIzS2FxbkpMOGkxMU1rUC1fN0E4UTg",
+ "status": "completed",
+ "usage": {
+  "note": "omitted"
+ },
+ "created": "2026-10-10T22:34:36Z",
+ "updated": "2026-10-10T22:34:36Z",
+ "service_tier": "standard",
+ "steps": [
+  {
+   "id": "call_165816",
+   "signature": "[omitted]",
+   "type": "google_search_call",
+   "arguments": {
+    "queries": [
+     "driving time Chapel Hill NC to Mount Airy NC",
+     "driving time Chapel Hill NC to Boone NC",
+     "driving time Chapel Hill NC to Blowing Rock NC",
+     "driving time Chapel Hill NC to Black Mountain NC"
+    ]
+   },
+   "search_type": "web_search"
+  },
+  {
+   "call_id": "call_165816",
+   "signature": "[omitted]",
+   "type": "google_search_result",
+   "result": [
+    {
+     "search_suggestions": "<style>\n.container {\n  align-items: center;\n  border-radius: 8px;\n  display: flex;\n  font-family: Google Sans, Roboto, sans-serif;\n  font-size: 14px;\n  line-hei\u2026[truncated]"
+    }
+   ],
+   "is_error": false
+  },
+  {
+   "signature": "[omitted]",
+   "type": "thought"
+  },
+  {
+   "content": [
+    {
+     "text": "OPTION | Boone Road Trip | Blue Ridge Mountains | 177 | hiking, town visit, mountains | unknown | unknown | unknown | unknown | Pilot Mountain State Park~Pinnacle, NC~unknown~hiking; Downtown Boone~Boone, NC~unknown~town visit | Boone provides higher-altitude Appalachian scenery and university-town amenities, but the drive takes close to three hours each way.\nOPTION | Blowing Rock Escape | Blue Ridge Mountains | 187 | hiking, town visit, scenic views | unknown | unknown | unknown | unknown | The Blowing Rock~Blowing Rock, NC~unknown~hiking+scenic views; Downtown Blowing Rock~Blowing Rock, NC~unknown~town visit | Blowing Rock features a charming village atmosphere and immediate access to classic Blue Ridge viewpoints, though it sits slightly farther away than Boone.\nOPTION | Black Mountain Gateway | Blue Ridge Mountains | 217 | hiking, town visit, history | unknown | unknown | unknown | unknown | Linville Falls~Linville Gorge, NC~unknown~hiking; Downtown Black Mountain~Black Mountain, NC~unknown~town visit | Black Mountain offers great proximity to dramatic trails like Linville Gorge, but reaching it requires more than three and a half hours of highway driving.",
+     "annotations": [
+      {
+       "start_index": 0,
+       "end_index": 360,
+       "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQEb7Rs2dlwyll3IbTC3PRo-qWlyndGXQUBZd_oig3AsdyViaqiYYP-APiU4CXk1pFj0XnUrXFDY88I8ypLVNN_xGxw5i-96qVKMNZss9GlDCyx7MLpOBcLwHZbeo-hLRdX6C7phS8B1sayzGcXnZgfFf_RL3ki9Gj69_2sG_0-3",
+       "title": "wayro.ai",
+       "type": "url_citation"
+      },
+      {
+       "start_index": 0,
+       "end_index": 360,
+       "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQH3K9c1h0hQhRYIqZ-0i_R7iqXRHvRuuNoxTX2PBTIpZQ-NaAoPOpuVA6HwCJMMxHmXRNAdhVaUivUtY8iipha40sRt60d6TPrH5xK8f-vlEOFOMH8m8fpkQ3jv7_DokvWSCuas_ceau-AtPUC2kwhYMekQ0lcSr_Z4vsi6LbjBVQ==",
+       "title": "wanderlog.com",
+       "type": "url_citation"
+      },
+      {
+       "start_index": 0,
+       "end_index": 360,
+       "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQHMOGDRkvcejhqNJCDiYN0FA0PzLysutJonPE11P9cDB7WadvJHhMgKBvbEEZhqO2sImyAN9rcivwcM9ZuenNi4ni2i7rCsJDvOV6BTnHLMrSN2MEBykLSNNEXOXX5ZSsOAxa1uzRte95HtJTpgZ8yUO_yJwHTDTMwVdW4_jLPO8tQe6Cry6dnqsw==",
+       "title": "highgravityadventures.com",
+       "type": "url_citation"
+      },
+      {
+       "start_index": 362,
+       "end_index": 774,
+       "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQHnpAQMxe4j72iO5EJqAQt43os-Eo8O8gJQqb73KFNwUPmi2CHMeS5cfzDyjDv0keWLEkG4Q2Khic7unUJadNbFpiywCs0e-vtJSM4kiQdqL3lkREKulh2KajOo9tQhwunj8ueSo2Uuz3FF2jvQU7p7-zXILhwFigx6XgEmpli2u7D8BRIZ8ds=",
+       "title": "wanderlog.com",
+       "type": "url_citation"
+      },
+      {
+       "start_index": 362,
+       "end_index": 774,
+       "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQEgjlY5y-_voTmMw_zeBNC_kfnWhhDlfWTMx40Y-S-Du118qmUZC1Gn7sDxChnyxrDJoY0cOcqIQdMEzTAYgBu5KmHWZvf6jij5NdaKROZp1m4=",
+       "title": "theblowingrock.com",
+       "type": "url_citation"
+      },
+      {
+       "start_index": 776,
+       "end_index": 1177,
+       "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQFrIeMf_lH6MLER94L8StVomAA2-iBKYd5Y_ak0M-T1-luwhQha73Z4jL-CHCeV5c0OA30C3oHj4idRzUYw0wJefQ_dC8vDJWSkj8hOshOgtfSFUuqvgwkae6z93HBZns0MMWwJU6h7WMsDEQ==",
+       "title": "rome2rio.com",
+       "type": "url_citation"
+      },
+      {
+       "start_index": 776,
+       "end_index": 1177,
+       "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQFNFjpJFf9ztyaCB4Tk22c_Y_De-IO7ZRDDXraeP73E1lSr2fIsotHH0M9TMwoD00LLY2oFbBu6OlPK2nZbSEh_lJ30ckQYini2hjSrO_-mZxdOvO7ftHfjB6Ht7ZwAoZN0vF74G1GOfFSS9lb7sLmuV6fYH_V1QG-hUQ==",
+       "title": "wayro.ai",
+       "type": "url_citation"
+      }
+     ],
+     "type": "text"
+    }
+   ],
+   "type": "model_output"
+  }
+ ],
+ "object": "interaction",
+ "model": "gemini-3.8-flash"
+}
