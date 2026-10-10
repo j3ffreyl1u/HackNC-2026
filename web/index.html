@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#dff7f3" />
+    <title>Weekend, together</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Weekend, together home"><span class="brand-mark">✦</span> weekend, together</a>
+      <span class="live-pill"><span class="pulse"></span> Group plan</span>
+    </header>
+    <main>
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">A little less planning alone</p>
+          <h1>Your weekend,<br /><span>taking shape.</span></h1>
+          <p class="lede">Shared plans, clear costs, and the sources behind each idea.</p>
+        </div>
+        <div class="hero-orb" aria-hidden="true"><span>↗</span></div>
+      </section>
+      <p id="status" class="status" role="status" aria-live="polite">Loading the latest plan…</p>
+      <section id="trip" aria-live="polite"></section>
+      <footer>Estimates are planning aids, not bookings or guaranteed availability. Check current details with each source.</footer>
+    </main>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

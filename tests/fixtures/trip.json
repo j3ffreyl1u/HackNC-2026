@@ -1,0 +1,65 @@
+{
+  "tripId": "chapel-hill-weekend",
+  "groupSpaceId": "mock-friends",
+  "revision": 1,
+  "status": "gathering",
+  "participants": [
+    {
+      "memberId": "mason",
+      "displayName": "Mason",
+      "providerUserId": "mock-mason",
+      "budgetCapCents": 20000,
+      "origin": { "city": "Chapel Hill", "region": "North Carolina", "timeZone": "America/New_York" },
+      "availability": [
+        { "startAt": "2026-11-14T08:00:00-05:00", "endAt": "2026-11-15T21:00:00-05:00", "timeZone": "America/New_York" },
+        { "startAt": "2026-11-21T08:00:00-05:00", "endAt": "2026-11-22T21:00:00-05:00", "timeZone": "America/New_York" }
+      ],
+      "preferences": ["hiking", "town visit"],
+      "mustDos": [],
+      "consentedAt": "2026-10-10T12:00:00-04:00"
+    },
+    {
+      "memberId": "alex",
+      "displayName": "Alex",
+      "providerUserId": "mock-alex",
+      "budgetCapCents": 25000,
+      "origin": { "city": "Chapel Hill", "region": "North Carolina", "timeZone": "America/New_York" },
+      "availability": [
+        { "startAt": "2026-11-14T08:00:00-05:00", "endAt": "2026-11-15T21:00:00-05:00", "timeZone": "America/New_York" },
+        { "startAt": "2026-11-21T08:00:00-05:00", "endAt": "2026-11-22T21:00:00-05:00", "timeZone": "America/New_York" }
+      ],
+      "preferences": ["hiking", "town visit"],
+      "mustDos": [],
+      "consentedAt": "2026-10-10T12:00:00-04:00"
+    },
+    {
+      "memberId": "jordan",
+      "displayName": "Jordan",
+      "providerUserId": "mock-jordan",
+      "budgetCapCents": 30000,
+      "origin": { "city": "Chapel Hill", "region": "North Carolina", "timeZone": "America/New_York" },
+      "availability": [
+        { "startAt": "2026-11-14T08:00:00-05:00", "endAt": "2026-11-15T21:00:00-05:00", "timeZone": "America/New_York" },
+        { "startAt": "2026-11-21T08:00:00-05:00", "endAt": "2026-11-22T21:00:00-05:00", "timeZone": "America/New_York" }
+      ],
+      "preferences": ["hiking", "town visit"],
+      "mustDos": [],
+      "consentedAt": "2026-10-10T12:00:00-04:00"
+    }
+  ],
+  "groupConstraints": {
+    "durationNights": 1,
+    "transport": { "mode": "road_trip", "hasVehicle": true },
+    "destinationRegion": { "label": "Blue Ridge region", "maxTravelMinutes": 180 }
+  },
+  "planningAcceptance": {
+    "sharedUpperCostsCents": [48000, 45000],
+    "personalFoodUpperCentsPerPerson": 2000,
+    "contingencyCentsPerPerson": 1000,
+    "expectedUpperTotalsByOption": [19000, 18000],
+    "revisedMasonBudgetCapCents": 18000,
+    "optionInvalidatedByRevisedCap": 0
+  },
+  "mockOnly": true,
+  "note": "Synthetic planning fixture; candidate dates, destinations and prices are not sourced research."
+}
