@@ -1,4 +1,5 @@
 import type { ConstraintValue } from './contracts-local.js';
+import { parseMaxTravelMinutes } from './constraints.js';
 import { isValidIsoDate, parseDollarsToCents } from './money.js';
 
 export type ValidIntent =
@@ -44,11 +45,21 @@ export function validateConstraintItem(raw: unknown): ConstraintValue | null {
       const values = list(o.values);
       return values ? { field: o.field, value: values } : null;
     }
-    case 'transport':
-    case 'region':
     case 'origin': {
       const text = str(o.text, 60);
-      return text ? { field: o.field, value: text } : null;
+      return text ? { field: 'origin', value: text } : null;
+    }
+    case 'region': {
+      const text = str(o.text, 60);
+      if (!text) return null;
+      const given = o.maxTravelMinutes;
+      const minutes = typeof given === 'number' && Number.isInteger(given) && given >= 15 && given <= 1440 ? given : parseMaxTravelMinutes(text);
+      return { field: 'region', value: text, ...(minutes !== undefined ? { maxTravelMinutes: minutes } : {}) };
+    }
+    case 'transport': {
+      const text = str(o.text, 60);
+      if (!text) return null;
+      return { field: 'transport', value: text, ...(typeof o.vehicleAvailable === 'boolean' ? { vehicleAvailable: o.vehicleAvailable } : {}) };
     }
     case 'duration': {
       const n = o.nights;

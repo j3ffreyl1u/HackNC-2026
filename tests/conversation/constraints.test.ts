@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractConstraints } from '../../src/conversation/constraints.js';
+import { extractConstraints, parseMaxTravelMinutes } from '../../src/conversation/constraints.js';
 
 const ref = '2026-10-01T12:00:00Z';
 const ex = (t: string, p?: Parameters<typeof extractConstraints>[2]) => extractConstraints(t, ref, p);
@@ -59,9 +59,11 @@ describe('other fields', () => {
     expect(one('we want 2 nights', 'duration')?.value).toMatchObject({ value: 2 });
     expect(one('leaving from Chapel Hill on Friday', 'origin')?.value).toMatchObject({ value: 'Chapel Hill' });
     expect(one('nothing farther than 3 hours', 'region')).toBeUndefined();
-    expect(one('within 3 hours of Chapel Hill', 'region')?.value).toMatchObject({ value: 'within 3 hours by car' });
-    expect(one('I have a car', 'transport')?.value).toMatchObject({ value: 'own_vehicle' });
-    expect(one("I don't have a car", 'transport')?.value).toMatchObject({ value: 'no_vehicle' });
+    expect(one('within 3 hours of Chapel Hill', 'region')?.value).toMatchObject({ value: 'within 3 hours by car', maxTravelMinutes: 180 });
+    expect(one('within 1.5 hours', 'region')?.value).toMatchObject({ maxTravelMinutes: 90 });
+    expect(one('region: Asheville area', 'region')?.value).toEqual({ field: 'region', value: 'Asheville area' }); // no limit stated, none invented
+    expect(one('I have a car', 'transport')?.value).toMatchObject({ value: 'own_vehicle', vehicleAvailable: true });
+    expect(one("I don't have a car", 'transport')?.value).toMatchObject({ value: 'no_vehicle', vehicleAvailable: false });
   });
   it('preferences, must-dos, dietary', () => {
     expect(one('I like hiking and a town visit', 'preferences')?.value).toMatchObject({ value: ['hiking', 'town visit'] });
@@ -78,5 +80,15 @@ describe('other fields', () => {
   });
   it('ordinary chatter yields nothing', () => {
     expect(ex('lol that was so funny')).toEqual([]);
+  });
+});
+
+describe('parseMaxTravelMinutes', () => {
+  it('reads hours and minutes, rejects implausible values', () => {
+    expect(parseMaxTravelMinutes('within 3 hours')).toBe(180);
+    expect(parseMaxTravelMinutes('2 hr drive')).toBe(120);
+    expect(parseMaxTravelMinutes('within 90 minutes')).toBe(90);
+    expect(parseMaxTravelMinutes('5 minutes')).toBeUndefined();
+    expect(parseMaxTravelMinutes('Asheville')).toBeUndefined();
   });
 });

@@ -39,6 +39,14 @@ describe('gemini intent model', () => {
     });
     expect(validateIntent({ intent: 'ask_guide', question: 'x'.repeat(501) }).intent).toBe('clarify');
   });
+  it('region and transport carry parsed numbers/booleans, derived or validated, never invented', () => {
+    const v = (items: unknown[]) => (validateIntent({ intent: 'constraints', items }) as { items: unknown[] }).items;
+    expect(v([{ field: 'region', text: 'within 2 hours', maxTravelMinutes: 120 }])).toEqual([{ field: 'region', value: 'within 2 hours', maxTravelMinutes: 120 }]);
+    expect(v([{ field: 'region', text: 'within 2 hours' }])).toEqual([{ field: 'region', value: 'within 2 hours', maxTravelMinutes: 120 }]);
+    expect(v([{ field: 'region', text: 'the mountains', maxTravelMinutes: 5 }])).toEqual([{ field: 'region', value: 'the mountains' }]);
+    expect(v([{ field: 'transport', text: 'my car', vehicleAvailable: true }])).toEqual([{ field: 'transport', value: 'my car', vehicleAvailable: true }]);
+    expect(v([{ field: 'transport', text: 'my car', vehicleAvailable: 'yes' }])).toEqual([{ field: 'transport', value: 'my car' }]);
+  });
   it('requires key and model', () => {
     expect(() => createGeminiIntentModel({ apiKey: '', model: 'm' })).toThrow();
     expect(() => createGeminiIntentModel({ apiKey: 'k', model: '' })).toThrow();

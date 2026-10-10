@@ -31,8 +31,10 @@ export type ConstraintValue =
   | { field: 'availability'; value: DateWindow[] }
   | { field: 'preferences'; value: string[] }
   | { field: 'must_dos'; value: string[] }
-  | { field: 'transport'; value: string }
-  | { field: 'region'; value: string }
+  /** `vehicleAvailable`: parsed boolean for readiness (true: has/can drive a vehicle, false: explicitly has none). Omitted if unclear. */
+  | { field: 'transport'; value: string; vehicleAvailable?: boolean }
+  /** `maxTravelMinutes`: parsed one-way drive limit, when the text states one. Omitted if unclear. */
+  | { field: 'region'; value: string; maxTravelMinutes?: number }
   | { field: 'origin'; value: string }
   | { field: 'duration'; value: number };
 

@@ -26,6 +26,8 @@ export const INTENT_SCHEMA = {
           values: { type: 'array', items: { type: 'string' }, description: 'preferences / must_dos' },
           text: { type: 'string', description: 'transport / region / origin' },
           nights: { type: 'integer', description: 'duration in nights' },
+          maxTravelMinutes: { type: 'integer', description: 'region: one-way drive limit in minutes if stated, e.g. 180 for "within 3 hours"' },
+          vehicleAvailable: { type: 'boolean', description: 'transport: true if the sender has or can drive a vehicle, false if they say they have none; omit if unclear' },
         },
         required: ['field'],
       },

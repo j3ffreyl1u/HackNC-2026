@@ -22,6 +22,15 @@ const BARE_AMOUNT = /^\$?\s*([\d,]+(?:\.\d{1,2})?)\s*(?:dollars|bucks|usd)?[.!]*
 const AVAIL_WORDS = /\b(free|available|availability|open|works?|can (?:do|go|make(?: it)?|leave)|good|window|off)\b/i;
 const NEGATIVE = /\b(not|n't|busy|can'?t|cannot|unavailable|booked|out of town)\b/i;
 
+/** One-way drive limit in minutes from text like "within 3 hours", "1.5 hour drive", "within 90 minutes". */
+export function parseMaxTravelMinutes(text: string): number | undefined {
+  let m: RegExpExecArray | null;
+  let minutes: number | undefined;
+  if ((m = /\b(\d{1,2}(?:\.\d)?)\s*[- ]?(?:hours?|hrs?|h)\b/i.exec(text))) minutes = Math.round(Number(m[1]) * 60);
+  else if ((m = /\b(\d{2,3})\s*[- ]?(?:minutes?|mins?)\b/i.exec(text))) minutes = Number(m[1]);
+  return minutes !== undefined && minutes >= 15 && minutes <= 1440 ? minutes : undefined;
+}
+
 const clean = (s: string) => s.trim().replace(/^(?:a|an|the|some)\s+/i, '').replace(/[.!,;]+$/, '').trim();
 const GENERIC = /^(?:that|it|this|those|these|them|the idea|to|doing)\b/i;
 
@@ -61,12 +70,14 @@ function extractSentence(s: string, reference: string, pending: ConstraintField 
     push({ field: 'origin', value: m![1]!.trim() });
   }
   if ((m = /\bwithin\s+(?:about\s+|around\s+)?(\d{1,2}(?:\.\d)?)\s*(?:hours?|hrs?|h)\b/i.exec(s)) ?? (m = /\b(\d{1,2}(?:\.\d)?)\s*[- ]?(?:hours?|hrs?)\s+(?:drive|away|radius)\b/i.exec(s))) {
-    push({ field: 'region', value: `within ${m![1]} hours by car` });
+    push({ field: 'region', value: `within ${m![1]} hours by car`, maxTravelMinutes: Math.round(Number(m![1]) * 60) });
   } else if ((m = /\b(?:destination|region|area)\s*(?:is|:)\s*([A-Za-z][A-Za-z ,.'-]{1,40})/i.exec(s))) {
-    push({ field: 'region', value: clean(m[1]!) });
+    const value = clean(m[1]!);
+    const maxTravelMinutes = parseMaxTravelMinutes(value);
+    push({ field: 'region', value, ...(maxTravelMinutes !== undefined ? { maxTravelMinutes } : {}) });
   }
-  if (/\bi\s+(?:have|got)\s+(?:a\s+|my\s+)?(?:own\s+)?(?:car|vehicle|truck|suv)\b|\bi\s+can\s+drive\b|\bi(?:'ll| will)\s+drive\b/i.test(s)) push({ field: 'transport', value: 'own_vehicle' });
-  else if (/\bi\s+(?:don'?t|do not)\s+have\s+(?:a\s+)?(?:car|vehicle)\b|\bno car\b/i.test(s)) push({ field: 'transport', value: 'no_vehicle' });
+  if (/\bi\s+(?:have|got)\s+(?:a\s+|my\s+)?(?:own\s+)?(?:car|vehicle|truck|suv)\b|\bi\s+can\s+drive\b|\bi(?:'ll| will)\s+drive\b/i.test(s)) push({ field: 'transport', value: 'own_vehicle', vehicleAvailable: true });
+  else if (/\bi\s+(?:don'?t|do not)\s+have\s+(?:a\s+)?(?:car|vehicle)\b|\bno car\b/i.test(s)) push({ field: 'transport', value: 'no_vehicle', vehicleAvailable: false });
 
   if (/\b(?:no (?:real )?preferences?|don'?t (?:really )?care|i'?m (?:easy|flexible|open to anything))\b/i.test(s)) {
     push({ field: 'preferences', value: ['no preference'] });
