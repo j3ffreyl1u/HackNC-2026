@@ -168,7 +168,12 @@ export class FinanceEngine {
   }
 
   private approve(ctx: Context, proposalId: string, version: number): 'accepted' | 'duplicate' {
-    const proposal = this.actionableProposal(ctx, proposalId, version);
+    let proposal = this.actionableProposal(ctx, proposalId, version);
+    if (proposal.status === 'declined' && proposal.purpose === 'bill_payment') {
+      // Declining the outgoing payment only held it; the payer may change their mind.
+      this.ledger.setProposalStatus(proposalId, 'proposed', ctx.now);
+      proposal = { ...proposal, status: 'proposed' };
+    }
     if (proposal.status === 'declined') return reject('STALE_PROPOSAL', 'That request was declined. Ask for a new one if you changed your mind.');
     if (proposal.status === 'failed') return reject('STALE_PROPOSAL', 'That payment failed. Please approve the latest request.');
 
@@ -177,6 +182,8 @@ export class FinanceEngine {
     if (IN_BANK_STATUSES.includes(proposal.status)) {
       return reject('ALREADY_SUBMITTED', 'That payment has already been submitted.');
     }
+
+    if (proposal.purpose === 'bill_payment') this.checkPayable(proposal);
 
     this.store.recordApproval(proposalId, version, ctx.actor.userId, ctx.now);
     const approvals = this.store.approvalsFor(proposalId, version);
@@ -205,6 +212,19 @@ export class FinanceEngine {
       `${ctx.actor.displayName} approved ${formatUsd(proposal.amountCents)} for ${bill?.title ?? 'the bill'}.`,
     );
     return 'accepted';
+  }
+
+  /** An outgoing payment needs a fully funded, unpaid bill whose own reserved money covers it. */
+  private checkPayable(proposal: ProposalRecord): void {
+    const bill = this.ledger.bill(proposal.billId);
+    if (!bill) return reject('UNKNOWN_RESOURCE', "I couldn't find that bill.");
+    if (bill.status === 'paid') return reject('ALREADY_SUBMITTED', 'That bill has already been paid.');
+    if (bill.status !== 'ready') {
+      return reject('INSUFFICIENT_HOUSE_FUNDS', "That bill isn't fully funded yet, so it can't be paid.");
+    }
+    if (this.ledger.reservedFunds(bill.billId) < proposal.amountCents) {
+      return reject('INSUFFICIENT_HOUSE_FUNDS', "The household account doesn't have enough funds reserved for this bill yet.");
+    }
   }
 
   private decline(ctx: Context, proposalId: string, version: number): 'accepted' | 'duplicate' {

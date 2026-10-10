@@ -376,6 +376,27 @@ export class Ledger {
     return row.n;
   }
 
+  /**
+   * Cents already committed to leaving the household account for this bill: outgoing payments that were
+   * sent (and may have moved money) or completed. A never-sent or failed operation commits nothing.
+   */
+  committedOutgoingCents(billId: string): number {
+    const row = this.db
+      .prepare(
+        `SELECT COALESCE(SUM(o.amount_cents), 0) AS cents
+           FROM bank_operations o JOIN proposals p ON p.proposal_id = o.proposal_id
+          WHERE p.bill_id = ? AND p.purpose = 'bill_payment'
+            AND o.status IN ('submitted', 'pending', 'unknown', 'confirmed')`,
+      )
+      .get(billId) as { cents: number };
+    return row.cents;
+  }
+
+  /** Funds confirmed for this bill and not yet spent on it. One bill's money never pays another's. */
+  reservedFunds(billId: string): number {
+    return this.confirmedTotal(billId) - this.committedOutgoingCents(billId);
+  }
+
   /** Cancel never-sent operations on a bill (for example because its terms changed). Returns how many. */
   cancelPreparedOperations(billId: string, reason: string, now: string): number {
     const result = this.db

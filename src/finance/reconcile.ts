@@ -51,6 +51,7 @@ export class BankProcessor {
   }
 
   private async submit(op: BankOperationRecord): Promise<void> {
+    if (this.isOutgoingPayment(op) && !this.mayPayOut(op)) return;
     const claimed = this.store.tx(() => {
       if (!this.store.claimOperationForSubmission(op.operationId, this.now())) return false;
       this.ledger.setProposalStatus(op.proposalId, 'submitted', this.now());
@@ -72,6 +73,43 @@ export class BankProcessor {
       result = { status: 'unknown', reason: `bank error: ${describeError(error)}` };
     }
     this.apply(op.operationId, result);
+  }
+
+  private isOutgoingPayment(op: BankOperationRecord): boolean {
+    return this.ledger.proposal(op.proposalId)?.purpose === 'bill_payment';
+  }
+
+  /**
+   * An outgoing payment waits while any earlier transfer in the household is unresolved (it may still
+   * change what has left the account), and is refused if the bill's own reserved funds do not cover it.
+   * Waiting is safe: the operation stays `prepared` and is sent by a later pass once things are resolved.
+   */
+  private mayPayOut(op: BankOperationRecord): boolean {
+    const proposal = this.ledger.proposal(op.proposalId);
+    if (!proposal) return false;
+    if (this.store.unresolvedBankOperations(op.householdId).some((o) => o.status !== 'prepared')) {
+      this.note(op, 'held', "Your payment is waiting for an earlier transfer to be confirmed. It will go out once that is settled.");
+      return false;
+    }
+    if (this.ledger.reservedFunds(proposal.billId) < op.amountCents) {
+      this.store.tx(() => {
+        this.store.updateBankOperation(op.operationId, { status: 'failed', reason: 'not enough funds reserved for this bill' }, this.now());
+        this.ledger.setProposalStatus(proposal.proposalId, 'failed', this.now());
+        this.note(op, 'unfunded', "I didn't send that payment because this bill doesn't have enough confirmed funds reserved for it. Nothing was moved.");
+      });
+      return false;
+    }
+    return true;
+  }
+
+  /** Tell the payer something once; the delivery ID is stable, so repeats are ignored. */
+  private note(op: BankOperationRecord, tag: string, text: string): void {
+    const payer = this.notifiedPayer(op);
+    if (!payer) return;
+    this.store.enqueueOutbox(
+      { deliveryId: `deliv:${op.operationId}:${tag}`, householdId: op.householdId, audience: { kind: 'private', userId: payer.userId }, text },
+      this.now(),
+    );
   }
 
   private async resolve(op: BankOperationRecord): Promise<void> {
@@ -136,7 +174,7 @@ export class BankProcessor {
     this.ledger.setProposalStatus(op.proposalId, status, this.now());
     if (!changed) return;
     // Tell the payer once per transition, and never invite another submission.
-    const payer = this.payerOf(op);
+    const payer = this.notifiedPayer(op);
     if (payer) {
       this.store.enqueueOutbox(
         {
@@ -156,7 +194,15 @@ export class BankProcessor {
 
     const bill = this.ledger.bill(proposal.billId);
     if (proposal.purpose === 'bill_payment') {
-      if (bill) this.ledger.setBillStatus(bill.billId, 'paid');
+      if (bill) {
+        this.ledger.setBillStatus(bill.billId, 'paid');
+        const recipient = this.ledger.recipient(op.householdId, bill.recipientId);
+        this.groupMessage(
+          op,
+          `deliv:${op.operationId}:paid`,
+          `${bill.title} is paid: ${formatUsd(op.amountCents)} was sent from the household account to ${recipient?.displayName ?? bill.recipientId} (simulated).`,
+        );
+      }
       return;
     }
     for (const line of proposal.allocation) {
@@ -176,7 +222,51 @@ export class BankProcessor {
     if (funded >= bill.amountCents && bill.status === 'collecting') {
       this.ledger.setBillStatus(bill.billId, 'ready');
       this.groupMessage(op, `deliv:${bill.billId}:funded`, `${bill.title} is fully funded (${formatUsd(funded)}).`);
+      this.proposePayment(op, bill);
     }
+  }
+
+  /**
+   * Funding is complete. Propose the outgoing payment for the designated payer to approve; being ready
+   * is never permission to pay. Created once, when the bill first becomes ready.
+   */
+  private proposePayment(op: BankOperationRecord, bill: NonNullable<ReturnType<Ledger['bill']>>): void {
+    const household = this.ledger.household(op.householdId);
+    const recipient = this.ledger.recipient(op.householdId, bill.recipientId);
+    const payer = this.ledger.members(op.householdId).find((m) => m.userId === household?.designatedPayerId);
+    if (!household || !recipient || !payer) return;
+    if (this.ledger.proposalsForBill(bill.billId).some((p) => p.purpose === 'bill_payment')) return;
+
+    const proposalId = this.newId('prop');
+    this.ledger.insertProposal(
+      {
+        proposalId,
+        householdId: op.householdId,
+        billId: bill.billId,
+        purpose: 'bill_payment',
+        version: 1,
+        status: 'proposed',
+        amountCents: bill.amountCents,
+        sourceAccountId: household.householdAccountId,
+        destinationAccountId: recipient.bankAccountId,
+        requiredActorIds: [payer.userId],
+        allocation: [],
+        description: `Pay ${formatUsd(bill.amountCents)} to ${recipient.displayName} for ${bill.title} from the household account`,
+      },
+      this.now(),
+    );
+    this.store.enqueueOutbox(
+      {
+        deliveryId: `deliv:${proposalId}:v1:request`,
+        householdId: op.householdId,
+        audience: { kind: 'group', spaceId: household.groupSpaceId },
+        text:
+          `${bill.title} is ready to pay: ${formatUsd(bill.amountCents)} from the household account to ${recipient.displayName} ` +
+          `(simulated). ${payer.displayName}: react 👍 to this message or reply "approve ${proposalId} v1" to send it.`,
+        proposalRef: { proposalId, proposalVersion: 1 },
+      },
+      this.now(),
+    );
   }
 
   /**
@@ -242,6 +332,12 @@ export class BankProcessor {
         this.now(),
       );
     }
+  }
+
+  /** Who hears about an operation: the member it was drawn from, or the designated payer for the household account. */
+  private notifiedPayer(op: BankOperationRecord) {
+    const designated = this.ledger.household(op.householdId)?.designatedPayerId;
+    return this.payerOf(op) ?? this.ledger.members(op.householdId).find((m) => m.userId === designated) ?? null;
   }
 
   private payerOf(op: BankOperationRecord) {
