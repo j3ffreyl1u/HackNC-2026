@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { parseDueDate } from '../../src/conversation/dates.js';
-import { msg, setup } from './helpers.js';
 
 const ref = '2026-10-01T12:00:00Z';
 describe('parseDueDate', () => {
@@ -13,17 +12,4 @@ describe('parseDueDate', () => {
     expect(parseDueDate('Sep 25', ref)).toBe('2026-09-25');
   });
   it.each(['Oct 32', 'Feb 30', 'Foo 15', '13/40', 'soon', 'Octopus 5', ''])('rejects %s', (i) => expect(parseDueDate(i, ref)).toBeNull());
-});
-
-describe('natural due dates in the fallback', () => {
-  it('"add electricity $144 due Oct 15" is one 14,400-cent command, no AI', async () => {
-    const { service, model } = setup();
-    const r = await service.parseInbound(msg({ text: 'add electricity $144 due Oct 15' }));
-    expect(r.kind === 'command' && r.command.payload).toMatchObject({ kind: 'add_bill', amountCents: 14400, dueDate: '2026-10-15', recipientId: 'duke-energy' });
-    expect(model.calls).toHaveLength(0);
-  });
-  it('an unreadable date asks instead of guessing', async () => {
-    const { service } = setup();
-    expect((await service.parseInbound(msg({ text: 'add electricity $144 due whenever' }))).kind).toBe('reply');
-  });
 });

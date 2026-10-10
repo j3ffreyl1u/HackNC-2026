@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createConversationService } from '../../src/conversation/index.js';
 import { MockIntentModel } from '../../src/conversation/mock.js';
 import { createSpectrumMessenger, mapSpectrumMessage, type SpectrumAppLike, type SpectrumMessageLike, type SpectrumSpaceLike } from '../../src/conversation/spectrum.js';
-import { baseContext, household } from './helpers.js';
+import { baseContext, trip } from './helpers.js';
 
 const t = new Date('2026-10-01T12:00:00Z');
 const group = (sent: string[] = []): SpectrumSpaceLike => ({ id: 'grp-1', type: 'group', send: async (s) => (sent.push(s), { id: `out-${sent.length}` }) });
@@ -47,17 +47,17 @@ describe('Spectrum messenger loop', () => {
     };
     const created: string[] = [];
     const messenger = createSpectrumMessenger({
-      app, household,
+      app, trip,
       imessage: { user: async (id) => id, space: { get: async () => gs, create: async (u) => (created.push(String(u)), dm) } },
     });
-    const service = createConversationService({ household, messenger, intentModel: new MockIntentModel(), getConversationContext: async () => baseContext });
+    const service = createConversationService({ trip, messenger, intentModel: new MockIntentModel(), getConversationContext: async () => baseContext });
     const seen: string[] = [];
     await service.start(async (m) => { seen.push(m.eventId); if (m.eventId === 'message:b') throw new Error('boom'); });
     await new Promise((r) => setTimeout(r, 10));
     expect(seen).toEqual(['message:b']); // own message and stranger dropped; error did not stop the loop
 
-    const grp = await service.sendMessage({ deliveryId: 'd1', householdId: 'demo-house', audience: { kind: 'group', spaceId: 'grp-1' }, text: 'hello' });
-    const pm = await service.sendMessage({ deliveryId: 'd2', householdId: 'demo-house', audience: { kind: 'private', userId: 'jordan' }, text: 'psst' });
+    const grp = await service.sendMessage({ deliveryId: 'd1', audience: { kind: 'group', spaceId: 'grp-1' }, text: 'hello' });
+    const pm = await service.sendMessage({ deliveryId: 'd2', audience: { kind: 'private', memberId: 'jordan' }, text: 'psst' });
     expect(grp.providerMessageId).toBe('out-1');
     expect(pm.providerMessageId).toBe('dm-out');
     expect(created).toEqual(['p-jordan']);
@@ -65,7 +65,7 @@ describe('Spectrum messenger loop', () => {
   });
   it('reports uncertain delivery instead of inventing a message id', async () => {
     const messenger = createSpectrumMessenger({
-      app: { messages: (async function* () {})(), stop: async () => {} }, household,
+      app: { messages: (async function* () {})(), stop: async () => {} }, trip,
       imessage: { user: async () => 1, space: { get: async () => ({ id: 'grp-1', send: async () => undefined }), create: async () => dm } },
     });
     await expect(messenger.send({ kind: 'group', spaceId: 'grp-1' }, 'x')).rejects.toThrow(/uncertain/);

@@ -1,4 +1,4 @@
-import type { HouseholdConfig } from '../contracts/index.js';
+import type { TripConfig } from './contracts-local.js';
 import type { IntentInput, IntentModel, Messenger, MessengerAudience, RawIntent, RawProviderEvent } from './types.js';
 
 /** Local messenger with no network. Tests push raw events in and read `sent`. */
@@ -37,7 +37,7 @@ export class MockIntentModel implements IntentModel {
   }
 }
 
-export function groupEvent(h: HouseholdConfig, providerUserId: string, messageId: string, text: string, extra: Partial<RawProviderEvent> = {}): RawProviderEvent {
+export function groupEvent(h: TripConfig, providerUserId: string, messageId: string, text: string, extra: Partial<RawProviderEvent> = {}): RawProviderEvent {
   return { messageId, providerUserId, spaceId: h.groupSpaceId, isDirect: false, fromSelf: false, occurredAt: '2026-10-01T12:00:00Z', text, ...extra };
 }
 export function dmEvent(providerUserId: string, messageId: string, text: string, extra: Partial<RawProviderEvent> = {}): RawProviderEvent {

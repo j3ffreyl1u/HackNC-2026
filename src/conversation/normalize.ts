@@ -1,18 +1,18 @@
-import type { HouseholdConfig, InboundMessage } from '../contracts/index.js';
+import type { InboundMessage, TripConfig } from './contracts-local.js';
 import type { RawProviderEvent } from './types.js';
 
 /**
- * Maps a provider event to the shared InboundMessage, or null when it must be dropped:
- * our own outgoing messages, removed reactions, unknown users, unrelated groups.
- * Actor identity comes only from the enrolled providerUserId. Event ids are derived
+ * Maps a provider event to an InboundMessage, or null when it must be dropped: our own outgoing messages,
+ * removed reactions, unknown users, and (in `direct` mode, or for an unrelated group) anything that is not a
+ * DM from an enrolled member. Actor identity comes only from the enrolled providerUserId. Event ids derive
  * from provider ids so retries of the same event dedupe.
  */
-export function normalizeEvent(raw: RawProviderEvent, household: HouseholdConfig): InboundMessage | null {
+export function normalizeEvent(raw: RawProviderEvent, trip: TripConfig): InboundMessage | null {
   if (raw.fromSelf) return null;
   if (raw.reaction?.removed) return null;
-  const member = household.members.find((m) => m.providerUserId === raw.providerUserId);
+  const member = trip.members.find((m) => m.providerUserId === raw.providerUserId);
   if (!member) return null;
-  if (!raw.isDirect && raw.spaceId !== household.groupSpaceId) return null;
+  if (!raw.isDirect && !(trip.mode === 'group' && raw.spaceId === trip.groupSpaceId)) return null;
 
   const eventId =
     raw.eventId ??
@@ -29,7 +29,6 @@ export function normalizeEvent(raw: RawProviderEvent, household: HouseholdConfig
     occurredAt: raw.occurredAt,
   };
   if (raw.text !== undefined) out.text = raw.text;
-  if (raw.imageUrls?.length) out.imageUrls = raw.imageUrls;
   if (raw.reaction) out.reaction = { targetMessageId: raw.reaction.targetMessageId, emoji: raw.reaction.emoji };
   return out;
 }

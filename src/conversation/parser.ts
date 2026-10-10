@@ -1,251 +1,231 @@
-import type { Command, CommandPayload, InboundMessage, OutboundMessage, ParseResult } from '../contracts/index.js';
-import { validateIntent, type ValidIntent } from './intent.js';
-import { parseDueDate } from './dates.js';
-import { formatCents, parseDollarsToCents } from './money.js';
-import type { ConversationDependencies, ParserContext } from './types.js';
+import type {
+  ActionableItem,
+  ConstraintValue,
+  InboundMessage,
+  OutboundMessage,
+  ParseResult,
+  TripAction,
+  TripCommand,
+  TripConversationContext,
+} from './contracts-local.js';
+import { extractConstraints, HEDGE, type Extracted } from './constraints.js';
+import { validateIntent } from './intent.js';
+import { formatCents } from './money.js';
+import type { ConversationDependencies } from './types.js';
 
 const APPROVE_REACTIONS = new Set(['👍', '👍🏻', '👍🏼', '👍🏽', '👍🏾', '👍🏿', '❤️', '❤', '✅', '✔️', 'like', 'love', 'thumbsup', '+1']);
-const DECLINE_REACTIONS = new Set(['👎', '👎🏻', '👎🏼', '👎🏽', '👎🏾', '👎🏿', '❌', 'dislike', 'thumbsdown', '-1']);
-const YES = /^(yes|yep|yeah|yup|sure|ok|okay|approve|approved|i approve|sounds good|do it|confirm|confirmed)[.!]*$/i;
-const NO = /^(no|nope|nah|decline|declined|i decline|don'?t|not now|no thanks)[.!]*$/i;
-/** Tentative language never becomes approval, coverage or payment. */
-const HEDGE = /\b(maybe|might|perhaps|possibly|probably|not sure|i guess|i think|could i|can i|should i|what if|if i|if we|would)\b|\?/i;
-const MONEYISH = /\b(cover|covering|pay|paying|approve|share|owe|split|send)\b|\$/i;
-const ID = '([A-Za-z0-9][A-Za-z0-9_:.\\-]*)';
-const AMT = '\\$?\\s*([\\d,]+(?:\\.\\d{1,2})?)';
+const YES = /^(yes|yep|yeah|yup|sure|ok|okay|accept|accepted|i accept|i'?m in|count me in|sounds good|works for me|let'?s do it|do it|confirm|confirmed)[.!]*$/i;
+const NO = /^(no|nope|nah|decline|i decline|not for me|not now|no thanks|pass)[.!]*$/i;
+const ID = '([A-Za-z0-9][\\w:.\\-]*)';
+const REQUEST_PLANS = /^(?:(?:please|pls|ok|okay|alright|so)[,\s]+)?(?:(?:can|could) you\s+)?(?:(?:show|give|get|send)\s+(?:me\s+|us\s+)?(?:the\s+)?(?:trip\s+)?(?:options|plans|proposals|itineraries)|(?:plan|research)\s+(?:it|this|the trip|our trip)|find\s+(?:us\s+)?(?:trip\s+)?options|what are (?:our|the) options)$/i;
+const REQUEST_FUNDING = /^(?:request|start|set up|send)\s+(?:the\s+)?(?:contributions?|funding|contribution requests)$/i;
+const GUIDE = /^(?:guide|ask guide|\/guide)\s*[:\-]?\s+(.{3,500})$/is;
+const SELECT = new RegExp(`^(?:pick|choose|select|go with|vote(?: for)?|i vote(?: for)?)\\s+(?:option\\s+|plan\\s+)?${ID}(?:\\s+v(\\d+))?$`, 'i');
+const ACCEPT = new RegExp(`^accept\\s+${ID}\\s+v(\\d+)$`, 'i');
 
-type Candidate =
-  | { kind: 'proposal'; proposalId: string; proposalVersion: number; description: string }
-  | { kind: 'private_request'; requestId: string };
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 export function createParser(deps: ConversationDependencies) {
-  const { household } = deps;
+  const { trip } = deps;
 
-  const commandId = (householdId: string, eventId: string, kind: string) => `${householdId}:${eventId}:${kind}`;
+  const reply = (msg: InboundMessage, text: string, tag: string, forcePrivate = false): ParseResult => ({
+    kind: 'reply',
+    message: replyMessage(msg, text, tag, forcePrivate),
+  });
 
-  function reply(msg: InboundMessage, householdId: string, text: string, tag: string): ParseResult {
-    const message: OutboundMessage = {
+  function replyMessage(msg: InboundMessage, text: string, tag: string, forcePrivate = false): OutboundMessage {
+    const priv = forcePrivate || msg.visibility === 'private' || trip.mode === 'direct';
+    return {
       deliveryId: `reply:${msg.eventId}:${tag}`,
-      householdId,
-      audience: msg.visibility === 'private' ? { kind: 'private', userId: msg.senderId } : { kind: 'group', spaceId: household.groupSpaceId },
+      audience: priv ? { kind: 'private', memberId: msg.senderId } : { kind: 'group', spaceId: trip.groupSpaceId },
       text,
     };
-    return { kind: 'reply', message };
   }
 
-  function command(msg: InboundMessage, ctx: ParserContext, payload: CommandPayload): ParseResult {
-    const c: Command = {
-      commandId: commandId(ctx.householdId, msg.eventId, payload.kind),
+  function command(msg: InboundMessage, ctx: TripConversationContext, action: TripAction, suffix = ''): TripCommand {
+    return {
+      commandId: `${ctx.tripId}:${msg.eventId}:${action.kind}${suffix}`,
+      eventId: msg.eventId,
       actorId: msg.senderId,
-      householdId: ctx.householdId,
-      sourceEventId: msg.eventId,
-      payload,
+      tripId: ctx.tripId,
+      action,
     };
-    return { kind: 'command', command: c };
   }
 
-  function resolveRecipient(title: string): string | null {
-    const t = title.trim().toLowerCase();
-    if (!t) return null;
-    const alias = deps.recipientAliases?.[t];
-    if (alias && household.recipients.some((r) => r.recipientId === alias)) return alias;
-    const hits = household.recipients.filter((r) => {
-      const id = r.recipientId.toLowerCase();
-      const name = r.displayName.toLowerCase();
-      return id.includes(t) || name.includes(t) || t.includes(id);
-    });
-    return hits.length === 1 ? hits[0]!.recipientId : null;
+  const one = (msg: InboundMessage, ctx: TripConversationContext, action: TripAction): ParseResult => ({ kind: 'command', command: command(msg, ctx, action) });
+
+  function updateCommand(msg: InboundMessage, ctx: TripConversationContext, v: ConstraintValue, hedged: boolean): TripCommand {
+    return command(msg, ctx, {
+      kind: 'update_constraint',
+      update: { ...v, memberId: msg.senderId, sourceMessageId: msg.messageId, certainty: hedged ? 'tentative' : 'confirmed' } as never,
+    }, `:${v.field}`);
   }
 
-  function recipientHelp(title: string): string {
-    const names = household.recipients.map((r) => r.displayName).join(', ');
-    return `I don't have a payee set up for "${title}". I can only pay: ${names}. Which one is it?`;
+  // ----- constraints -----
+
+  function mentionsOtherMember(text: string, senderId: string): boolean {
+    return trip.members
+      .filter((m) => m.userId !== senderId)
+      .some((m) => new RegExp(`\\b${escapeRe(m.displayName)}(?:'s)?\\b`, 'i').test(text));
   }
 
-  function candidates(msg: InboundMessage, ctx: ParserContext): Candidate[] {
-    const list: Candidate[] = ctx.actionableProposals.map((p) => ({ kind: 'proposal', ...p }));
-    // A group message can never answer a private consent question.
-    if (msg.visibility === 'private' && ctx.privateCoverageRequestId) {
-      list.push({ kind: 'private_request', requestId: ctx.privateCoverageRequestId });
+  function fromConstraints(msg: InboundMessage, ctx: TripConversationContext, text: string, items: Extracted[]): ParseResult {
+    const commands: TripCommand[] = [];
+    const asks: string[] = [];
+    let private_ = false;
+
+    for (const item of items) {
+      const v = item.value;
+      if (v.field === 'budget' && mentionsOtherMember(text, msg.senderId)) {
+        // Nobody can set another member's budget, and a message that names someone else is ambiguous.
+        asks.push('I can only record a budget from the person it belongs to. Ask them to tell me directly, or say "my max is $X" for your own.');
+        private_ = true;
+        continue;
+      }
+      if (v.field === 'availability' && item.negative) {
+        asks.push('Which dates ARE you free? For example "free Oct 24-26".');
+        continue;
+      }
+      // Budgets and dates commit people to something, so tentative wording is a question, not a record.
+      if ((v.field === 'budget' || v.field === 'availability') && item.hedged) {
+        if (v.field === 'budget') {
+          asks.push(`Is ${formatCents(v.value).replace(/\.00$/, '')} your firm maximum for the whole trip, including food and travel? Say "my max is $X" to lock it in.`);
+          private_ = true;
+        } else {
+          asks.push('Which dates can you actually do? Tell me plainly, e.g. "free Oct 17-19".');
+        }
+        continue;
+      }
+      commands.push(updateCommand(msg, ctx, v, item.hedged));
     }
-    return list;
+
+    const clarification = asks.length ? replyMessage(msg, asks.join('\n'), 'clarify', private_) : undefined;
+    if (commands.length === 0) return clarification ? { kind: 'reply', message: clarification } : { kind: 'ignored', reason: 'nothing to record' };
+    if (commands.length === 1 && !clarification) return { kind: 'command', command: commands[0]! };
+    return { kind: 'commands', commands, ...(clarification ? { clarification } : {}) };
   }
 
-  function resolveAnswer(msg: InboundMessage, ctx: ParserContext, yes: boolean): ParseResult {
-    const list = candidates(msg, ctx);
+  // ----- plan selection / acceptance -----
+
+  function actionable(ctx: TripConversationContext, kind: ActionableItem['kind']) {
+    return ctx.actionable.filter((a) => a.kind === kind);
+  }
+
+  function bindPlan(msg: InboundMessage, ctx: TripConversationContext, kind: ActionableItem['kind'], token: string, revision: number | undefined): ParseResult {
+    const pool = actionable(ctx, kind);
+    const lower = token.toLowerCase();
+    let match = pool.find((a) => a.candidateId.toLowerCase() === lower);
+    if (!match && /^\d{1,2}$/.test(token)) match = pool[Number(token) - 1];
+    const verb = kind === 'accept' ? 'accept' : 'pick';
+    if (!match) {
+      return reply(msg, `I don't have "${token}" waiting for you to ${verb}. ${pool.length ? `Options: ${pool.map((a, i) => `${i + 1}. ${a.description}`).join('; ')}.` : 'Nothing is waiting on you right now.'}`, 'noplan');
+    }
+    if (revision !== undefined && revision !== match.revision) {
+      return reply(msg, `That's an older version (v${revision}). The current plan is v${match.revision}, so please review it and reply "${kind === 'accept' ? 'accept' : 'pick'} ${match.candidateId} v${match.revision}".`, 'stale');
+    }
+    return one(msg, ctx, kind === 'accept'
+      ? { kind: 'accept_candidate', candidateId: match.candidateId, revision: match.revision }
+      : { kind: 'select_candidate', candidateId: match.candidateId, revision: match.revision });
+  }
+
+  function resolveAnswer(msg: InboundMessage, ctx: TripConversationContext, yes: boolean): ParseResult {
+    const list = ctx.actionable;
     if (list.length === 0) return { kind: 'ignored', reason: 'nothing to answer' };
+    if (!yes) {
+      return reply(msg, "No problem, I haven't recorded an acceptance. What would you change: dates, budget, or the activities?", 'no');
+    }
     if (list.length > 1) {
-      const lines = list.map((c, i) =>
-        c.kind === 'proposal' ? `${i + 1}. ${c.description} (${c.proposalId} v${c.proposalVersion})` : `${i + 1}. Your private coverage request`,
-      );
-      const verb = yes ? 'approve' : 'decline';
-      return reply(msg, ctx.householdId, `I have more than one thing waiting on you:\n${lines.join('\n')}\nWhich one should I ${verb}? Reply "${verb} <id> v<version>".`, 'which');
+      const lines = list.map((a, i) => `${i + 1}. ${a.description} (${a.candidateId} v${a.revision})`);
+      return reply(msg, `I have more than one thing waiting on you:\n${lines.join('\n')}\nWhich one? Reply "accept <id> v<version>" or "pick <id>".`, 'which');
     }
     const only = list[0]!;
-    if (only.kind === 'private_request') {
-      return command(msg, ctx, { kind: 'share_coverage_request', requestId: only.requestId, consent: yes });
-    }
-    return command(msg, ctx, yes
-      ? { kind: 'approve', proposalId: only.proposalId, proposalVersion: only.proposalVersion }
-      : { kind: 'decline', proposalId: only.proposalId, proposalVersion: only.proposalVersion });
+    return one(msg, ctx, only.kind === 'accept'
+      ? { kind: 'accept_candidate', candidateId: only.candidateId, revision: only.revision }
+      : { kind: 'select_candidate', candidateId: only.candidateId, revision: only.revision });
   }
 
-  function pickBill(msg: InboundMessage, ctx: ParserContext, text: string, verb: string): { billId: string } | ParseResult {
-    if (ctx.openBills.length === 0) return reply(msg, ctx.householdId, `There's no open bill to ${verb} right now.`, 'nobill');
-    const lower = text.toLowerCase();
-    const named = ctx.openBills.filter((b) => lower.includes(b.title.toLowerCase()));
-    const pool = named.length ? named : ctx.openBills;
-    if (pool.length === 1) return { billId: pool[0]!.billId };
-    return reply(msg, ctx.householdId, `Which bill? ${ctx.openBills.map((b) => b.title).join(', ')}.`, 'whichbill');
-  }
+  // ----- entry points -----
 
-  function handleOffer(msg: InboundMessage, ctx: ParserContext, requestId: string | undefined, amountCents: number | undefined): ParseResult {
-    let id = requestId;
-    let cents = amountCents;
-    const open = ctx.openCoverageRequests ?? [];
-    if (!id) {
-      if (open.length === 1) id = open[0]!.requestId;
-      else {
-        return reply(msg, ctx.householdId, 'Which coverage request? Reply "cover <request-id> $<amount>" using the id from the request message.', 'whichreq');
-      }
-    }
-    if (cents === undefined) cents = open.find((r) => r.requestId === id)?.amountCents;
-    if (cents === undefined) {
-      return reply(msg, ctx.householdId, 'How much would you like to cover? Reply "cover <request-id> $<amount>".', 'amt');
-    }
-    return command(msg, ctx, { kind: 'offer_coverage', requestId: id, amountCents: cents });
-  }
-
-  async function parseReaction(msg: InboundMessage): Promise<ParseResult> {
+  async function parseReaction(msg: InboundMessage, override?: TripConversationContext): Promise<ParseResult> {
     const { targetMessageId, emoji } = msg.reaction!;
-    const approve = APPROVE_REACTIONS.has(emoji);
-    const decline = DECLINE_REACTIONS.has(emoji);
-    if (!approve && !decline) return { kind: 'ignored', reason: 'reaction is not an approval or decline' };
-    const ctx = await deps.getConversationContext(msg.senderId, msg.spaceId, targetMessageId);
+    if (!APPROVE_REACTIONS.has(emoji)) return { kind: 'ignored', reason: 'only positive reactions are recorded' };
+    const ctx = override ?? (await deps.getConversationContext(msg.senderId, msg.spaceId, targetMessageId));
     const t = ctx.targetProposal;
     if (!t) return { kind: 'ignored', reason: 'reaction target is not a proposal' };
-    // Defence in depth: the target must be one this actor may act on, at that exact version.
-    const allowed = ctx.actionableProposals.some((p) => p.proposalId === t.proposalId && p.proposalVersion === t.proposalVersion);
-    if (!allowed) return { kind: 'ignored', reason: 'reaction target is not actionable by this member' };
-    return command(msg, ctx, approve
-      ? { kind: 'approve', proposalId: t.proposalId, proposalVersion: t.proposalVersion }
-      : { kind: 'decline', proposalId: t.proposalId, proposalVersion: t.proposalVersion });
+    // Defence in depth: the target must be one this member can act on, at exactly that kind and revision.
+    const ok = ctx.actionable.some((a) => a.kind === t.kind && a.candidateId === t.candidateId && a.revision === t.revision);
+    if (!ok) return { kind: 'ignored', reason: 'reaction target is stale or not actionable by this member' };
+    return one(msg, ctx, t.kind === 'accept'
+      ? { kind: 'accept_candidate', candidateId: t.candidateId, revision: t.revision }
+      : { kind: 'select_candidate', candidateId: t.candidateId, revision: t.revision });
   }
 
-  function fallback(msg: InboundMessage, ctx: ParserContext, text: string): ParseResult | null {
+  function explicit(msg: InboundMessage, ctx: TripConversationContext, text: string): ParseResult | null {
+    const plain = text.replace(/[?!.\s]+$/, '');
     let m: RegExpExecArray | null;
-    if (/^(summary|status)\b/i.test(text) || /^what (do i|does everyone) owe\b/i.test(text)) {
-      return command(msg, ctx, { kind: 'get_summary', cycleId: ctx.cycleId });
-    }
-    if ((m = new RegExp(`^(approve|decline)\\s+${ID}\\s+v(\\d+)$`, 'i').exec(text))) {
-      const kind = m[1]!.toLowerCase() as 'approve' | 'decline';
-      return command(msg, ctx, { kind, proposalId: m[2]!, proposalVersion: Number(m[3]) });
-    }
-    if ((m = new RegExp(`^cover\\s+${ID}\\s+${AMT}$`, 'i').exec(text))) {
-      const cents = parseDollarsToCents(m[2]!);
-      if (cents === null) return reply(msg, ctx.householdId, "I couldn't read that amount. Use dollars like $48 or $48.00.", 'badamt');
-      return command(msg, ctx, { kind: 'offer_coverage', requestId: m[1]!, amountCents: cents });
-    }
-    if ((m = new RegExp(`^(add|correct)\\s+(.+?)\\s+${AMT}\\s+due\\s+(.+)$`, 'i').exec(text))) {
-      return billCommand(msg, ctx, m[1]!.toLowerCase() as 'add' | 'correct', m[2]!, m[3]!, m[4]!);
-    }
-    if (/^(add|correct)\b/i.test(text) && !HEDGE.test(text)) {
-      return reply(msg, ctx.householdId, 'To add a bill, say e.g. "add electricity $144 due Oct 15".', 'addhelp');
-    }
+    if (REQUEST_PLANS.test(plain)) return one(msg, ctx, { kind: 'request_plans' });
+    if (REQUEST_FUNDING.test(plain)) return one(msg, ctx, { kind: 'request_funding' });
+    if ((m = GUIDE.exec(text.trim()))) return one(msg, ctx, { kind: 'ask_guide', question: m[1]!.trim() });
+    if ((m = ACCEPT.exec(plain))) return bindPlan(msg, ctx, 'accept', m[1]!, Number(m[2]));
+    if ((m = SELECT.exec(plain))) return bindPlan(msg, ctx, 'select', m[1]!, m[2] ? Number(m[2]) : undefined);
     return null;
   }
 
-  function billCommand(msg: InboundMessage, ctx: ParserContext, mode: 'add' | 'correct', titleIn: string, amount: string | number, dueDateIn: string): ParseResult {
-    const cents = parseDollarsToCents(amount);
-    if (cents === null) return reply(msg, ctx.householdId, "I couldn't read that amount. Use dollars like $144 or $144.00.", 'badamt');
-    const due = parseDueDate(dueDateIn, msg.occurredAt);
-    if (!due) return reply(msg, ctx.householdId, 'What is the due date? For example "Oct 15" or 2026-10-15.', 'baddate');
-    const title = titleIn.trim();
-    if (mode === 'add') {
-      const recipientId = resolveRecipient(title);
-      if (!recipientId) return reply(msg, ctx.householdId, recipientHelp(title), 'recipient');
-      return command(msg, ctx, { kind: 'add_bill', amountCents: cents, title, dueDate: due, recipientId, cycleId: ctx.cycleId });
-    }
-    // correct: title or id must match exactly one open bill.
-    const bill = ctx.openBills.filter((b) => b.title.toLowerCase() === title.toLowerCase() || b.billId === title);
-    if (bill.length !== 1) return reply(msg, ctx.householdId, `Which bill should I correct? ${ctx.openBills.map((b) => b.title).join(', ') || 'No open bills.'}`, 'whichbill');
-    const recipientId = resolveRecipient(bill[0]!.title);
-    if (!recipientId) return reply(msg, ctx.householdId, recipientHelp(bill[0]!.title), 'recipient');
-    return command(msg, ctx, { kind: 'correct_bill', billId: bill[0]!.billId, amountCents: cents, title: bill[0]!.title, dueDate: due, recipientId });
-  }
-
-  function mapIntent(msg: InboundMessage, ctx: ParserContext, text: string, intent: ValidIntent): ParseResult {
-    const hedged = HEDGE.test(text);
-    switch (intent.intent) {
-      case 'none':
-        return { kind: 'ignored', reason: 'not addressed to the assistant' };
-      case 'clarify':
-        return reply(msg, ctx.householdId,
-          intent.reason === 'unclear_amount' ? "I couldn't tell the amount. How much is it, in dollars?"
-          : intent.reason === 'missing_field' ? 'I need the bill name, amount and due date, e.g. "add electricity $144 due 2026-10-15".'
-          : "I'm not sure what you'd like me to do. I can add a bill, show a summary, or help with coverage.", 'clarify');
-      case 'summary':
-        return command(msg, ctx, { kind: 'get_summary', cycleId: ctx.cycleId });
-      case 'add_bill':
-      case 'correct_bill':
-        if (hedged) return reply(msg, ctx.householdId, 'Just to confirm: should I add that bill? Say it plainly, e.g. "add electricity $144 due 2026-10-15".', 'hedge');
-        return billCommand(msg, ctx, intent.intent === 'add_bill' ? 'add' : 'correct', intent.title, (intent.amountCents / 100).toFixed(2), intent.dueDate);
-      case 'request_coverage': {
-        const bill = pickBill(msg, ctx, text, 'ask for help with');
-        if ('kind' in bill) return bill;
-        return command(msg, ctx, { kind: 'request_coverage', billId: bill.billId });
-      }
-      case 'offer_coverage':
-        if (hedged) return reply(msg, ctx.householdId, 'Thanks for considering it. To offer coverage, say it plainly, e.g. "cover <request-id> $48".', 'hedge');
-        return handleOffer(msg, ctx, undefined, intent.amountCents);
-      case 'approve':
-      case 'consent_yes':
-        if (hedged) return reply(msg, ctx.householdId, 'Just to be sure: do you approve? Reply "yes" to confirm or "no" to decline.', 'hedge');
-        return resolveAnswer(msg, ctx, true);
-      case 'decline':
-      case 'consent_no':
-        return resolveAnswer(msg, ctx, false);
-    }
-  }
-
-  async function parseText(msg: InboundMessage): Promise<ParseResult> {
+  async function parseText(msg: InboundMessage, override?: TripConversationContext): Promise<ParseResult> {
     const text = (msg.text ?? '').trim();
     if (!text) return { kind: 'ignored', reason: 'empty message' };
-    const ctx = await deps.getConversationContext(msg.senderId, msg.spaceId);
+    const ctx = override ?? (await deps.getConversationContext(msg.senderId, msg.spaceId));
 
-    const fb = fallback(msg, ctx, text);
-    if (fb) return fb;
-    if (YES.test(text)) return resolveAnswer(msg, ctx, true);
-    if (NO.test(text)) return resolveAnswer(msg, ctx, false);
+    const ex = explicit(msg, ctx, text);
+    if (ex) return ex;
+    const plain = text.replace(/[?!.\s]+$/, '');
+    if (YES.test(text) || YES.test(plain)) return resolveAnswer(msg, ctx, true);
+    if (NO.test(text) || NO.test(plain)) return resolveAnswer(msg, ctx, false);
 
-    if (HEDGE.test(text) && MONEYISH.test(text) && !/\b(owe|summary|status)\b/i.test(text)) {
-      // Questions and tentative offers: clarify, never act. (Intent model may still know "what do I owe".)
-      const asksOwe = /\bwhat\b.*\bowe\b/i.test(text);
-      if (!asksOwe) {
-        return reply(msg, ctx.householdId, "I'll only act on a clear request. When you're ready, say e.g. \"cover <request-id> $48\" or \"approve <id> v1\" - or ask for a \"summary\".", 'hedge');
-      }
-    }
+    const extracted = extractConstraints(text, msg.occurredAt, ctx.pendingQuestion?.field);
+    if (extracted.length) return fromConstraints(msg, ctx, text, extracted);
 
     const raw = await deps.intentModel.interpret({
       text,
       occurredAt: msg.occurredAt,
       visibility: msg.visibility,
-      cycleId: ctx.cycleId,
-      openBills: ctx.openBills,
-      recipientNames: household.recipients.map((r) => r.displayName),
-      hasActionableProposals: ctx.actionableProposals.length > 0,
-      hasPrivateCoverageQuestion: msg.visibility === 'private' && !!ctx.privateCoverageRequestId,
+      timezone: trip.timezone,
+      memberNames: trip.members.map((m) => m.displayName),
+      ...(ctx.pendingQuestion ? { pendingField: ctx.pendingQuestion.field } : {}),
+      hasActionable: ctx.actionable.length > 0,
     });
-    return mapIntent(msg, ctx, text, validateIntent(raw));
+    const intent = validateIntent(raw);
+    const hedged = HEDGE.test(text);
+    switch (intent.intent) {
+      case 'none':
+        return { kind: 'ignored', reason: 'not addressed to the assistant' };
+      case 'clarify':
+        // In a group, an unclear message is usually just friends talking: stay quiet there.
+        return msg.visibility === 'private' || trip.mode === 'direct'
+          ? reply(msg, 'I can note your budget, free dates and preferences, show trip options, or answer trip questions. Try "my max is $200" or "free Oct 17-19".', 'help')
+          : { kind: 'ignored', reason: 'unclear group message' };
+      case 'constraints':
+        return fromConstraints(msg, ctx, text, intent.items.map((value) => ({ value, hedged })));
+      case 'request_plans':
+        return one(msg, ctx, { kind: 'request_plans' });
+      case 'ask_guide':
+        return one(msg, ctx, { kind: 'ask_guide', question: intent.question });
+      case 'request_funding':
+        return hedged ? reply(msg, 'To set up contribution requests, say it plainly: "request contributions".', 'hedge') : one(msg, ctx, { kind: 'request_funding' });
+      case 'yes':
+        if (hedged) return reply(msg, 'Just to be sure: do you accept? Reply "yes" to confirm or "no" to decline.', 'hedge');
+        return resolveAnswer(msg, ctx, true);
+      case 'no':
+        return resolveAnswer(msg, ctx, false);
+    }
   }
 
-  async function parse(msg: InboundMessage): Promise<ParseResult> {
-    const member = household.members.find((m) => m.userId === msg.senderId);
-    if (!member) return { kind: 'ignored', reason: 'sender is not enrolled' };
-    if (msg.visibility === 'group' && msg.spaceId !== household.groupSpaceId) return { kind: 'ignored', reason: 'unrelated group' };
-    if (msg.reaction) return parseReaction(msg);
-    return parseText(msg);
+  async function parse(msg: InboundMessage, context?: TripConversationContext): Promise<ParseResult> {
+    if (!trip.members.some((m) => m.userId === msg.senderId)) return { kind: 'ignored', reason: 'sender is not enrolled' };
+    if (msg.visibility === 'group' && (trip.mode !== 'group' || msg.spaceId !== trip.groupSpaceId)) return { kind: 'ignored', reason: 'unrelated group' };
+    if (msg.reaction) return parseReaction(msg, context);
+    return parseText(msg, context);
   }
 
-  return { parse, formatCents };
+  return { parse };
 }

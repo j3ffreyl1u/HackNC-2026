@@ -8,7 +8,7 @@
  * compile-time dependency on spectrum-ts. C adds `spectrum-ts` to package.json; `loadSpectrumApp`
  * imports it lazily and only when CHAT_MODE=photon.
  */
-import type { HouseholdConfig } from '../contracts/index.js';
+import type { TripConfig } from './contracts-local.js';
 import type { Messenger, MessengerAudience, RawProviderEvent } from './types.js';
 
 /** Subset of spectrum-ts `Message`/`Space` we rely on (names taken from the 12.10.1 typings). */
@@ -67,7 +67,7 @@ export function mapSpectrumMessage(space: SpectrumSpaceLike, message: SpectrumMe
 export interface SpectrumMessengerOptions {
   app: SpectrumAppLike;
   imessage: SpectrumIMessageLike;
-  household: HouseholdConfig;
+  trip: TripConfig;
   onError?: (err: unknown) => void;
 }
 
@@ -136,7 +136,7 @@ export interface SpectrumCredentials {
 /** Lazy live construction. Requires `spectrum-ts` installed by C and real credentials. */
 export async function loadSpectrumApp(creds: SpectrumCredentials): Promise<{ app: SpectrumAppLike; imessage: SpectrumIMessageLike }> {
   if (!creds.projectId || !creds.projectSecret) {
-    throw new Error('CHAT_MODE=photon requires SPECTRUM_PROJECT_ID and SPECTRUM_PROJECT_SECRET');
+    throw new Error('CHAT_MODE=photon requires PROJECT_ID and PROJECT_SECRET');
   }
   const core = 'spectrum-ts';
   const prov = 'spectrum-ts/providers/imessage';

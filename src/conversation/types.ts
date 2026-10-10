@@ -1,8 +1,4 @@
-import type {
-  ConversationContext,
-  HouseholdConfig,
-  InboundMessage,
-} from '../contracts/index.js';
+import type { ConstraintField, InboundMessage, TripConfig, TripConversationContext } from './contracts-local.js';
 
 /** Provider-agnostic raw event, produced by a messenger before normalization. */
 export interface RawProviderEvent {
@@ -16,7 +12,6 @@ export interface RawProviderEvent {
   fromSelf: boolean;
   occurredAt: string;
   text?: string;
-  imageUrls?: string[];
   reaction?: { targetMessageId: string; emoji: string; removed?: boolean };
 }
 
@@ -31,16 +26,15 @@ export interface Messenger {
   stop(): Promise<void>;
 }
 
-/** What Gemini (or a mock) is allowed to see. No balances, no other users' private history. */
+/** What Gemini (or a mock) is allowed to see. No budgets, no other members' private history. */
 export interface IntentInput {
   text: string;
   occurredAt: string;
   visibility: 'group' | 'private';
-  cycleId: string;
-  openBills: Array<{ billId: string; title: string }>;
-  recipientNames: string[];
-  hasActionableProposals: boolean;
-  hasPrivateCoverageQuestion: boolean;
+  timezone: string;
+  memberNames: string[];
+  pendingField?: ConstraintField;
+  hasActionable: boolean;
 }
 
 /** Untrusted model output. Always validated by `validateIntent` before use. */
@@ -50,25 +44,12 @@ export interface IntentModel {
   interpret(input: IntentInput): Promise<RawIntent>;
 }
 
-/** Optional additive field the parser can use if finance supplies it (see docs/conversation.md). */
-export interface OpenCoverageRequest {
-  requestId: string;
-  /** Remaining amount the volunteer would fund, in cents. */
-  amountCents: number;
-}
-export type ParserContext = ConversationContext & { openCoverageRequests?: OpenCoverageRequest[] };
-
 export interface ConversationDependencies {
-  household: HouseholdConfig;
+  trip: TripConfig;
   intentModel: IntentModel;
   messenger: Messenger;
-  getConversationContext(
-    actorId: string,
-    spaceId: string,
-    targetMessageId?: string,
-  ): Promise<ParserContext>;
-  /** Optional: title keyword -> recipientId (e.g. electricity -> duke-energy). */
-  recipientAliases?: Record<string, string>;
+  /** Injected by the app (C). Used when `parseInbound` is called without an explicit context. */
+  getConversationContext(actorId: string, spaceId: string, targetMessageId?: string): Promise<TripConversationContext>;
 }
 
 export type { InboundMessage };
