@@ -20,7 +20,7 @@ Files: `parser.ts` (commands/replies), `intent.ts` (validates untrusted model ou
 ## Contract gaps (for C / B)
 1. **Open coverage requests are not in `ConversationContext`.** A volunteer saying "I'll cover Jordan" cannot be resolved to a `requestId`. The parser accepts an additive optional `openCoverageRequests?: Array<{ requestId, amountCents }>` on the context (exported as `ParserContext`). Until B supplies it, volunteers use `cover <request-id> $48` with the id in B's group request message.
 2. **Dependencies for C to add:** `spectrum-ts@12.10.1` (only when `CHAT_MODE=photon`; imported lazily). Gemini uses plain `fetch` (Node 20), no package.
-3. **Env names:** `SPECTRUM_PROJECT_ID` and `SPECTRUM_PROJECT_SECRET` (what `Spectrum()` takes in cloud mode), plus `GEMINI_API_KEY`, `GEMINI_MODEL`. The spec's `PHOTON_API_KEY` does not match the SDK; C should map or rename.
+3. **Env names:** `PROJECT_ID` and `PROJECT_SECRET` (the names the official `create-spectrum-project` scaffold writes; they feed `Spectrum({ projectId, projectSecret })` in cloud mode). Node does not auto-load `.env` like Bun: run with `node --env-file=.env`, plus `GEMINI_API_KEY`, `GEMINI_MODEL`. The spec's `PHOTON_API_KEY` does not match the SDK; C should map or rename.
 4. `OutboundMessage.proposalRef` is passed through by C; the Spectrum adapter returns the provider message id so C/B can bind it for reactions.
 
 ## Verification status (2026-10-10)
@@ -28,11 +28,13 @@ Files: `parser.ts` (commands/replies), `intent.ts` (validates untrusted model ou
 | --- | --- |
 | Parsing, approvals, coverage dialogue, normalization (mock) | **Tested** - `tests/conversation/*` |
 | Spectrum payload mapping | **Mapped to the 12.10.1 type definitions**, tested with objects shaped like those types. **Not run against a live line** (no credentials) |
-| Spectrum group reply, DM, reaction live | **Unverified** |
+| Spectrum DM, live (2026-10-10, cloud iMessage, free/shared line, spectrum-ts 12.10.1) | **Verified by hand with a throwaway probe outside this repo**: an inbound DM arrived with `senderId` in E.164 form (e.g. `+1910…`), `space.type` = `dm`, `space.id` = `any;-;<E.164>`; the bot's reply was delivered as iMessage. Mason's number also worked. The conversation adapter itself (`spectrum.ts`) has not yet been run live |
+| Spectrum group chat, live | **Not working on the shared line**: with the bot and three people in an iMessage group, no event reached the app (stream was up). Photon docs list creating groups and group events as dedicated-lines-only. Needs a dedicated line, or the DM-only fallback (product decision pending) |
+| Spectrum reaction, live | **Unverified** (needs a thumbs-up on a bot message in a working space) |
 | Gemini request/response | Request shape from the structured-output docs; the raw response layout is not documented there, so extraction is tolerant. **Unverified live** |
 | Gemini image / receipt capture | **Not implemented** (optional; manual entry works) |
 
-Unverified Spectrum details: the format of `message.sender.id` for iMessage (assumed to match `providerUserId` in the household config; likely E.164 phone), how a removed tapback is surfaced (currently any reaction event is treated as added), and whether `space.send` returns a `Message` with an `id` in every case (if not, `send` throws "delivery uncertain" rather than inventing an id). Image attachments expose `read()` bytes, not URLs, so `imageUrls` is unused.
+Observed: `message.sender.id` is the sender's E.164 phone number, so `providerUserId` in the household config is that number. Read receipts arrive as their own `read` content type and are ignored. Still unverified: how a removed tapback is surfaced (currently any reaction event is treated as added), and whether `space.send` returns a `Message` with an `id` in every case (if not, `send` throws "delivery uncertain" rather than inventing an id). Image attachments expose `read()` bytes, not URLs, so `imageUrls` is unused.
 
 ## Run
 `npx vitest run tests/conversation`
