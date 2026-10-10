@@ -1,6 +1,7 @@
 ﻿import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { FinanceService, HouseholdConfig, HouseholdSnapshot } from '../../src/contracts/index.js';
 import { createAppServer } from '../../src/app/server.js';
+import { CycleTransitionError, FinanceConfigError } from '../../src/finance/index.js';
 
 const config: HouseholdConfig = {
   householdId: 'demo-house', groupSpaceId: 'space', designatedPayerId: 'mason', householdAccountId: 'house',
@@ -58,5 +59,23 @@ describe('app HTTP routes', () => {
     const { base } = await start(false);
     expect((await fetch(`${base}/api/demo/advance-cycle`, { method: 'POST', body: '{}' })).status).toBe(404);
     expect((await fetch(`${base}/api/households/other/snapshot`)).status).toBe(404);
+  });
+
+  it('maps Finance unknown-household and cycle-transition errors to 404 and 409', async () => {
+    const { base, finance } = await start();
+    vi.mocked(finance.getSnapshot).mockRejectedValue(new FinanceConfigError('unknown household'));
+    expect((await fetch(`${base}/api/households/demo-house/snapshot`)).status).toBe(404);
+
+    vi.mocked(finance.advanceDemoCycle).mockRejectedValue(new CycleTransitionError('prior_unpaid', 'Prior bills remain unpaid'));
+    const response = await fetch(`${base}/api/demo/advance-cycle`, {
+      method: 'POST', body: JSON.stringify({ householdId: 'demo-house', cycleId: '2026-11' }),
+    });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: 'Prior bills remain unpaid' });
+
+    vi.mocked(finance.advanceDemoCycle).mockRejectedValue(new Error('database unavailable'));
+    expect((await fetch(`${base}/api/demo/advance-cycle`, {
+      method: 'POST', body: JSON.stringify({ householdId: 'demo-house', cycleId: '2026-11' }),
+    })).status).toBe(500);
   });
 });

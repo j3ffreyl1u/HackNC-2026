@@ -1,60 +1,32 @@
-import { isBankSeeder, type BankingAdapter } from './bank';
+import { isBankSeeder, type BankingAdapter } from './bank.js';
 import type {
   Command,
-  ConversationContext,
   ExecuteResult,
+  FinanceService,
   HouseholdConfig,
   HouseholdSnapshot,
   OutboundMessage,
-} from './contracts-local';
-import { LedgerStore } from './store';
+} from '../contracts/index.js';
+import { Billing } from './billing.js';
+import { CycleFlow } from './cycle.js';
+import { FinanceEngine } from './engine.js';
+import { Ledger } from './ledger.js';
+import { Reminders } from './reminders.js';
+import { Notifier } from './support.js';
+import { Views } from './views.js';
+import { BankProcessor } from './reconcile.js';
+import { CycleTransitionError, FinanceConfigError, NotImplementedError, type Clock, type IdGenerator } from './runtime.js';
+import { LedgerStore } from './store.js';
 
-export interface Clock {
-  now(): Date;
-}
-
-/** Produces unique IDs; the prefix names the kind of entity (e.g. `prop`, `op`). */
-export type IdGenerator = (prefix: string) => string;
+export { CycleTransitionError, FinanceConfigError, NotImplementedError };
+export { UnknownActorError } from './views.js';
+export type { Clock, IdGenerator, FinanceService };
 
 export interface FinanceDependencies {
   store: LedgerStore;
   bank: BankingAdapter;
   clock: Clock;
   newId: IdGenerator;
-}
-
-export interface FinanceService {
-  execute(command: Command): Promise<ExecuteResult>;
-  reconcile(householdId: string): Promise<void>;
-  getSnapshot(householdId: string): Promise<HouseholdSnapshot>;
-  pendingMessages(): Promise<OutboundMessage[]>;
-  enqueueMessage(message: OutboundMessage): Promise<void>;
-  recordDelivery(deliveryId: string, providerMessageId: string): Promise<void>;
-  lookupProposal(providerMessageId: string): Promise<{ proposalId: string; proposalVersion: number } | null>;
-  advanceDemoCycle(householdId: string, cycleId: string): Promise<void>;
-  getConversationContext(actorId: string, spaceId: string, targetMessageId?: string): Promise<ConversationContext>;
-  processReminders(householdId: string): Promise<void>;
-  bootstrapHousehold(config: HouseholdConfig): Promise<void>;
-  seedDemoBanking(config: HouseholdConfig): Promise<HouseholdConfig>;
-  claimInbound(eventId: string): Promise<boolean>;
-  completeInbound(eventId: string): Promise<void>;
-  close(): Promise<void>;
-}
-
-/** Invalid enrollment or seeding configuration: an operator error, not a user-facing domain rejection. */
-export class FinanceConfigError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'FinanceConfigError';
-  }
-}
-
-/** A service method whose milestone has not been built yet. Never reports success. */
-export class NotImplementedError extends Error {
-  constructor(method: string) {
-    super(`FinanceService.${method} is not implemented yet`);
-    this.name = 'NotImplementedError';
-  }
 }
 
 const MEMBER_COUNT = 3;
@@ -109,18 +81,36 @@ export function validateHouseholdConfig(config: HouseholdConfig): void {
 export function createFinanceService(dependencies: FinanceDependencies): FinanceService {
   const { store, bank, clock } = dependencies;
   const nowIso = () => clock.now().toISOString();
+  const engine = new FinanceEngine(store, clock, dependencies.newId);
+  const ledger = new Ledger(store);
+  const cycles = new CycleFlow(store, ledger, new Billing(store, ledger, new Notifier(store, ledger), dependencies.newId), new Notifier(store, ledger), nowIso);
+  const views = new Views(store, ledger);
+  const reminders = new Reminders(store, ledger, clock);
+  const processor = new BankProcessor(store, bank, clock, dependencies.newId);
+
+  // Bank work runs one pass at a time so an operation is never sent or settled twice concurrently.
+  let queue: Promise<unknown> = Promise.resolve();
+  const serialize = <T>(task: () => Promise<T>): Promise<T> => {
+    const run = queue.then(task, task);
+    queue = run.catch(() => undefined);
+    return run;
+  };
 
   return {
-    async execute(_command: Command): Promise<ExecuteResult> {
-      throw new NotImplementedError('execute');
+    async execute(command: Command): Promise<ExecuteResult> {
+      const result = engine.execute(command);
+      // An accepted command may have approved a transfer; send it now. The result is already durable,
+      // so a bank outcome never changes what `execute` reports.
+      if (result.kind === 'accepted') await serialize(() => processor.pump(command.householdId));
+      return result;
     },
 
-    async reconcile(_householdId: string): Promise<void> {
-      throw new NotImplementedError('reconcile');
+    async reconcile(householdId: string): Promise<void> {
+      await serialize(() => processor.pump(householdId));
     },
 
-    async getSnapshot(_householdId: string): Promise<HouseholdSnapshot> {
-      throw new NotImplementedError('getSnapshot');
+    async getSnapshot(householdId: string): Promise<HouseholdSnapshot> {
+      return views.snapshot(householdId);
     },
 
     async pendingMessages(): Promise<OutboundMessage[]> {
@@ -139,16 +129,16 @@ export function createFinanceService(dependencies: FinanceDependencies): Finance
       return store.lookupProviderBinding(providerMessageId);
     },
 
-    async advanceDemoCycle(_householdId: string, _cycleId: string): Promise<void> {
-      throw new NotImplementedError('advanceDemoCycle');
+    async advanceDemoCycle(householdId: string, cycleId: string): Promise<void> {
+      cycles.advance(householdId, cycleId);
     },
 
-    async getConversationContext(_actorId: string, _spaceId: string, _targetMessageId?: string) {
-      throw new NotImplementedError('getConversationContext');
+    async getConversationContext(actorId: string, spaceId: string, targetMessageId?: string) {
+      return views.conversationContext(actorId, spaceId, targetMessageId);
     },
 
-    async processReminders(_householdId: string): Promise<void> {
-      throw new NotImplementedError('processReminders');
+    async processReminders(householdId: string): Promise<void> {
+      reminders.process(householdId);
     },
 
     /** Idempotent: refreshes enrollment, never touches ledger state, sets the first demo cycle once. */
@@ -170,12 +160,13 @@ export function createFinanceService(dependencies: FinanceDependencies): Finance
       if (!isBankSeeder(bank)) {
         throw new FinanceConfigError('the configured bank adapter cannot provision demo accounts');
       }
-      const resolve = async (label: string, initialBalanceCents: number): Promise<string> => {
+      const resolve = async (label: string, initialBalanceCents: number, configuredAccountId: string): Promise<string> => {
         const existing = store.getMeta(config.householdId, seedKey(label)) ?? undefined;
         const accountId = await bank.provisionAccount({
           label: `${config.householdId}-${label}`,
           initialBalanceCents,
           existingAccountId: existing,
+          configuredAccountId,
         });
         if (accountId !== existing) store.setMeta(config.householdId, seedKey(label), accountId);
         return accountId;
@@ -183,12 +174,12 @@ export function createFinanceService(dependencies: FinanceDependencies): Finance
 
       const members = [];
       for (const m of config.members) {
-        members.push({ ...m, bankAccountId: await resolve(`member-${m.userId}`, MEMBER_STARTING_BALANCE_CENTS) });
+        members.push({ ...m, bankAccountId: await resolve(`member-${m.userId}`, MEMBER_STARTING_BALANCE_CENTS, m.bankAccountId) });
       }
-      const householdAccountId = await resolve('household', 0);
+      const householdAccountId = await resolve('household', 0, config.householdAccountId);
       const recipients = [];
       for (const r of config.recipients) {
-        recipients.push({ ...r, bankAccountId: await resolve(`recipient-${r.recipientId}`, 0) });
+        recipients.push({ ...r, bankAccountId: await resolve(`recipient-${r.recipientId}`, 0, r.bankAccountId) });
       }
       return { ...config, householdAccountId, members, recipients };
     },

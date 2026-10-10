@@ -2,7 +2,8 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import type { ConversationService, FinanceService, InboundMessage, OutboundMessage, ParseResult } from '../../src/contracts/index.js';
-import { createEventHandler, drainOutbox } from '../../src/app/events.js';
+import { createEventHandler, deterministicCommandId, drainOutbox } from '../../src/app/events.js';
+import { UnknownActorError } from '../../src/finance/index.js';
 
 const message = (eventId: string): InboundMessage => ({
   eventId, messageId: `message-${eventId}`, senderId: 'mason', spaceId: 'space',
@@ -27,6 +28,94 @@ function conversationStub(overrides: Partial<ConversationService> = {}): Convers
 }
 
 describe('event composition', () => {
+  it('derives stable command IDs from household, event and action', () => {
+    const command = { householdId: 'demo-house', payload: { kind: 'approve' as const, proposalId: 'p1', proposalVersion: 1 } };
+    expect(deterministicCommandId(command, 'evt-1')).toBe(deterministicCommandId(command, 'evt-1'));
+    expect(deterministicCommandId(command, 'evt-1')).not.toBe(deterministicCommandId(command, 'evt-2'));
+    expect(deterministicCommandId(command, 'evt-1')).not.toBe(deterministicCommandId({ ...command, householdId: 'other' }, 'evt-1'));
+    expect(deterministicCommandId(command, 'evt-1')).not.toBe(deterministicCommandId({ ...command, payload: { kind: 'decline' as const, proposalId: 'p1', proposalVersion: 1 } }, 'evt-1'));
+  });
+
+  it('binds the executed command to the provider sender and event identity', async () => {
+    const source = message('event-bound');
+    const parsed = {
+      commandId: 'model-provided-id', actorId: 'wrong-actor', householdId: 'demo-house', sourceEventId: 'wrong-event',
+      payload: { kind: 'get_summary' as const, cycleId: '2026-10' },
+    };
+    const conversation = conversationStub({ parseInbound: vi.fn(async () => ({ kind: 'command' as const, command: parsed })) });
+    const finance = financeStub({ execute: vi.fn(async () => ({ kind: 'accepted' as const })), markDeliveryUncertain: vi.fn(async () => undefined) });
+
+    await createEventHandler(conversation, finance, 'demo-house')(source);
+
+    expect(finance.execute).toHaveBeenCalledWith({
+      ...parsed, commandId: deterministicCommandId(parsed, source.eventId), actorId: source.senderId, sourceEventId: source.eventId,
+    });
+    expect(finance.completeInbound).toHaveBeenCalledWith(source.eventId);
+  });
+
+  it('delivers a rejected command userMessage privately to the enrolled actor', async () => {
+    const source = message('rejected-event');
+    const command = {
+      commandId: 'any', actorId: source.senderId, householdId: 'demo-house', sourceEventId: source.eventId,
+      payload: { kind: 'approve' as const, proposalId: 'p1', proposalVersion: 1 },
+    };
+    const queued: OutboundMessage[] = [];
+    const conversation = conversationStub({
+      parseInbound: vi.fn(async () => ({ kind: 'command' as const, command })),
+      sendMessage: vi.fn(async () => ({ providerMessageId: 'private-rejection-1' })),
+    });
+    const finance = financeStub({
+      execute: vi.fn(async () => ({ kind: 'rejected' as const, code: 'STALE_PROPOSAL' as const, userMessage: 'Please approve the latest proposal.' })),
+      enqueueMessage: vi.fn(async (message) => { queued.push(message); }),
+      pendingMessages: vi.fn(async () => [...queued]),
+      recordDelivery: vi.fn(async (deliveryId) => { const index = queued.findIndex((item) => item.deliveryId === deliveryId); if (index >= 0) queued.splice(index, 1); }),
+      markDeliveryUncertain: vi.fn(async () => undefined),
+    });
+
+    await createEventHandler(conversation, finance, 'demo-house')(source);
+
+    expect(finance.enqueueMessage).toHaveBeenCalledWith(expect.objectContaining({
+      householdId: 'demo-house', audience: { kind: 'private', userId: source.senderId },
+      text: 'Please approve the latest proposal.',
+    }));
+    expect(conversation.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
+      audience: { kind: 'private', userId: source.senderId }, text: 'Please approve the latest proposal.',
+    }));
+    expect(finance.recordDelivery).toHaveBeenCalledWith(expect.stringMatching(/^delivery-/), 'private-rejection-1');
+    expect(finance.completeInbound).toHaveBeenCalledWith(source.eventId);
+  });
+
+  it('ignores Finance UnknownActorError without exposing an error or making a transfer', async () => {
+    const source = message('unknown-actor-event');
+    const command = {
+      commandId: 'any', actorId: source.senderId, householdId: 'demo-house', sourceEventId: source.eventId,
+      payload: { kind: 'get_summary' as const, cycleId: '2026-10' },
+    };
+    const conversation = conversationStub({ parseInbound: vi.fn(async () => ({ kind: 'command' as const, command })) });
+    const finance = financeStub({ execute: vi.fn(async () => { throw new UnknownActorError(source.senderId); }) });
+
+    await createEventHandler(conversation, finance, 'demo-house')(source);
+
+    expect(finance.completeInbound).toHaveBeenCalledWith(source.eventId);
+    expect(finance.enqueueMessage).not.toHaveBeenCalled();
+    expect(finance.pendingMessages).not.toHaveBeenCalled();
+  });
+
+  it('completes but ignores a command for a different household', async () => {
+    const source = message('wrong-household-event');
+    const command = {
+      commandId: 'any', actorId: source.senderId, householdId: 'other-house', sourceEventId: source.eventId,
+      payload: { kind: 'get_summary' as const, cycleId: '2026-10' },
+    };
+    const conversation = conversationStub({ parseInbound: vi.fn(async () => ({ kind: 'command' as const, command })) });
+    const finance = financeStub();
+
+    await createEventHandler(conversation, finance, 'demo-house')(source);
+
+    expect(finance.execute).not.toHaveBeenCalled();
+    expect(finance.completeInbound).toHaveBeenCalledWith(source.eventId);
+  });
+
   it('uses stable fixture event IDs to ignore provider retries before reparsing', async () => {
     const events = JSON.parse(await readFile(resolve('tests/fixtures/events.json'), 'utf8')) as InboundMessage[];
     const fixtureEvent = events[0];

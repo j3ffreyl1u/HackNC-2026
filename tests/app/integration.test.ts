@@ -3,6 +3,7 @@ import { createServer } from 'node:http';
 import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Command, ConversationService, FinanceService, HouseholdConfig, HouseholdSnapshot, InboundMessage, OutboundMessage } from '../../src/contracts/index.js';
+import { deterministicCommandId } from '../../src/app/events.js';
 import { createApplicationRuntime } from '../../src/app/runtime.js';
 import { createAppServer } from '../../src/app/server.js';
 
@@ -69,7 +70,9 @@ describe('app integration with contract fakes', () => {
     expect(await response.json()).toEqual(snapshot);
     expect(finance.claimInbound).toHaveBeenCalledWith(inbound.eventId);
     expect(conversation.parseInbound).toHaveBeenCalledWith(inbound);
-    expect(finance.execute).toHaveBeenCalledWith(command);
+    expect(finance.execute).toHaveBeenCalledWith({
+      ...command, commandId: deterministicCommandId(command, inbound.eventId), actorId: inbound.senderId, sourceEventId: inbound.eventId,
+    });
     expect(finance.completeInbound).toHaveBeenCalledWith(inbound.eventId);
     expect(conversation.sendMessage).toHaveBeenCalledWith(outbound);
     expect(finance.recordDelivery).toHaveBeenCalledWith(outbound.deliveryId, 'provider-summary-1');

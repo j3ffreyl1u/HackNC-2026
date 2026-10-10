@@ -1,4 +1,4 @@
-import type { BankSeeder, BankTransferResult, BankingAdapter, SubmitTransferInput } from './bank';
+import type { BankSeeder, BankTransferResult, BankingAdapter, SubmitTransferInput } from './bank.js';
 
 /** What the next submitTransfer call should do, consumed in FIFO order. */
 export type InjectedBehavior =
@@ -92,6 +92,7 @@ export class MockBank implements BankingAdapter, BankSeeder {
     label: string;
     initialBalanceCents: number;
     existingAccountId?: string;
+    configuredAccountId?: string;
   }): Promise<string> {
     const accountId = input.existingAccountId ?? `mock-${input.label.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`;
     if (!this.balances.has(accountId)) this.balances.set(accountId, input.initialBalanceCents);

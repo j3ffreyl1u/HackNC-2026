@@ -1,14 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { BankingAdapter } from '../../src/finance/bank';
-import type { HouseholdConfig, OutboundMessage } from '../../src/finance/contracts-local';
+import type { BankingAdapter } from '../../src/finance/bank.js';
+import type { HouseholdConfig, OutboundMessage } from '../../src/contracts/index.js';
 import {
   FinanceConfigError,
-  NotImplementedError,
   createFinanceService,
   type FinanceService,
-} from '../../src/finance/index';
-import { MockBank } from '../../src/finance/mock-bank';
-import { LedgerStore } from '../../src/finance/store';
+} from '../../src/finance/index.js';
+import { MockBank } from '../../src/finance/mock-bank.js';
+import { LedgerStore } from '../../src/finance/store.js';
 
 const config: HouseholdConfig = {
   householdId: 'demo-house',
@@ -169,22 +168,6 @@ describe('durable inbound and outbox', () => {
     await service.recordDelivery('d-1', 'prov-77');
     expect(await service.lookupProposal('prov-77')).toEqual({ proposalId: 'prop-1', proposalVersion: 3 });
     expect(await service.lookupProposal('unrelated-message')).toBeNull();
-  });
-});
-
-describe('milestones not built yet', () => {
-  it('fails loudly instead of reporting success', async () => {
-    await expect(
-      service.execute({
-        commandId: 'c',
-        actorId: 'mason',
-        householdId: 'demo-house',
-        sourceEventId: 'e',
-        payload: { kind: 'get_summary', cycleId: '2026-10' },
-      }),
-    ).rejects.toThrow(NotImplementedError);
-    await expect(service.reconcile('demo-house')).rejects.toThrow(NotImplementedError);
-    await expect(service.advanceDemoCycle('demo-house', '2026-11')).rejects.toThrow(NotImplementedError);
   });
 });
 

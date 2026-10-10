@@ -1,20 +1,74 @@
-﻿import type { ConversationService, FinanceService, InboundMessage } from '../contracts/index.js';
+import { createHash } from 'node:crypto';
+import type { Command, ConversationService, FinanceService, InboundMessage } from '../contracts/index.js';
+import { UnknownActorError } from '../finance/index.js';
 
 /** Serializes inbound events for this single-household demo; Finance also enforces durable uniqueness. */
-export function createEventHandler(conversation: ConversationService, finance: FinanceService) {
+export function createEventHandler(conversation: ConversationService, finance: FinanceService, householdId?: string) {
   let tail: Promise<void> = Promise.resolve();
   return (message: InboundMessage): Promise<void> => {
-    const current = tail.then(() => processInbound(message, conversation, finance));
+    const current = tail.then(() => processInbound(message, conversation, finance, householdId));
     tail = current.catch(() => undefined);
     return current;
   };
 }
 
-async function processInbound(message: InboundMessage, conversation: ConversationService, finance: FinanceService): Promise<void> {
+/** Stable across event retries, even when the language parser is invoked again. */
+export function deterministicCommandId(command: Pick<Command, 'householdId' | 'payload'>, sourceEventId: string): string {
+  const identity = JSON.stringify([command.householdId, sourceEventId, command.payload.kind]);
+  return `cmd-${createHash('sha256').update(identity).digest('hex').slice(0, 32)}`;
+}
+
+function deterministicDeliveryId(householdId: string, sourceEventId: string, action: string): string {
+  const identity = JSON.stringify([householdId, sourceEventId, action]);
+  return `delivery-${createHash('sha256').update(identity).digest('hex').slice(0, 32)}`;
+}
+
+async function processInbound(message: InboundMessage, conversation: ConversationService, finance: FinanceService, expectedHouseholdId?: string): Promise<void> {
   if (!(await finance.claimInbound(message.eventId))) return;
-  const result = await conversation.parseInbound(message);
-  if (result.kind === 'command') await finance.execute(result.command);
-  if (result.kind === 'reply') await finance.enqueueMessage(result.message);
+  let result: Awaited<ReturnType<ConversationService['parseInbound']>>;
+  try {
+    result = await conversation.parseInbound(message);
+  } catch (error) {
+    if (!(error instanceof UnknownActorError)) throw error;
+    await finance.completeInbound(message.eventId);
+    return;
+  }
+  if (result.kind === 'command') {
+    if (expectedHouseholdId && result.command.householdId !== expectedHouseholdId) {
+      await finance.completeInbound(message.eventId);
+      return;
+    }
+    const command: Command = {
+      ...result.command,
+      commandId: deterministicCommandId(result.command, message.eventId),
+      actorId: message.senderId,
+      sourceEventId: message.eventId,
+    };
+    let execution;
+    try {
+      execution = await finance.execute(command);
+    } catch (error) {
+      if (!(error instanceof UnknownActorError)) throw error;
+      await finance.completeInbound(message.eventId);
+      return;
+    }
+    if (execution.kind === 'rejected' && execution.code === 'UNAUTHORIZED_ACTOR') {
+      await finance.completeInbound(message.eventId);
+      return;
+    }
+    if (execution.kind === 'rejected') {
+      await finance.enqueueMessage({
+        deliveryId: deterministicDeliveryId(command.householdId, message.eventId, `rejection:${command.payload.kind}`),
+        householdId: command.householdId,
+        audience: { kind: 'private', userId: message.senderId },
+        text: execution.userMessage,
+      });
+    }
+    await drainOutbox(conversation, finance);
+  } else if (result.kind === 'reply') {
+    await finance.enqueueMessage(result.message);
+    await drainOutbox(conversation, finance);
+  }
   await finance.completeInbound(message.eventId);
 }
 

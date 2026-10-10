@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import type { HouseholdConfig, OutboundMessage } from './contracts-local';
+import type { HouseholdConfig, OutboundMessage } from '../contracts/index.js';
 
 // SQLite ledger owned by B. Synchronous (better-sqlite3), so every command's state and
 // outbox changes can share one local transaction via `tx`.
@@ -174,6 +174,11 @@ const MIGRATIONS: string[] = [
   CREATE INDEX idx_outbox_status ON outbox(status, sequence);
   CREATE INDEX idx_bank_operations_status ON bank_operations(status);
   `,
+  // v2: remember which contribution proposals a coverage agreement replaced, so a declined
+  // agreement can reopen them instead of leaving members with nothing to approve.
+  `ALTER TABLE coverage_requests ADD COLUMN superseded_json TEXT NOT NULL DEFAULT '[]';`,
+  // v3: which bills a carried-over credit was applied to, and for how much.
+  `ALTER TABLE settlements ADD COLUMN applications_json TEXT NOT NULL DEFAULT '[]';`,
 ];
 
 export type BankOperationStatus = 'prepared' | 'submitted' | 'pending' | 'unknown' | 'confirmed' | 'failed';
@@ -406,13 +411,14 @@ export class LedgerStore {
     cycleId: string,
     amountCents: number,
     now: string,
+    applications: Array<{ billId: string; amountCents: number }> = [],
   ): boolean {
     const result = this.db
       .prepare(
-        `INSERT OR IGNORE INTO settlements (settlement_id, debt_id, cycle_id, amount_cents, status, created_at)
-         VALUES (?, ?, ?, ?, 'pending', ?)`,
+        `INSERT OR IGNORE INTO settlements (settlement_id, debt_id, cycle_id, amount_cents, status, created_at, applications_json)
+         VALUES (?, ?, ?, ?, 'pending', ?, ?)`,
       )
-      .run(settlementId, debtId, cycleId, amountCents, now);
+      .run(settlementId, debtId, cycleId, amountCents, now, JSON.stringify(applications));
     return result.changes === 1;
   }
 
@@ -457,6 +463,17 @@ export class LedgerStore {
       )
       .run(update.status, update.providerTransactionId ?? null, update.reason ?? null, now, operationId);
     if (result.changes !== 1) throw new Error(`unknown bank operation ${operationId}`);
+  }
+
+  /**
+   * Atomically move a never-sent operation to `submitted` just before the bank call.
+   * Returns false if someone else already claimed it or it was cancelled, so it is sent at most once.
+   */
+  claimOperationForSubmission(operationId: string, now: string): boolean {
+    const result = this.db
+      .prepare(`UPDATE bank_operations SET status = 'submitted', updated_at = ? WHERE operation_id = ? AND status = 'prepared'`)
+      .run(now, operationId);
+    return result.changes === 1;
   }
 
   getBankOperation(operationId: string): BankOperationRecord | null {

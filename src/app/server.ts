@@ -2,6 +2,7 @@
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import type { FinanceService, HouseholdConfig } from '../contracts/index.js';
+import { CycleTransitionError, FinanceConfigError } from '../finance/index.js';
 
 const json = (res: ServerResponse, status: number, value: unknown) => {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
@@ -29,7 +30,12 @@ export function createAppServer(options: { finance: FinanceService; config: Hous
         try { householdId = decodeURIComponent(snapshot[1]); }
         catch { return json(res, 400, { error: 'Invalid household ID' }); }
         if (householdId !== options.config.householdId) return json(res, 404, { error: 'Household not found' });
-        return json(res, 200, publicSnapshot(await options.finance.getSnapshot(householdId)));
+        try {
+          return json(res, 200, publicSnapshot(await options.finance.getSnapshot(householdId)));
+        } catch (error) {
+          if (error instanceof FinanceConfigError) return json(res, 404, { error: 'Household not found' });
+          throw error;
+        }
       }
       if (req.method === 'POST' && url.pathname === '/api/demo/advance-cycle') {
         if (!options.demoMode || !isLoopback(req.socket.remoteAddress)) return json(res, 404, { error: 'Not found' });
@@ -46,7 +52,8 @@ export function createAppServer(options: { finance: FinanceService; config: Hous
           await options.finance.advanceDemoCycle(values.householdId, values.cycleId);
           return json(res, 200, { ok: true });
         } catch (error) {
-          return json(res, 409, { error: error instanceof Error ? error.message : 'Cycle transition unavailable' });
+          if (error instanceof CycleTransitionError) return json(res, 409, { error: error.message });
+          throw error;
         }
       }
       const assetPath = normalize(url.pathname === '/' ? 'index.html' : url.pathname.slice(1));

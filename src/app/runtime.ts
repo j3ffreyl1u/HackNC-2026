@@ -23,7 +23,7 @@ export function createApplicationRuntime(options: RuntimeOptions) {
   let stopPromise: Promise<void> | undefined;
   const active = new Set<Promise<void>>();
   const onError = options.onError ?? ((task, error) => console.error(`${task} failed:`, error instanceof Error ? error.message : 'unknown error'));
-  const onMessage = createEventHandler(options.conversation, options.finance);
+  const onMessage = createEventHandler(options.conversation, options.finance, options.household.householdId);
 
   const runTask = (task: string, work: () => Promise<void>, busy: () => boolean, setBusy: (value: boolean) => void): Promise<void> => {
     if (stopping || busy()) return Promise.resolve();
