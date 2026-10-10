@@ -55,6 +55,8 @@ function requestFor(state: TripState): ResearchRequest {
     ...(place.searchRegion !== undefined ? { searchRegion: place.searchRegion } : {}),
     ...(place.maxTravelMinutes !== undefined ? { maxTravelMinutes: place.maxTravelMinutes } : {}),
     interests: groupPreferences(state),
+    nights,
+    groupSize: ids.length,
     ...(window ? { window } : {}),
   };
 }
@@ -123,7 +125,11 @@ function buildCandidate(state: TripState, option: ResearchOption, result: Resear
   });
 }
 
-const isProvisional = (c: TripCandidate) => c.feasibility.violations.length === 0 && c.feasibility.unknownEssentials.length > 0;
+/** Nothing about this option's cost was found at all: it has no price to show, only a gap. */
+const hasNoPrices = (c: TripCandidate) => c.costs.every((x) => x.priceStatus === 'unknown');
+
+/** No limit is broken so far and at least some prices are known, but an essential one is still missing. */
+const isProvisional = (c: TripCandidate) => c.feasibility.violations.length === 0 && c.feasibility.unknownEssentials.length > 0 && !hasNoPrices(c);
 
 function describeOption(c: TripCandidate, rank: number): string {
   const low = Math.min(...c.perPersonTotals.map((t) => t.lowCents));
@@ -203,7 +209,8 @@ export async function planTrip(state: TripState, researchProvider: ResearchProvi
   const ranked = rankCandidates(state, built).map((r) => r.candidate);
   const shown = ranked.slice(0, OPTIONS_SHOWN);
   const provisional = built.filter(isProvisional).slice(0, shown.length === 0 ? 2 : 1);
-  const excluded = built.filter((c) => !c.feasibility.feasible && !isProvisional(c));
+  const unpriced = built.filter((c) => c.feasibility.violations.length === 0 && c.feasibility.unknownEssentials.length > 0 && hasNoPrices(c));
+  const excluded = built.filter((c) => !c.feasibility.feasible && !isProvisional(c) && !unpriced.includes(c));
 
   const replies: TripReply[] = [];
   if (shown.length > 0) {
@@ -222,6 +229,12 @@ export async function planTrip(state: TripState, researchProvider: ResearchProvi
   } else {
     replies.push(...conflictReplies(state, excluded, provisional));
     for (const c of provisional) replies.push({ audience: { kind: 'group' }, text: describeOption(c, 0) });
+  }
+  if (unpriced.length > 0) {
+    replies.push({
+      audience: { kind: 'group' },
+      text: `I also found ${unpriced.map((c) => c.title).join(', ')}, but couldn't find any prices for ${unpriced.length === 1 ? 'it' : 'them'}, so I'm not proposing ${unpriced.length === 1 ? 'it' : 'them'}.`,
+    });
   }
   if (result.limitations.length > 0) replies.push({ audience: { kind: 'group' }, text: `Keep in mind: ${result.limitations.join(' ')}` });
 

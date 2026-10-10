@@ -1,5 +1,7 @@
 import type { CostItem, SourceEvidence } from '../planning/types.js';
 import { sanitizeRetrievedText } from './evidence.js';
+import { EvidenceStore, citesOver, textBlocks } from './grounding.js';
+import { PRICED_OPTIONS, priceOption } from './pricing.js';
 import { ResearchError, type PerPersonCostTemplate, type ResearchOption, type ResearchProvider, type ResearchRequest, type ResearchResult, type ResearchStop } from './types.js';
 
 // Live research through Gemini with Google Search grounding, using the Interactions API:
@@ -27,6 +29,8 @@ export interface GeminiConfig {
   /** Injectable for tests. Defaults to the global `fetch`. */
   fetch?: typeof fetch;
   now?: () => string;
+  /** Run the price pass after finding options (default true). Costs several extra requests per search. */
+  priceLookups?: boolean;
 }
 
 // ---- prompt ---------------------------------------------------------------------------------------------
@@ -64,70 +68,6 @@ export function buildPrompt(request: ResearchRequest): string {
 }
 
 // ---- parsing --------------------------------------------------------------------------------------------
-
-interface Annotation {
-  url: string;
-  title?: string;
-  start: number;
-  end: number;
-}
-interface TextBlock {
-  text: string;
-  annotations: Annotation[];
-}
-
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
-
-/**
- * Citation offsets in grounding responses count UTF-8 bytes (the same as characters for plain ASCII, which is
- * all live testing has shown so far). When the text has other characters, convert so a citation still lands on
- * the line it belongs to.
- */
-function toCharOffsets(text: string, annotations: Annotation[]): Annotation[] {
-  // eslint-disable-next-line no-control-regex
-  if (/^[\u0000-\u007f]*$/.test(text)) return annotations;
-  const bytes = Buffer.from(text, 'utf8');
-  const toChar = (offset: number) => bytes.subarray(0, Math.max(0, Math.min(offset, bytes.length))).toString('utf8').length;
-  return annotations.map((a) => ({ ...a, start: toChar(a.start), end: toChar(a.end) }));
-}
-
-function textBlocks(interaction: unknown): { blocks: TextBlock[]; suggestions: string[] } {
-  const steps = isRecord(interaction) && Array.isArray(interaction.steps) ? interaction.steps : [];
-  const blocks: TextBlock[] = [];
-  const suggestions: string[] = [];
-  for (const step of steps) {
-    if (!isRecord(step)) continue;
-    if (step.type === 'google_search_result' && Array.isArray(step.result)) {
-      for (const r of step.result) if (isRecord(r) && typeof r.search_suggestions === 'string') suggestions.push(r.search_suggestions);
-    }
-    if (step.type !== 'model_output' || !Array.isArray(step.content)) continue;
-    for (const item of step.content) {
-      if (!isRecord(item) || typeof item.text !== 'string') continue;
-      const annotations: Annotation[] = [];
-      for (const a of Array.isArray(item.annotations) ? item.annotations : []) {
-        if (!isRecord(a) || a.type !== 'url_citation' || typeof a.url !== 'string') continue;
-        if (!Number.isInteger(a.start_index) || !Number.isInteger(a.end_index)) continue;
-        annotations.push({ url: a.url, title: typeof a.title === 'string' ? a.title : undefined, start: a.start_index as number, end: a.end_index as number });
-      }
-      blocks.push({ text: item.text, annotations: toCharOffsets(item.text, annotations) });
-    }
-  }
-  return { blocks, suggestions };
-}
-
-const HOSTNAME = /^(?:[a-z0-9-]+\.)+[a-z]{2,}$/i;
-
-/**
- * Grounding links are Google redirect URLs, so the real site is read from the citation's title, which the API
- * sets to the site's domain. Only when the title isn't a domain is the link's own host used.
- */
-function kindOf(url: string, title: string | undefined): SourceEvidence['kind'] {
-  const shown = title?.trim().toLowerCase();
-  const host = shown && HOSTNAME.test(shown) ? shown.replace(/^www\./, '') : new URL(url).hostname.toLowerCase();
-  if (host === 'reddit.com' || host.endsWith('.reddit.com')) return 'community';
-  if (host.endsWith('.gov')) return 'official';
-  return 'web'; // a search hit is not known to be official, so it is never labeled so
-}
 
 /** "1200-1800" or "$1,200 - $1,800" as whole-dollar cents; anything else is unknown. */
 function parseRange(field: string): { lowCents: number; highCents: number } | undefined {
@@ -189,12 +129,10 @@ function fieldRanges(line: string, lineStart: number): Array<{ start: number; en
  * recorded for a source is the exact text it was cited for. Costs are estimates or unknown, never verified.
  * Throws `ResearchError('invalid_result')` if the response has no readable model output.
  */
-export function parseInteraction(interaction: unknown, request: ResearchRequest, retrievedAt: string): ResearchResult {
+export function parseInteraction(interaction: unknown, request: ResearchRequest, retrievedAt: string, store: EvidenceStore = new EvidenceStore(retrievedAt)): ResearchResult {
   const { blocks, suggestions } = textBlocks(interaction);
   if (blocks.length === 0) throw new ResearchError('invalid_result', "The research service's answer was empty or in a format I couldn't read.");
 
-  const evidence: SourceEvidence[] = [];
-  const evidenceKey = new Map<string, string>();
   const options: ResearchOption[] = [];
   let unsourced = 0;
   let malformed = 0;
@@ -214,9 +152,9 @@ export function parseInteraction(interaction: unknown, request: ResearchRequest,
         continue;
       }
       const [, name, region, drive, tags, lodging, fuel, activities, food, stops, tradeoff] = fields;
-      const cites = block.annotations.filter((a) => a.start < lineEnd && a.end > lineStart);
+      const cites = citesOver(block, lineStart, lineEnd);
       const ranges = fieldRanges(raw, lineStart);
-      const covers = (index: number) => block.annotations.some((a) => a.start < ranges[index].end && a.end > ranges[index].start);
+      const covers = (index: number) => citesOver(block, ranges[index].start, ranges[index].end).length > 0;
       if (cites.length === 0 || name === '') {
         unsourced += 1;
         continue;
@@ -224,25 +162,9 @@ export function parseInteraction(interaction: unknown, request: ResearchRequest,
 
       const ids: string[] = [];
       for (const c of cites) {
-        let url: URL;
-        try {
-          url = new URL(c.url);
-        } catch {
-          continue;
-        }
-        const claim = sanitizeRetrievedText(block.text.slice(Math.max(c.start, lineStart), Math.min(c.end, lineEnd)));
-        const key = `${url.href}\u0000${claim}`;
-        let id = evidenceKey.get(key);
-        if (!id) {
-          id = `gem-${evidence.length + 1}`;
-          evidenceKey.set(key, id);
-          evidence.push({
-            evidenceId: id, url: url.href, title: sanitizeRetrievedText(c.title ?? url.hostname, 200), retrievedAt,
-            kind: kindOf(url.href, c.title), claim: claim || sanitizeRetrievedText(tradeoff),
-            uncertainty: 'Found by web search and not checked against the provider; prices and availability may have changed.',
-          });
-        }
-        if (!ids.includes(id)) ids.push(id);
+        const claim = sanitizeRetrievedText(block.text.slice(Math.max(c.start, lineStart), Math.min(c.end, lineEnd))) || sanitizeRetrievedText(tradeoff);
+        const id = store.add(c, claim);
+        if (id && !ids.includes(id)) ids.push(id);
       }
       if (ids.length === 0) {
         unsourced += 1;
@@ -281,7 +203,7 @@ export function parseInteraction(interaction: unknown, request: ResearchRequest,
   if (options.length === 0) limitations.push('No sourced options were found.');
   if (options.some((o) => [...o.costs, ...o.perPersonCosts].some((c) => c.priceStatus === 'unknown'))) limitations.push('Some prices were not found and are marked unknown.');
   return {
-    mode: 'live', revision: request.revision, retrievedAt, options, evidence, limitations,
+    mode: 'live', revision: request.revision, retrievedAt, options, evidence: [...store.evidence], limitations,
     ...(suggestions.length > 0 ? { searchSuggestionsHtml: suggestions } : {}),
   };
 }
@@ -295,42 +217,66 @@ export function createGeminiProvider(config: GeminiConfig): ResearchProvider {
   const url = `${(config.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '')}/v1beta/interactions`;
   const now = config.now ?? (() => new Date().toISOString());
 
+  /** One grounded question. Failures become `ResearchError`s whose messages never include the key or a response body. */
+  async function ask(prompt: string): Promise<unknown> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), config.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+    let response: Response;
+    try {
+      response = await doFetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': config.apiKey },
+        body: JSON.stringify({
+          model: config.model ?? DEFAULT_MODEL,
+          input: prompt,
+          tools: [{ type: 'google_search' }],
+          // Low thinking: the answer is a lookup, and thinking tokens dominated cost and time in live testing.
+          generation_config: { thinking_level: 'low' },
+        }),
+        signal: controller.signal,
+      });
+    } catch (error) {
+      // The error is kept as the cause for debugging; its message is not shown to the group.
+      throw new ResearchError('request_failed', "I couldn't reach the research service just now. You can try again, or give me details yourselves.", { cause: error });
+    } finally {
+      clearTimeout(timer);
+    }
+    if (!response.ok) {
+      // Status only: response bodies and headers are never copied into messages or logs.
+      throw new ResearchError('request_failed', `The research service said no (status ${response.status}). You can try again, or give me details yourselves.`);
+    }
+    try {
+      return await response.json();
+    } catch (error) {
+      throw new ResearchError('invalid_result', "The research service's answer wasn't readable.", { cause: error });
+    }
+  }
+
   return {
     mode: 'live',
     async search(request: ResearchRequest): Promise<ResearchResult> {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), config.timeoutMs ?? DEFAULT_TIMEOUT_MS);
-      let response: Response;
-      try {
-        response = await doFetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': config.apiKey },
-          body: JSON.stringify({
-            model: config.model ?? DEFAULT_MODEL,
-            input: buildPrompt(request),
-            tools: [{ type: 'google_search' }],
-            // Low thinking: the answer is a lookup, and thinking tokens dominated cost and time in live testing.
-            generation_config: { thinking_level: 'low' },
-          }),
-          signal: controller.signal,
-        });
-      } catch (error) {
-        // The error is kept as the cause for debugging; its message is not shown to the group.
-        throw new ResearchError('request_failed', "I couldn't reach the research service just now. You can try again, or give me details yourselves.", { cause: error });
-      } finally {
-        clearTimeout(timer);
+      const retrievedAt = now();
+      const store = new EvidenceStore(retrievedAt);
+      const result = parseInteraction(await ask(buildPrompt(request)), request, retrievedAt, store);
+      const priceable = config.priceLookups !== false && request.purpose === 'plan' && request.nights !== undefined && request.groupSize !== undefined;
+      if (!priceable) return result;
+
+      // Price the first few options with separate, narrow lookups. A failed lookup leaves a price unknown.
+      const options = [...result.options];
+      const limitations = [...result.limitations];
+      for (let i = 0; i < Math.min(PRICED_OPTIONS, options.length); i += 1) {
+        const priced = await priceOption(options[i], request, ask, store);
+        options[i] = priced.option;
+        limitations.push(...priced.notes);
       }
-      if (!response.ok) {
-        // Status only: response bodies and headers are never copied into messages or logs.
-        throw new ResearchError('request_failed', `The research service said no (status ${response.status}). You can try again, or give me details yourselves.`);
-      }
-      let body: unknown;
-      try {
-        body = await response.json();
-      } catch (error) {
-        throw new ResearchError('invalid_result', "The research service's answer wasn't readable.", { cause: error });
-      }
-      return parseInteraction(body, request, now());
+      return {
+        ...result,
+        options,
+        evidence: [...store.evidence],
+        limitations: [...new Set(limitations.filter((l) => l !== 'Some prices were not found and are marked unknown.'))].concat(
+          options.some((o) => [...o.costs, ...o.perPersonCosts].some((c) => c.priceStatus === 'unknown')) ? ['Some prices were not found and are marked unknown.'] : [],
+        ),
+      };
     },
   };
 }

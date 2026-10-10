@@ -148,6 +148,19 @@ describe('planTrip: hard limits filter', () => {
     expect(hanging?.itinerary.map((i) => i.label)).not.toContain('Day hike');
   });
 
+  it('does not show an option that has no prices at all, and says why, instead of showing $0', async () => {
+    const data = structuredClone(defaultFixtures);
+    const city = data.options.find((o) => o.optionId === 'asheville');
+    if (!city) throw new Error('fixture missing');
+    city.costs = city.costs.map((c) => ({ ...c, priceStatus: 'unknown' as const, lowCents: 0, highCents: 0, evidenceIds: [] }));
+    city.perPersonCosts = city.perPersonCosts.map((c) => ({ ...c, priceStatus: 'unknown' as const, lowCents: 0, highCents: 0, evidenceIds: [] }));
+    const outcome = await planTrip(readyState(), createFixtureProvider(data, () => NOW));
+    expect(outcome.candidates.map((c) => c.title)).toEqual(['State park and small-town weekend', 'Mountain cabin weekend']);
+    const text = groupText(outcome);
+    expect(text).toMatch(/City and brewery weekend, but couldn't find any prices for it/);
+    expect(text).not.toMatch(/\$0\.00 to \$0\.00/);
+  });
+
   it('says plainly when no contingency was suggested', async () => {
     const data = structuredClone(defaultFixtures);
     for (const o of data.options) delete o.suggestedContingencyPerPersonCents;

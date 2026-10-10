@@ -15,7 +15,7 @@ Status as of 2026-10-10. Everything here is pure TypeScript with no database, ch
 | `planTrip(state, provider)` / `generateCandidates` | `src/planning/generate.ts` | Research, build candidates, return up to two feasible options plus a provisional one, or explain the conflict. |
 | `answerGuideQuestion(state, question, provider, { now? })` | `src/planning/guide.ts` | Cited, plan-relative answers with budget effect. Never changes the plan. |
 | `ResearchProvider`, `createResearchProvider`, `createFixtureProvider`, `guardLiveProvider` | `src/research/` | Provider interface, fixture provider, validation wrapper for live providers. |
-| `createGeminiProvider`, `geminiConfigFromEnv` | `src/research/gemini.ts` | Live Gemini + Google Search grounding provider. |
+| `createGeminiProvider`, `geminiConfigFromEnv` | `src/research/gemini.ts` | Live Gemini + Google Search grounding provider, with the price pass in `src/research/pricing.ts`. |
 
 Types are provisional in `src/planning/types.ts` and `src/research/types.ts`. Fields marked `PROPOSAL` there are additions C should adopt or replace when `src/contracts/index.ts` publishes trip types (`essential` on `CostItem`, `tags` on itinerary items, `dataSource` on candidates, `roster`, `web` evidence kind, `ApplyResult.rejection`). Contingency is the **total** shared amount, split equally.
 
@@ -50,7 +50,7 @@ npx tsc --noEmit -p tsconfig.b-check.json     # typecheck B's files
 npx vitest run tests/planning tests/research    # B's tests
 ```
 
-Last run (2026-10-10): typecheck clean; 297 tests passed, 1 skipped (the live test, which needs a key). Mutation checks (deliberately breaking a rule and confirming tests fail) were run for readiness, budget caps and contingency, revision invalidation, feasibility filtering, per-person cost expansion, stale-revision checks, provider failure handling, result validation, guide cap exclusion, display-time sanitizing and Gemini price handling.
+Last run (2026-10-10): typecheck clean; 320 tests passed, 1 skipped (the live test, which needs a key). Mutation checks (deliberately breaking a rule and confirming tests fail) were run for readiness, budget caps and contingency, revision invalidation, feasibility filtering, per-person cost expansion, stale-revision checks, provider failure handling, result validation, guide cap exclusion, display-time sanitizing and Gemini price handling.
 
 Acceptance fixture (caps $200/$250/$300; shared upper costs $480 and $450; $20 food and $10 contingency each): the options total $190 and $180 per person with no cap exceeded. Lowering Mason's cap to $180 drops the $190 option, clears acceptances and moves to revision 2. The $180 option stays and needs fresh acceptance from all three.
 
@@ -74,15 +74,30 @@ set -a; source .env; set +a; npx vitest run tests/research/gemini.live.test.ts
 
 Cost: a first unconstrained call ran 16 searches and about 173k prompt tokens (49 s, roughly 13 cents). With the prompt limited to 4 searches and `thinking_level: low`, a call is about 6 s and 16k tokens (about 1 to 2 cents). Search queries are billed per query after 5,000 free per month.
 
+### Live price pass
+
+After finding options, the Gemini provider prices the first 3 with four narrow lookups each (`src/research/pricing.ts`), because one broad question returns mostly `unknown`. It runs only for plan requests that carry `nights` and `groupSize` (`planTrip` sets both) and can be switched off with `priceLookups: false`.
+
+| Cost | Lookup | Computed in code |
+| --- | --- | --- |
+| Lodging (shared) | up to 3 named places with a stated nightly rate and how many they sleep | rooms for the group × nights; low = cheapest place, high = dearest place + 15% for taxes and fees |
+| Fuel (shared) | one-way miles and current gas price | round trip at 30 to 20 mpg, high + 25% for driving around; parking and tolls not included |
+| Admissions (per person) | adult admission for each stop | sum over stops; one stop with no sourced price makes the whole figure unknown |
+| Food (per person) | main-course price at up to 3 named restaurants | 2 restaurant meals a day over nights + 1 days, high + 25% for drinks, tax and tip; groceries not included |
+
+Only lines a citation covers are used. Everything else stays `unknown`, never zero. Every assumption is written into the option's tradeoffs, so it appears in the chat message. An option with no price at all is not proposed; the group is told. A failed lookup leaves that price unknown and is listed in the limitations.
+
+Live check, 2026-10-10 (three-person fixture trip, 2 nights, 3 people): a full plan took 24 s and about 13 requests. Four options came back; lodging, fuel and food were priced with citations; admissions and some fuel lines were often missing. Real totals were roughly $300 to $500 per person on the upper estimate, so the synthetic $200/$250/$300 caps correctly rejected them. For a live demo, use caps that match real prices. Each plan uses roughly 40 search queries; at 5,000 free per month that is about 125 plans.
+
 ### Findings from live responses
 
 - Citation links are Google redirect URLs (`vertexaisearch.cloud.google.com/grounding-api-redirect/...`). The real site is only in the citation `title` (a domain), which is what source classification uses.
 - Citations cover parts of each line, not every field. A price counts as an estimate only if a citation covers that field; otherwise it is unknown.
-- The model returned `unknown` for every price and for visit lengths in testing. Stops with an unknown length are planned at 2 hours and flagged as an assumption.
+- Asked for a whole option's costs in one answer, the model returned `unknown` for every price and for visit lengths, which is why the price pass above exists. Stops with an unknown length are planned at 2 hours and flagged as an assumption.
 
 ## Not verified, or open
 
-- **Live options are never approvable today.** No live option has had a price for every essential cost, so live candidates are provisional. A price lookup step, a way for the group to supply costs, or a product decision is needed before a live demo can reach an approved plan. Mock mode is not affected.
+- **Live prices are estimates with gaps.** See "Live price pass" above. A live option is approvable only if every essential cost was found with a citation and fits every cap; admissions are often not found, which keeps an option provisional.
 - **Search suggestions display.** Google's terms for showing `search_suggestions` were not readable from the documentation I could fetch. Check https://ai.google.dev/gemini-api/terms#grounding-with-google-search before the page or chat shows grounded answers.
 - **Citation offsets for non-ASCII text.** Offsets are treated as UTF-8 byte offsets and converted. Live samples were plain ASCII, so the conversion is tested only on built data.
 - **Redirect link lifetime** is unknown.

@@ -24,6 +24,9 @@ export interface ResearchRequest {
   window?: Interval;
   /** A guide question, for `purpose: 'guide'`. Treated as data by providers. */
   question?: string;
+  /** Length of the trip and size of the group, so costs can be computed for them. Not private. */
+  nights?: number;
+  groupSize?: number;
 }
 
 /** A stop or activity found by research. Scheduling it into days is the itinerary generator's job. */

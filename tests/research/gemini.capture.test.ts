@@ -67,19 +67,14 @@ describe('a live result in the planner', () => {
       live: createGeminiProvider({ apiKey: 'test', fetch: (async () => new Response(JSON.stringify(captured), { status: 200 })) as never, now: () => NOW }),
     });
 
-  it('is shown only as provisional, because no essential price was found', async () => {
+  it('proposes nothing when no price at all was found, and says so instead of showing $0', async () => {
     const outcome = await planTrip(readyState(), live());
     expect(outcome.mode).toBe('live');
-    expect(outcome.candidates.length).toBeGreaterThan(0);
-    for (const c of outcome.candidates) {
-      expect(c.dataSource).toBe('live');
-      expect(c.feasibility.feasible).toBe(false);
-      expect(c.feasibility.unknownEssentials.length).toBeGreaterThan(0);
-    }
+    expect(outcome.candidates).toEqual([]);
     const text = outcome.replies.map((r) => r.text).join('\n');
-    expect(text).toMatch(/Provisional/);
+    expect(text).toMatch(/couldn't find any prices/);
+    expect(text).not.toMatch(/\$0\.00/);
     expect(text).not.toMatch(/fixture data/i);
-    expect(text).toContain('https://vertexaisearch.cloud.google.com/');
   });
 
   it('never yields a candidate that could be approved', async () => {
