@@ -1,1 +1,2 @@
 captured 2026-10-10 from POST /v1beta/interactions (model gemini-3.8-flash, google_search tool, thinking_level low); signatures and usage removed, search_suggestions HTML truncated.
+gemini-nonascii.json: captured 2026-10-10 from the same endpoint with a prompt that produces accented French text (Montréal). Citation offsets in it are UTF-8 byte offsets (max end_index 461 against 443 characters / 462 bytes).
