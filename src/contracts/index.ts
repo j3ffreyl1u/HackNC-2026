@@ -1,4 +1,4 @@
-export interface InboundMessage {
+﻿export interface InboundMessage {
   eventId: string; messageId: string; senderId: string; spaceId: string;
   visibility: 'group' | 'private'; occurredAt: string; text?: string;
   imageUrls?: string[]; reaction?: { targetMessageId: string; emoji: string };
@@ -49,6 +49,8 @@ export interface FinanceService {
   execute(command: Command): Promise<ExecuteResult>; reconcile(householdId: string): Promise<void>;
   getSnapshot(householdId: string): Promise<HouseholdSnapshot>; pendingMessages(): Promise<OutboundMessage[]>;
   enqueueMessage(message: OutboundMessage): Promise<void>; recordDelivery(deliveryId: string, providerMessageId: string): Promise<void>;
+  /** Optional until the Finance service wires its existing durable outbox uncertainty transition. */
+  markDeliveryUncertain?(deliveryId: string): Promise<void>;
   lookupProposal(providerMessageId: string): Promise<{ proposalId: string; proposalVersion: number } | null>;
   advanceDemoCycle(householdId: string, cycleId: string): Promise<void>;
   getConversationContext(actorId: string, spaceId: string, targetMessageId?: string): Promise<ConversationContext>;

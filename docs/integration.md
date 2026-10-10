@@ -1,7 +1,17 @@
-# Integration notes
+﻿# Integration notes
 
-`src/contracts/index.ts` is the shared contract source for application wiring. It matches the `InboundMessage`, `Command`, `OutboundMessage`, domain result, household snapshot/config, conversation context and service methods in `AGENTS.md`. Finance currently imports temporary local declarations; Finance should replace those with type-only imports from this module in its next owned change.
+`src/contracts/index.ts` is the shared contract source for application wiring. It matches the fixed event, command, outbox, snapshot, configuration, service, result, and conversation-context contracts from `AGENTS.md`. Finance still uses temporary local declarations and should switch to type-only imports from this module in its next owned change.
 
-`src/app/events.ts` composes the conversation and finance interfaces: claim inbound event, parse once, execute commands or enqueue replies, complete the event, then drain the persisted outbox and record provider IDs. Provider clients are injected; no provider SDK is assumed here.
+`src/app/events.ts` serializes normalized inbound work for the current single-household demo, claims the durable event ID, parses once, executes commands or enqueues replies, and completes the event. `drainOutbox` requires Finance to expose the already-persisted `markDeliveryUncertain` transition before it sends anything; it marks a failed send/receipt write uncertain and stops, avoiding an automatic duplicate delivery.
 
-The HTTP server exposes the household snapshot and a demo-only local cycle route. It binds to loopback in `main.ts`. The browser receives no banking credentials or private messages. Mock integration is the only implemented startup mode in this scaffold.
+Integration request for Finance: expose `LedgerStore.markDeliveryUncertain(deliveryId)` through `FinanceService` and implement it in the factory. The store already supports this transition. The shared interface keeps it optional temporarily so independent modules remain buildable; the app deliberately refuses to send until the method exists.
+
+`src/app/runtime.ts` composes provider intake, the local HTTP server, serialized event processing, outbox draining every five seconds, reconciliation every five seconds, and reminders every sixty seconds. Tests can inject mock conversation and finance services. Provider clients and credentials remain outside C's modules.
+
+The HTTP server exposes `GET /api/households/:householdId/snapshot`, a minimal public config response, and a demo-only local cycle route. It binds to loopback. The browser receives no banking credentials or private messages. Startup currently uses mock banking only; live modes fail configuration validation.
+
+
+The Windows run currently reports an existing Finance test teardown failure in 	ests/finance/store.test.ts (durability across reopen > refuses a database written by a newer schema): the rejected SQLite open remains locked when the test removes its temp directory. This is outside C-owned files and needs a Finance-side fix. 
+pm run typecheck, 
+pm run build, and all C app tests pass.
+

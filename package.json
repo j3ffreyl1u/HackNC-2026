@@ -1,10 +1,27 @@
 {
-  "name": "splitbot", "version": "0.1.0", "private": true, "type": "module",
-  "engines": { "node": ">=20 <21" },
-  "scripts": {
-    "dev": "tsx src/app/main.ts", "typecheck": "tsc --noEmit", "test": "vitest run",
-    "build": "tsc", "seed": "tsx scripts/seed.ts", "demo": "tsx scripts/demo.ts"
-  },
-  "dependencies": { "better-sqlite3": "^11.10.0" },
-  "devDependencies": { "@types/better-sqlite3": "^7.6.13", "@types/node": "^22.15.30", "tsx": "^4.19.4", "typescript": "^5.8.3", "vitest": "^3.2.4" }
+    "name":  "splitbot",
+    "version":  "0.1.0",
+    "private":  true,
+    "type":  "module",
+    "engines":  {
+                    "node":  "\u003e=20 \u003c21"
+                },
+    "scripts":  {
+                    "dev":  "tsx src/app/main.ts",
+                    "typecheck":  "tsc --noEmit",
+                    "test":  "vitest run",
+                    "build":  "tsc --project tsconfig.build.json",
+                    "seed":  "tsx scripts/seed.ts",
+                    "demo":  "tsx scripts/demo.ts"
+                },
+    "dependencies":  {
+                         "better-sqlite3":  "^11.10.0"
+                     },
+    "devDependencies":  {
+                            "@types/better-sqlite3":  "^7.6.13",
+                            "@types/node":  "^22.15.30",
+                            "tsx":  "^4.19.4",
+                            "typescript":  "^5.8.3",
+                            "vitest":  "^4.1.11"
+                        }
 }
