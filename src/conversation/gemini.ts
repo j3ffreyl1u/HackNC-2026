@@ -42,7 +42,7 @@ export function buildPrompt(input: IntentInput): string {
     'You classify ONE message from a group chat of friends planning a road trip together. An assistant listens and helps.',
     'Return JSON only. You never decide, approve, or calculate anything. If unsure use "clarify" or "none". Most chat is "none".',
     'Intents: constraints (the sender states their OWN budget, free dates, preferences, must-dos/dietary/accessibility, vehicle access, or trip origin/region/length),',
-    'request_plans (asks the assistant to show or research trip options), ask_guide (asks a travel question about the trip, e.g. weather, what to do, where to eat),',
+    'request_plans (asks the assistant to start planning, or to show or research trip options, e.g. "let\'s plan a trip"), ask_guide (asks a travel question about the trip, e.g. weather, what to do, where to eat),',
     'request_funding (asks to set up contribution requests), yes / no (answers a pending acceptance question), none (ordinary chat, jokes, talk between friends).',
     'Rules: only record what the sender says about themselves; never record another person\'s budget or dates. Budget is the sender\'s all-in maximum, as digits in dollars ("two hundred bucks" -> "200"); never guess an amount that is not stated.',
     'Use explicit YYYY-MM-DD dates only when the message makes them unambiguous; otherwise omit the item.',

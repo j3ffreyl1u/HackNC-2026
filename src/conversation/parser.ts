@@ -18,12 +18,14 @@ const APPROVE_REACTIONS = new Set(['👍', '👍🏻', '👍🏼', '👍🏽', '
 const YES = /^(?:(?:yes|yep|yeah|yup|sure)(?:[ ,]+(?:it is|that is|that'?s right|that'?s it|correct|exactly|please|firm))?|ok|okay|accept|accepted|i accept|i'?m in|count me in|sounds good|works for me|let'?s do it|do it|confirm|confirmed|correct|that'?s right|exactly)[.!]*$/i;
 const NO = /^(no|nope|nah|decline|i decline|not for me|not now|no thanks|pass)[.!]*$/i;
 const ID = '([A-Za-z0-9][\\w:.\\-]*)';
-const REQUEST_PLANS = /^(?:(?:please|pls|ok|okay|alright|so)[,\s]+)?(?:(?:can|could) you\s+)?(?:(?:show|give|get|send)\s+(?:me\s+|us\s+)?(?:the\s+)?(?:trip\s+)?(?:options|plans|proposals|itineraries)|(?:plan|research)\s+(?:it|this|the trip|our trip)|find\s+(?:us\s+)?(?:trip\s+)?options|what are (?:our|the) options)$/i;
+const REQUEST_PLANS = /^(?:(?:please|pls|ok|okay|alright|so)[,\s]+)?(?:(?:can|could) you\s+)?(?:(?:show|give|get|send)\s+(?:me\s+|us\s+)?(?:the\s+)?(?:trip\s+)?(?:options|plans|proposals|itineraries)|(?:plan|research)\s+(?:it|this|the trip|our trip)|find\s+(?:us\s+)?(?:trip\s+)?options|what are (?:our|the) options|(?:(?:let'?s|lets|can we|could we|we should|i want to|we want to|i'?d like to)\s+)?(?:start|begin|get started)(?:\s+(?:on\s+)?(?:planning|plan))?(?:\s+(?:a|the|our|this))?(?:\s+(?:road\s+)?trip)?|(?:let'?s|lets|can we|could we|we should|i want to|we want to|i'?d like to)\s+plan(?:\s+(?:a|the|our|this))?(?:\s+(?:road\s+)?trip)?(?:\s+together)?)$/i;
+const GREETING = /^(?:hi|hey|hello|yo|hiya|good (?:morning|afternoon|evening))\b[,!.\s]*/i;
 const REQUEST_FUNDING = /^(?:request|start|set up|send)\s+(?:the\s+)?(?:contributions?|funding|contribution requests)$/i;
 const GUIDE = /^(?:guide|ask guide|\/guide)\s*[:\-]?\s+(.{3,500})$/is;
 const SELECT = new RegExp(`^(?:pick|choose|select|go with|vote(?: for)?|i vote(?: for)?)\\s+(?:option\\s+|plan\\s+)?${ID}(?:\\s+v(\\d+))?$`, 'i');
 const ACCEPT = new RegExp(`^accept\\s+${ID}\\s+v(\\d+)$`, 'i');
 
+const HELP = 'I can note your budget, free dates and preferences, show trip options, or answer trip questions. Try "my max is $200" or "free Oct 17-19", or say "let\'s plan a trip" to get started.';
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 export function createParser(deps: ConversationDependencies) {
@@ -182,7 +184,7 @@ export function createParser(deps: ConversationDependencies) {
   }
 
   function explicit(msg: InboundMessage, ctx: TripConversationContext, text: string): ParseResult | null {
-    const plain = text.replace(/[?!.\s]+$/, '');
+    const plain = text.replace(GREETING, '').replace(/[?!.\s]+$/, '');
     let m: RegExpExecArray | null;
     if (REQUEST_PLANS.test(plain)) return one(msg, ctx, { kind: 'request_plans' });
     if (REQUEST_FUNDING.test(plain)) return one(msg, ctx, { kind: 'request_funding' });
@@ -219,11 +221,15 @@ export function createParser(deps: ConversationDependencies) {
     const hedged = HEDGE.test(text);
     switch (intent.intent) {
       case 'none':
-        return { kind: 'ignored', reason: 'not addressed to the assistant' };
+        // In a group, ordinary chat between friends is none of our business. In a one-on-one DM every message
+        // is addressed to us, so staying silent just looks broken.
+        return msg.visibility === 'private' || trip.mode === 'direct'
+          ? reply(msg, HELP, 'help')
+          : { kind: 'ignored', reason: 'not addressed to the assistant' };
       case 'clarify':
         // In a group, an unclear message is usually just friends talking: stay quiet there.
         return msg.visibility === 'private' || trip.mode === 'direct'
-          ? reply(msg, 'I can note your budget, free dates and preferences, show trip options, or answer trip questions. Try "my max is $200" or "free Oct 17-19".', 'help')
+          ? reply(msg, HELP, 'help')
           : { kind: 'ignored', reason: 'unclear group message' };
       case 'constraints':
         return fromConstraints(msg, ctx, text, intent.items.map((value) => ({ value, hedged })));

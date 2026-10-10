@@ -213,6 +213,29 @@ describe('requests, guide questions, and the model', () => {
   });
 });
 
+describe('starting a conversation, and DMs never get silence', () => {
+  it('"let\'s plan a trip" (with or without a greeting) starts planning without calling the model', async () => {
+    const { service, model } = setup();
+    for (const t of ["Hi, let's plan a trip.", 'lets plan a trip', 'hey! can we start planning?', 'I want to plan a road trip', 'get started']) {
+      expect(cmds(await service.parseInbound(msg({ text: t })))[0]?.action.kind, t).toBe('request_plans');
+    }
+    expect(model.calls).toHaveLength(0);
+  });
+  it('does not treat a hedged or unrelated sentence as starting', async () => {
+    const { service } = setup({}, () => ({ intent: 'none' }));
+    expect(cmds(await service.parseInbound(msg({ text: "let's plan to meet at 5" })))).toEqual([]);
+    expect(cmds(await service.parseInbound(msg({ text: 'start the car' })))).toEqual([]);
+  });
+  it('a DM the model calls chatter still gets a helpful reply; a group stays quiet', async () => {
+    const { service } = setup({}, () => ({ intent: 'none' }));
+    const dm = await service.parseInbound(msg({ visibility: 'private', spaceId: 'dm-mason', text: 'how are you' }));
+    expect(dm.kind).toBe('reply');
+    expect((await service.parseInbound(msg({ text: 'how are you' }))).kind).toBe('ignored');
+    const { service: direct } = setup({}, () => ({ intent: 'none' }), 'direct');
+    expect((await direct.parseInbound(msg({ visibility: 'private', spaceId: 'dm-mason', text: 'asdf' }))).kind).toBe('reply');
+  });
+});
+
 describe('gating', () => {
   it('ignores unknown senders and unrelated groups', async () => {
     const { service } = setup();
