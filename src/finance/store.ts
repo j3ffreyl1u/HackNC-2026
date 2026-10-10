@@ -174,6 +174,9 @@ const MIGRATIONS: string[] = [
   CREATE INDEX idx_outbox_status ON outbox(status, sequence);
   CREATE INDEX idx_bank_operations_status ON bank_operations(status);
   `,
+  // v2: remember which contribution proposals a coverage agreement replaced, so a declined
+  // agreement can reopen them instead of leaving members with nothing to approve.
+  `ALTER TABLE coverage_requests ADD COLUMN superseded_json TEXT NOT NULL DEFAULT '[]';`,
 ];
 
 export type BankOperationStatus = 'prepared' | 'submitted' | 'pending' | 'unknown' | 'confirmed' | 'failed';

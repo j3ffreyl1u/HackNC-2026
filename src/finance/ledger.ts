@@ -50,6 +50,24 @@ export interface ProposalRecord {
   description: string;
 }
 
+export type CoverageStatus = 'awaiting_share_consent' | 'closed' | 'open' | 'awaiting_approvals' | 'funded' | 'failed';
+
+export interface CoverageRequestRecord {
+  requestId: string;
+  householdId: string;
+  billId: string;
+  debtorId: string;
+  volunteerId?: string;
+  amountCents: number;
+  status: CoverageStatus;
+  proposalId?: string;
+  /** Contribution proposals this agreement replaced; revived if the agreement falls through. */
+  supersededProposalIds: string[];
+}
+
+/** Requests that still need a decision from someone. */
+export const ACTIVE_COVERAGE_STATUSES: readonly CoverageStatus[] = ['awaiting_share_consent', 'open', 'awaiting_approvals'];
+
 export interface MemberRecord {
   userId: string;
   displayName: string;
@@ -104,6 +122,30 @@ interface ProposalRow {
   allocation_json: string;
   description: string;
 }
+
+interface CoverageRow {
+  request_id: string;
+  household_id: string;
+  bill_id: string;
+  debtor_id: string;
+  volunteer_id: string | null;
+  amount_cents: number;
+  status: CoverageStatus;
+  proposal_id: string | null;
+  superseded_json: string;
+}
+
+const toCoverage = (r: CoverageRow): CoverageRequestRecord => ({
+  requestId: r.request_id,
+  householdId: r.household_id,
+  billId: r.bill_id,
+  debtorId: r.debtor_id,
+  ...(r.volunteer_id ? { volunteerId: r.volunteer_id } : {}),
+  amountCents: r.amount_cents,
+  status: r.status,
+  ...(r.proposal_id ? { proposalId: r.proposal_id } : {}),
+  supersededProposalIds: JSON.parse(r.superseded_json) as string[],
+});
 
 const toBill = (r: BillRow): BillRecord => ({
   billId: r.bill_id,
@@ -346,6 +388,16 @@ export class Ledger {
     return result.changes;
   }
 
+  cancelPreparedOperationsForProposal(proposalId: string, reason: string, now: string): number {
+    const result = this.db
+      .prepare(
+        `UPDATE bank_operations SET status = 'failed', reason = ?, updated_at = ?
+          WHERE status = 'prepared' AND proposal_id = ?`,
+      )
+      .run(reason, now, proposalId);
+    return result.changes;
+  }
+
   insertAllocation(
     allocation: AllocationLine & { allocationId: string; billId: string; operationId: string },
     now: string,
@@ -367,7 +419,103 @@ export class Ledger {
       );
   }
 
+  // ---- coverage requests ----------------------------------------------------
+
+  insertCoverageRequest(r: CoverageRequestRecord, now: string): void {
+    this.db
+      .prepare(
+        `INSERT INTO coverage_requests (request_id, household_id, bill_id, debtor_id, volunteer_id, amount_cents,
+           status, proposal_id, superseded_json, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        r.requestId,
+        r.householdId,
+        r.billId,
+        r.debtorId,
+        r.volunteerId ?? null,
+        r.amountCents,
+        r.status,
+        r.proposalId ?? null,
+        JSON.stringify(r.supersededProposalIds),
+        now,
+        now,
+      );
+  }
+
+  coverageRequest(requestId: string): CoverageRequestRecord | null {
+    const row = this.db.prepare('SELECT * FROM coverage_requests WHERE request_id = ?').get(requestId) as
+      | CoverageRow
+      | undefined;
+    return row ? toCoverage(row) : null;
+  }
+
+  coverageRequestForProposal(proposalId: string): CoverageRequestRecord | null {
+    const row = this.db.prepare('SELECT * FROM coverage_requests WHERE proposal_id = ?').get(proposalId) as
+      | CoverageRow
+      | undefined;
+    return row ? toCoverage(row) : null;
+  }
+
+  /** Requests on a bill that are still waiting on someone, oldest first. */
+  activeCoverageRequests(billId: string): CoverageRequestRecord[] {
+    const placeholders = ACTIVE_COVERAGE_STATUSES.map(() => '?').join(',');
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM coverage_requests WHERE bill_id = ? AND status IN (${placeholders}) ORDER BY created_at, request_id`,
+      )
+      .all(billId, ...ACTIVE_COVERAGE_STATUSES) as CoverageRow[];
+    return rows.map(toCoverage);
+  }
+
+  updateCoverageRequest(
+    requestId: string,
+    patch: {
+      status: CoverageStatus;
+      volunteerId?: string | null;
+      amountCents?: number;
+      proposalId?: string | null;
+      supersededProposalIds?: string[];
+    },
+    now: string,
+  ): void {
+    const current = this.coverageRequest(requestId);
+    if (!current) throw new Error(`unknown coverage request ${requestId}`);
+    this.db
+      .prepare(
+        `UPDATE coverage_requests SET status = ?, volunteer_id = ?, amount_cents = ?, proposal_id = ?,
+                superseded_json = ?, updated_at = ? WHERE request_id = ?`,
+      )
+      .run(
+        patch.status,
+        patch.volunteerId === undefined ? (current.volunteerId ?? null) : patch.volunteerId,
+        patch.amountCents ?? current.amountCents,
+        patch.proposalId === undefined ? (current.proposalId ?? null) : patch.proposalId,
+        JSON.stringify(patch.supersededProposalIds ?? current.supersededProposalIds),
+        now,
+        requestId,
+      );
+  }
+
   // ---- debts --------------------------------------------------------------
+
+  insertDebt(debt: DebtRecord, now: string): void {
+    this.db
+      .prepare(
+        `INSERT INTO debts (debt_id, household_id, debtor_id, creditor_id, original_cents, remaining_cents, source_bill_id, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        debt.debtId,
+        debt.householdId,
+        debt.debtorId,
+        debt.creditorId,
+        debt.originalCents,
+        debt.remainingCents,
+        debt.sourceBillId,
+        now,
+      );
+  }
 
   debtsFor(householdId: string, userId: string): DebtRecord[] {
     const rows = this.db

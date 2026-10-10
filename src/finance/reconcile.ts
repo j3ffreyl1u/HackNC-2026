@@ -166,6 +166,7 @@ export class BankProcessor {
       );
     }
     if (!bill) return;
+    if (proposal.purpose === 'coverage') this.recordCoverage(op, proposal, bill.title);
 
     const funded = this.ledger.confirmedTotal(bill.billId);
     const payer = this.payerOf(op);
@@ -175,6 +176,39 @@ export class BankProcessor {
     if (funded >= bill.amountCents && bill.status === 'collecting') {
       this.ledger.setBillStatus(bill.billId, 'ready');
       this.groupMessage(op, `deliv:${bill.billId}:funded`, `${bill.title} is fully funded (${formatUsd(funded)}).`);
+    }
+  }
+
+  /**
+   * The volunteer's funding is bank-confirmed, so the covered share is now a debt to them. This is the
+   * only place a coverage debt is created: agreeing or requesting never creates one.
+   */
+  private recordCoverage(op: BankOperationRecord, proposal: ProposalRecord, billTitle: string): void {
+    const request = this.ledger.coverageRequestForProposal(proposal.proposalId);
+    if (request) this.ledger.updateCoverageRequest(request.requestId, { status: 'funded' }, this.now());
+    const members = new Map(this.ledger.members(op.householdId).map((m) => [m.userId, m.displayName]));
+    for (const line of proposal.allocation) {
+      if (line.kind !== 'coverage') continue;
+      this.ledger.insertDebt(
+        {
+          debtId: this.newId('debt'),
+          householdId: op.householdId,
+          debtorId: line.beneficiaryId,
+          creditorId: line.payerId,
+          originalCents: line.amountCents,
+          remainingCents: line.amountCents,
+          sourceBillId: proposal.billId,
+        },
+        this.now(),
+      );
+      const debtor = members.get(line.beneficiaryId) ?? line.beneficiaryId;
+      const creditor = members.get(line.payerId) ?? line.payerId;
+      this.groupMessage(
+        op,
+        `deliv:${op.operationId}:coverage`,
+        `${creditor}'s coverage is confirmed: ${debtor}'s ${formatUsd(line.amountCents)} share of ${billTitle} is paid. ` +
+          `${debtor} owes ${creditor} ${formatUsd(line.amountCents)}, which will be adjusted in next month's requests.`,
+      );
     }
   }
 

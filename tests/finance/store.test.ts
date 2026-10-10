@@ -62,7 +62,7 @@ afterEach(() => store.close());
 
 describe('migrations and transactions', () => {
   it('applies the schema and records the version', () => {
-    expect(store.schemaVersion()).toBe(1);
+    expect(store.schemaVersion()).toBe(2);
   });
 
   it('rolls back every change when a transaction throws', () => {
@@ -269,7 +269,7 @@ describe('durability across reopen', () => {
     first.close();
 
     const second = LedgerStore.open(path);
-    expect(second.schemaVersion()).toBe(1);
+    expect(second.schemaVersion()).toBe(2);
     expect(second.getBankOperation('op-1')).toMatchObject({ status: 'confirmed', providerTransactionId: 'tx-1' });
     expect(second.unresolvedBankOperations().map((o) => o.operationId)).toEqual(['op-2']);
     expect(second.db.prepare("SELECT remaining_cents AS c FROM debts WHERE debt_id = 'debt-1'").get()).toEqual({ c: 4_800 });

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { Command, CommandPayload, ExecuteResult, HouseholdConfig } from '../../src/contracts/index.js';
-import { NotImplementedError, createFinanceService, type FinanceService } from '../../src/finance/index.js';
+import { createFinanceService, type FinanceService } from '../../src/finance/index.js';
 import { Ledger } from '../../src/finance/ledger.js';
 import { MockBank } from '../../src/finance/mock-bank.js';
 import { LedgerStore } from '../../src/finance/store.js';
@@ -497,16 +497,5 @@ describe('get_summary', () => {
     const n = store.pendingOutbox().length;
     expect(await run('mason', { kind: 'get_summary', cycleId: '2026-10' }, 'cmd-sum')).toEqual({ kind: 'duplicate' });
     expect(store.pendingOutbox()).toHaveLength(n);
-  });
-});
-
-describe('commands for later milestones', () => {
-  it.each([
-    { kind: 'request_coverage', billId: 'b' },
-    { kind: 'share_coverage_request', requestId: 'r', consent: true },
-    { kind: 'offer_coverage', requestId: 'r', amountCents: 4_800 },
-  ] as CommandPayload[])('$kind fails loudly instead of pretending to work', async (payload) => {
-    await expect(run('mason', payload)).rejects.toThrow(NotImplementedError);
-    expect(counts().commands).toBe(0);
   });
 });

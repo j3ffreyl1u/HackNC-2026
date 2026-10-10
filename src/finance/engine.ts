@@ -1,43 +1,19 @@
 import { formatUsd, splitEqual } from './accounting.js';
-import type { Command, DomainErrorCode, ExecuteResult, OutboundMessage } from '../contracts/index.js';
+import type { Command, ExecuteResult } from '../contracts/index.js';
 import {
   Ledger,
   TERMINAL_PROPOSAL_STATUSES,
   type AllocationLine,
   type BillRecord,
-  type MemberRecord,
   type ProposalRecord,
 } from './ledger.js';
-import { NotImplementedError, type Clock, type IdGenerator } from './runtime.js';
+import { CoverageFlow } from './coverage.js';
+import type { Clock, IdGenerator } from './runtime.js';
 import type { LedgerStore } from './store.js';
+import { Notifier, Rejection, STALE_MESSAGE, reject, type Context } from './support.js';
 
-/** An ordinary invalid user action. Thrown inside a transaction so every write rolls back. */
-class Rejection extends Error {
-  constructor(
-    readonly code: DomainErrorCode,
-    readonly userMessage: string,
-  ) {
-    super(userMessage);
-  }
-}
-
-const reject = (code: DomainErrorCode, userMessage: string): never => {
-  throw new Rejection(code, userMessage);
-};
-
-const STALE_MESSAGE = 'That request has changed. Please approve the latest version.';
 /** Proposal statuses after an approved proposal has been handed to the bank. */
 const IN_BANK_STATUSES = ['submitted', 'pending', 'unknown', 'confirmed'];
-
-interface Context {
-  command: Command;
-  householdId: string;
-  groupSpaceId: string;
-  householdAccountId: string;
-  actor: MemberRecord;
-  members: MemberRecord[];
-  now: string;
-}
 
 function isRealDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -47,6 +23,8 @@ function isRealDate(value: string): boolean {
 
 export class FinanceEngine {
   private readonly ledger: Ledger;
+  private readonly notify: Notifier;
+  private readonly coverage: CoverageFlow;
 
   constructor(
     private readonly store: LedgerStore,
@@ -54,6 +32,8 @@ export class FinanceEngine {
     private readonly newId: IdGenerator,
   ) {
     this.ledger = new Ledger(store);
+    this.notify = new Notifier(store, this.ledger);
+    this.coverage = new CoverageFlow(store, this.ledger, this.notify, newId);
   }
 
   /**
@@ -106,32 +86,12 @@ export class FinanceEngine {
       case 'get_summary':
         return this.getSummary(ctx, payload.cycleId);
       case 'request_coverage':
+        return this.coverage.requestCoverage(ctx, payload.billId);
       case 'share_coverage_request':
+        return this.coverage.shareCoverageRequest(ctx, payload.requestId, payload.consent);
       case 'offer_coverage':
-        throw new NotImplementedError(`command ${payload.kind}`);
+        return this.coverage.offerCoverage(ctx, payload.requestId, payload.amountCents);
     }
-  }
-
-  // ---- messaging helpers --------------------------------------------------
-
-  private toGroup(ctx: Context, deliveryId: string, text: string, proposalRef?: OutboundMessage['proposalRef']): void {
-    this.store.enqueueOutbox(
-      {
-        deliveryId,
-        householdId: ctx.householdId,
-        audience: { kind: 'group', spaceId: ctx.groupSpaceId },
-        text,
-        ...(proposalRef ? { proposalRef } : {}),
-      },
-      ctx.now,
-    );
-  }
-
-  private toPrivate(ctx: Context, userId: string, deliveryId: string, text: string): void {
-    this.store.enqueueOutbox(
-      { deliveryId, householdId: ctx.householdId, audience: { kind: 'private', userId }, text },
-      ctx.now,
-    );
   }
 
   // ---- add_bill -----------------------------------------------------------
@@ -172,53 +132,10 @@ export class FinanceEngine {
     for (const member of ctx.members) {
       const cents = requests[member.userId] ?? 0;
       if (cents <= 0) continue;
-      const proposal = this.contributionProposal(ctx, bill, member, cents, this.newId('prop'), 1);
+      const proposal = this.notify.contributionProposal(ctx, bill, member, cents, this.newId('prop'), 1);
       this.ledger.insertProposal(proposal, ctx.now);
-      this.announceRequest(ctx, bill, proposal, member, recipient?.displayName ?? bill.recipientId, false);
+      this.notify.announceRequest(ctx, bill, proposal, member, recipient?.displayName ?? bill.recipientId, false);
     }
-  }
-
-  private contributionProposal(
-    ctx: Context,
-    bill: BillRecord,
-    member: MemberRecord,
-    cents: number,
-    proposalId: string,
-    version: number,
-  ): ProposalRecord {
-    return {
-      proposalId,
-      householdId: ctx.householdId,
-      billId: bill.billId,
-      purpose: 'contribution',
-      version,
-      status: 'proposed',
-      amountCents: cents,
-      sourceAccountId: member.bankAccountId,
-      destinationAccountId: ctx.householdAccountId,
-      requiredActorIds: [member.userId],
-      allocation: [{ payerId: member.userId, beneficiaryId: member.userId, amountCents: cents, kind: 'own' }],
-      description: `${member.displayName} contributes ${formatUsd(cents)} to the household account for ${bill.title}`,
-    };
-  }
-
-  private announceRequest(
-    ctx: Context,
-    bill: BillRecord,
-    proposal: ProposalRecord,
-    member: MemberRecord,
-    recipientName: string,
-    revised: boolean,
-  ): void {
-    const lead = revised ? `Updated request for ${bill.title}` : bill.title;
-    const text =
-      `${lead}: ${formatUsd(bill.amountCents)} due ${bill.dueDate}, payable to ${recipientName}. ` +
-      `${member.displayName}'s share is ${formatUsd(proposal.amountCents)} into the shared household account (simulated). ` +
-      `${member.displayName}: react 👍 to this message or reply "approve ${proposal.proposalId} v${proposal.version}".`;
-    this.toGroup(ctx, `deliv:${proposal.proposalId}:v${proposal.version}:request`, text, {
-      proposalId: proposal.proposalId,
-      proposalVersion: proposal.version,
-    });
   }
 
   private validateTerms(
@@ -282,7 +199,7 @@ export class FinanceEngine {
     }
 
     const bill = this.ledger.bill(proposal.billId);
-    this.toGroup(
+    this.notify.toGroup(
       ctx,
       `deliv:${ctx.command.commandId}:approved`,
       `${ctx.actor.displayName} approved ${formatUsd(proposal.amountCents)} for ${bill?.title ?? 'the bill'}.`,
@@ -297,7 +214,17 @@ export class FinanceEngine {
       return reject('ALREADY_SUBMITTED', 'That payment has already been submitted, so it can no longer be declined.');
     }
     this.ledger.setProposalStatus(proposalId, 'declined', ctx.now);
-    this.toPrivate(
+    if (proposal.purpose === 'coverage') {
+      this.coverage.reopenAfterDecline(ctx, proposal);
+      this.notify.toPrivate(
+        ctx,
+        ctx.actor.userId,
+        `deliv:${ctx.command.commandId}:declined`,
+        'Okay, the coverage agreement is cancelled and nothing was transferred.',
+      );
+      return 'accepted';
+    }
+    this.notify.toPrivate(
       ctx,
       ctx.actor.userId,
       `deliv:${ctx.command.commandId}:declined`,
@@ -335,6 +262,7 @@ export class FinanceEngine {
       return reject('ALREADY_SUBMITTED', 'A coverage or payment request is open for that bill, so it can\'t be edited.');
     }
 
+    this.coverage.closeUnagreedRequests(ctx, bill.billId);
     // Operations that were never sent are void once the terms change.
     this.ledger.cancelPreparedOperations(bill.billId, 'cancelled: bill corrected before submission', ctx.now);
 
@@ -354,19 +282,19 @@ export class FinanceEngine {
         continue;
       }
       if (!existing) {
-        const fresh = this.contributionProposal(ctx, updated, member, cents, this.newId('prop'), 1);
+        const fresh = this.notify.contributionProposal(ctx, updated, member, cents, this.newId('prop'), 1);
         this.ledger.insertProposal(fresh, ctx.now);
-        this.announceRequest(ctx, updated, fresh, member, recipient?.displayName ?? recipientId, true);
+        this.notify.announceRequest(ctx, updated, fresh, member, recipient?.displayName ?? recipientId, true);
         continue;
       }
-      const revised = this.contributionProposal(ctx, updated, member, cents, existing.proposalId, existing.version + 1);
+      const revised = this.notify.contributionProposal(ctx, updated, member, cents, existing.proposalId, existing.version + 1);
       const allocation: AllocationLine[] = revised.allocation;
       this.ledger.reviseProposal(
         existing.proposalId,
         { version: revised.version, amountCents: cents, allocation, description: revised.description },
         ctx.now,
       );
-      this.announceRequest(ctx, updated, revised, member, recipient?.displayName ?? recipientId, true);
+      this.notify.announceRequest(ctx, updated, revised, member, recipient?.displayName ?? recipientId, true);
     }
     return 'accepted';
   }
@@ -397,7 +325,7 @@ export class FinanceEngine {
       lines.push(`${direction} ${formatUsd(debt.remainingCents)} from an earlier bill.`);
     }
     lines.push('All amounts are simulated sandbox money in the shared household account.');
-    this.toPrivate(ctx, ctx.actor.userId, `deliv:${ctx.command.commandId}:summary`, lines.join('\n'));
+    this.notify.toPrivate(ctx, ctx.actor.userId, `deliv:${ctx.command.commandId}:summary`, lines.join('\n'));
     return 'accepted';
   }
 }
