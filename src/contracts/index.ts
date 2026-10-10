@@ -36,7 +36,7 @@ export interface ConstraintValueByField {
   preferences: string[];
   must_dos: string[];
   transport: { mode: 'road_trip'; hasVehicle: boolean; notes?: string };
-  region: { label: string; maxTravelMinutes: number };
+  region: { label: string; maxTravelMinutes?: number };
   duration: { nights: number };
   origin: { city: string; region: string; timeZone: string };
 }

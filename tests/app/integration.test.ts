@@ -5,12 +5,22 @@ import { describe, it, expect } from 'vitest';
 import { loadDemoTrip } from '../../src/app/fixture.js';
 import { runMockDemo } from '../../src/app/mock-demo.js';
 import { createPlannerAdapter, toPlanningState } from '../../src/app/planning-adapter.js';
-import { localMidnight, createChatAdapter } from '../../src/app/conversation-adapter.js';
+import { localMidnight, createChatAdapter, convert } from '../../src/app/conversation-adapter.js';
 import { createResearchProvider } from '../../src/research/provider.js';
 import { defaultFixtures } from '../../src/research/fixtures.js';
 import { SqliteTripRepository } from '../../src/storage/sqlite-repository.js';
 
 describe('integrated chat planner', () => {
+  it('preserves A explicit drive limits and vehicle availability without inventing a limit', () => {
+    const base = { commandId: 'cmd', eventId: 'evt', actorId: 'alex', tripId: 'trip' };
+    const source = { memberId: 'alex', sourceMessageId: 'message', certainty: 'confirmed' as const };
+    const region = convert({ ...base, action: { kind: 'update_constraint', update: { ...source, field: 'region', value: 'NC mountains', maxTravelMinutes: 90 } } }, 'America/New_York');
+    if (region.action.kind === 'update_constraint') expect(region.action.update.value).toEqual({ label: 'NC mountains', maxTravelMinutes: 90 });
+    const unbounded = convert({ ...base, action: { kind: 'update_constraint', update: { ...source, field: 'region', value: 'NC mountains' } } }, 'America/New_York');
+    if (unbounded.action.kind === 'update_constraint') expect(unbounded.action.update.value).toEqual({ label: 'NC mountains' });
+    const transport = convert({ ...base, action: { kind: 'update_constraint', update: { ...source, field: 'transport', value: 'own_vehicle', vehicleAvailable: false } } }, 'America/New_York');
+    if (transport.action.kind === 'update_constraint') expect(transport.action.update.value).toEqual({ mode: 'road_trip', hasVehicle: false });
+  });
   it('runs three actors, revises $190/$180 options, renews approval, answers guide, and persists safely', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'trip-integration-'));
     const path = join(dir, 'trip.sqlite');

@@ -85,7 +85,7 @@ export function buildDemoTrip(fixture: DemoTripFixture): DemoTripData {
   if (!Number.isSafeInteger(fixture.groupConstraints.durationNights) || fixture.groupConstraints.durationNights <= 0) {
     throw new Error('Trip duration must be a positive whole number of nights.');
   }
-  if (!Number.isSafeInteger(fixture.groupConstraints.destinationRegion.maxTravelMinutes) || fixture.groupConstraints.destinationRegion.maxTravelMinutes <= 0) {
+  if (fixture.groupConstraints.destinationRegion.maxTravelMinutes === undefined || !Number.isSafeInteger(fixture.groupConstraints.destinationRegion.maxTravelMinutes) || fixture.groupConstraints.destinationRegion.maxTravelMinutes <= 0) {
     throw new Error('The destination region needs a positive maximum travel time.');
   }
 
