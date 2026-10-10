@@ -90,7 +90,7 @@ function fromState(b: B.TripState, previous: C.TripState): C.TripState {
     groupConstraints: b.groupConstraints.map(r => fromUpdate(r, timeZone) as C.GroupConstraintRecord),
     candidates: b.candidates.map(fromCandidate),
     acceptances: b.acceptances.map(a => ({ actorId: a.memberId, candidateId: a.candidateId, revision: a.revision, acceptedAt: previous.acceptances.find(x => x.actorId === a.memberId && x.revision === a.revision)?.acceptedAt ?? new Date().toISOString() })),
-    pendingQuestions: b.pendingQuestions.map(q => ({ questionId: `${q.key}|${q.questionId}`, audience: q.audience.kind, memberId: q.audience.kind === 'private' ? q.audience.memberId : undefined, field: q.key.split(':')[0] as C.ConstraintField, text: q.text, askedAt: q.askedAt })),
+    pendingQuestions: b.pendingQuestions.map(q => ({ questionId: `${q.key}|${q.questionId}`, audience: q.audience.kind, memberId: q.audience.kind === 'private' ? q.audience.memberId : undefined, field: (q as { field?: C.ConstraintField }).field, text: q.text, askedAt: q.askedAt })),
   };
 }
 

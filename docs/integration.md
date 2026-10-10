@@ -67,3 +67,23 @@ GroupConstraintRecord now requires memberId; the planning adapter no longer assi
 confirm_cost no longer creates evidence with an empty URL. It clears superseded evidence references for that price and relies on private costConfirmations for actor/source/time provenance. Provider evidence records remain unchanged. Grounded output remains private and ephemeral; B live price extraction is not part of app startup.
 
 LiveResearchDisplay sends generation_config.thinking_level=low and asks for at most four searches. The search count is a prompt instruction, not a provider-enforced quota; C has not remeasured live latency. Question-field mapping is deliberately unchanged until Mason publishes the explicit field. This review item remains pending B's handoff.
+
+## Combined-build follow-up
+
+B at e36d794 (including 7955e65) was overlaid locally for verification only. Do not cherry-pick stale source snapshots into Jeffrey's combined branch; merge Mason's branch directly before applying C's follow-up. A's 0f2d108 parser was likewise used locally for checks. The reported f30205c / integration/combined-v2 has not appeared on origin as of this fetch, so C cannot independently claim verification of that SHA.
+
+PendingQuestion.field is optional. fromState uses the explicit q.field without deriving it from a key; roster/consent questions remain fieldless. The actor context omits pendingQuestion when no actual constraint field exists. C intercepts confirm cost and confirm stop text in its conversation wrapper before A's parser; B provide_cost is unnecessary and is absent from the updated B branch.
+
+Legacy saved group constraints missing an author still stop planning safely, but runtime now catches the error, preserves the original trip, atomically records the event and sends only the actor an operator/migration explanation. It does not guess an author or automatically reset a trip.
+
+Direct topology is supported through enrollment mode: direct, persisted in SQLite and passed to A for DM fan-out. Existing enrollment rows migrate to group mode. Changing topology requires a distinct enrollment/database. Every DM receipt remains bound to its proposal; real sends remain coordinated by Jeffrey. No live message or Gemini request was made during this follow-up.
+
+The corrected cap preset is $520/$560/$600, then Mason lowers to $450. tests/fixtures/realistic-demo.json and C's separate realistic research fixtures exercise synthetic $328/$500 upper totals: both fit initially; the $500 option and old acceptance are dropped after the update; the $328 option is approved anew. This does not verify actual live prices or unknown essential costs. The original $200/$250/$300 -> $180 acceptance fixture is retained. Run npm run demo:chat -- --realistic-caps using a fresh DATABASE_PATH to replay.
+
+Google display restrictions are handled by C's original private, ephemeral view. Citation lifetime and non-ASCII extraction in B remain Mason's experimental-provider checks; C does not use B price extraction in the production live path. Live Spectrum combined-flow tests, group delivery and post-cap live latency remain unverified, pending Jeffrey's coordinated run.
+
+## Published combined branch verification
+
+origin/integration/combined-v2 is now available at e18a28a. Its src/planning and src/research match Mason e36d794 exactly (read-only git diff reports no paths). C's follow-up was tested locally against that branch's updated A boundary and Mason's current modules: 488 travel tests passed, one live test skipped; typecheck and build passed. The A/B overlays remain local and are excluded from C's follow-up commit. Jeffrey should cherry-pick C's follow-up onto e18a28a and handle the sole fast-forward of shared main.
+
+The new availability boundary emits real intervals; C passes them through unchanged. The agreed cap preset is $520/$560/$600 -> $450 with synthetic $328/$500 options. This verifies the budget/revision story rather than establishing live quotes. No live test message or research request was sent. Shared main was not merged or pushed by C.

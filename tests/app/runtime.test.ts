@@ -15,6 +15,9 @@ import type {
 } from '../../src/contracts/index.js';
 import { createApplicationRuntime, deterministicCommandId, type PlannerAdapter } from '../../src/app/runtime.js';
 import { SqliteTripRepository } from '../../src/storage/sqlite-repository.js';
+import { createPlannerAdapter } from '../../src/app/planning-adapter.js';
+import { createResearchProvider } from '../../src/research/provider.js';
+import { defaultFixtures } from '../../src/research/fixtures.js';
 
 const directories: string[] = [];
 
@@ -74,6 +77,23 @@ afterEach(() => {
 });
 
 describe('application runtime', () => {
+  it('reports missing legacy group authors privately without changing the saved trip', async () => {
+    const { repository, enrollment, state } = setup();
+    state.groupConstraints = [{ memberId: '', field: 'origin', value: { city: 'Chapel Hill', region: 'NC', timeZone: 'America/New_York' }, sourceMessageId: 'legacy-origin', certainty: 'confirmed' }];
+    const conversation = new FakeConversation();
+    conversation.parseInbound.mockResolvedValue(command('legacy-event'));
+    await repository.bootstrapTrip(enrollment, state);
+    const runtime = createApplicationRuntime({ repository, conversation, planner: createPlannerAdapter(createResearchProvider({ mode: 'mock', fixtures: defaultFixtures }), enrollment.groupSpaceId), tripId: state.tripId });
+    try {
+      await runtime.start();
+      await expect(conversation.emit(inbound('legacy-event'))).resolves.toBeUndefined();
+      expect(await repository.loadTrip(state.tripId)).toEqual(state);
+      expect(await repository.hasProcessedEvent('legacy-event')).toBe(true);
+      expect(conversation.sent).toHaveLength(1);
+      expect(conversation.sent[0].audience).toEqual({ kind: 'private', memberId: 'alex' });
+      expect(conversation.sent[0].text).toMatch(/missing author information/);
+    } finally { await runtime.stop(); repository.close(); }
+  });
   it('supplies actor-specific confirmations and binds every proposal delivery receipt', async () => {
     const { repository, enrollment, state } = setup();
     state.status = 'awaiting_acceptance';

@@ -41,8 +41,9 @@ export async function loadDemoTrip(path: string): Promise<DemoTripData> {
 
 /** Live enrollment is a fixed configured phone list; chat gathers the planning constraints. */
 export async function loadEnrolledTrip(path: string): Promise<DemoTripData> {
-  const raw = JSON.parse(await readFile(path, 'utf8')) as { tripId: string; groupSpaceId: string; timeZone?: string; participants: TripEnrollment['participants'] };
-  if (!raw.tripId?.trim() || !raw.groupSpaceId?.trim() || raw.groupSpaceId.startsWith('mock-') || !Array.isArray(raw.participants) || !raw.participants.length) throw new Error('Live enrollment needs a trip ID, actual group space ID and a fixed participant list.');
+  const raw = JSON.parse(await readFile(path, 'utf8')) as { tripId: string; groupSpaceId: string; mode?: 'group' | 'direct'; timeZone?: string; participants: TripEnrollment['participants'] };
+  const mode = raw.mode ?? 'group';
+  if (!['group', 'direct'].includes(mode) || !raw.tripId?.trim() || !raw.groupSpaceId?.trim() || (mode === 'group' && raw.groupSpaceId.startsWith('mock-')) || !Array.isArray(raw.participants) || !raw.participants.length) throw new Error('Live enrollment needs a trip ID, group space ID (or logical direct-mode label) and a fixed participant list.');
   const timeZone = raw.timeZone ?? 'America/New_York';
   new Intl.DateTimeFormat('en', { timeZone });
   const members = new Set<string>(), phones = new Set<string>();
@@ -51,7 +52,7 @@ export async function loadEnrolledTrip(path: string): Promise<DemoTripData> {
     if (members.has(p.memberId) || phones.has(p.providerUserId)) throw new Error('Live participant IDs and phone numbers must be unique.');
     members.add(p.memberId); phones.add(p.providerUserId);
   }
-  const enrollment: TripEnrollment = { tripId: raw.tripId, groupSpaceId: raw.groupSpaceId, participants: raw.participants.map(p => ({ memberId: p.memberId, displayName: p.displayName, providerUserId: p.providerUserId, consentedAt: p.consentedAt })) };
+  const enrollment: TripEnrollment = { tripId: raw.tripId, groupSpaceId: raw.groupSpaceId, mode, participants: raw.participants.map(p => ({ memberId: p.memberId, displayName: p.displayName, providerUserId: p.providerUserId, consentedAt: p.consentedAt })) };
   return { enrollment, state: { tripId: raw.tripId, revision: 0, status: 'gathering', timeZone, roster: enrollment.participants.map(p => ({ memberId: p.memberId, displayName: p.displayName, consented: true })), memberConstraints: [], groupConstraints: [], candidates: [], acceptances: [], pendingQuestions: [], fundingStatus: 'disabled' } };
 }
 

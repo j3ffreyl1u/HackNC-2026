@@ -31,7 +31,7 @@ export function convert(command: A.TripCommand | C.TripCommand, timeZone: string
 }
 
 export async function createChatAdapter(enrollment: C.TripEnrollment, timeZone: string, mode: 'mock' | 'photon', env = process.env, suppliedMessenger?: Messenger): Promise<{ conversation: C.ConversationService; messenger: Messenger }> {
-  const trip: A.TripConfig = { tripId: enrollment.tripId, groupSpaceId: enrollment.groupSpaceId, timezone: timeZone, mode: 'group', members: enrollment.participants.map(p => ({ userId: p.memberId, displayName: p.displayName, providerUserId: p.providerUserId })) };
+  const trip: A.TripConfig = { tripId: enrollment.tripId, groupSpaceId: enrollment.groupSpaceId, timezone: timeZone, mode: enrollment.mode ?? 'group', members: enrollment.participants.map(p => ({ userId: p.memberId, displayName: p.displayName, providerUserId: p.providerUserId })) };
   let messenger: Messenger = suppliedMessenger ?? new MockMessenger();
   if (mode === 'photon') {
     if (!env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY is required for live chat intent parsing.');

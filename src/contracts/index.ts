@@ -190,7 +190,7 @@ export interface PendingQuestion {
   questionId: string;
   audience: 'group' | 'private';
   memberId?: MemberId;
-  field: ConstraintField;
+  field?: ConstraintField;
   text: string;
   askedAt: ISODateTime;
 }
@@ -285,6 +285,7 @@ export interface ParticipantEnrollment {
 }
 
 export interface TripEnrollment {
+  mode?: 'group' | 'direct';
   tripId: TripId;
   groupSpaceId: string;
   participants: ParticipantEnrollment[];
