@@ -61,6 +61,26 @@ describe('planTrip: the acceptance fixture', () => {
     }
   });
 
+  it('lays the itinerary out on real days in the trip’s local time: nothing before 9 am or after 8 pm', async () => {
+    const { localHour } = await import('../../src/planning/schedule.js');
+    for (const c of await generateCandidates(readyState(), provider)) {
+      expect(c.itinerary.length).toBeGreaterThan(1);
+      for (const item of c.itinerary) {
+        expect(localHour(Date.parse(item.startAt), 'America/New_York')).toBeGreaterThanOrEqual(9);
+        expect(localHour(Date.parse(item.endAt), 'America/New_York')).toBeLessThanOrEqual(20);
+      }
+      // The trip is two days: something happens on Saturday, not only Friday night.
+      expect(c.itinerary.some((i) => i.startAt.slice(0, 10) === '2026-10-17')).toBe(true);
+    }
+  });
+
+  it('honors a different time zone, and rejects an unknown one', async () => {
+    const { localHour } = await import('../../src/planning/schedule.js');
+    const [c] = await generateCandidates(readyState(), provider, { timeZone: 'America/Chicago' });
+    for (const item of c.itinerary) expect(localHour(Date.parse(item.startAt), 'America/Chicago')).toBeGreaterThanOrEqual(9);
+    await expect(planTrip(readyState(), provider, { timeZone: 'Mars/Olympus' })).rejects.toBeInstanceOf(PlanningError);
+  });
+
   it('evidence links survive generation and every citation resolves', async () => {
     for (const c of await generateCandidates(readyState(), provider)) {
       const known = new Set(c.evidence.map((e) => e.evidenceId));

@@ -3,8 +3,9 @@ import { checkReadiness } from './readiness.js';
 import { commonWindows, effectiveAvailability, hoursNeeded, resolveGroupField } from './constraints.js';
 import { formatUsd } from './money.js';
 import { explainRanking, groupPreferences, rankCandidates } from './rank.js';
+import { DEFAULT_TIME_ZONE, assertTimeZone, scheduleStops } from './schedule.js';
 import { displayName, participantIds } from './state.js';
-import type { ConstraintValues, CostItem, ItineraryItem, MemberId, TripCandidate, TripErrorCode, TripReply, TripState } from './types.js';
+import type { ConstraintValues, CostItem, MemberId, TripCandidate, TripErrorCode, TripReply, TripState } from './types.js';
 import { describeEvidence } from '../research/evidence.js';
 import type { ResearchOption, ResearchProvider, ResearchRequest, ResearchResult } from '../research/types.js';
 
@@ -23,6 +24,11 @@ export class PlanningError extends Error {
 export const OPTIONS_SHOWN = 2;
 const MS_PER_MINUTE = 60_000;
 const MS_PER_HOUR = 3_600_000;
+
+export interface PlanOptions {
+  /** IANA zone the itinerary is laid out in (default America/New_York). The shared contracts carry no trip timezone yet. */
+  timeZone?: string;
+}
 
 export interface PlanOutcome {
   /** The revision this plan was built for. Compare with the current revision before saving. */
@@ -61,37 +67,10 @@ function requestFor(state: TripState): ResearchRequest {
   };
 }
 
-/** Lay the stops out in order from the start of the trip. Stops that cannot fit before the end are left out, and said so. */
-function schedule(option: ResearchOption, candidateId: string, startMs: number, endMs: number): { itinerary: ItineraryItem[]; leftOut: string[] } {
-  const itinerary: ItineraryItem[] = [];
-  const leftOut: string[] = [];
-  let cursor = startMs;
-  option.stops.forEach((stop, index) => {
-    const begin = cursor + (stop.travelMinutesFromPrevious ?? 0) * MS_PER_MINUTE;
-    const finish = begin + stop.hours * MS_PER_HOUR;
-    if (finish > endMs) {
-      leftOut.push(stop.label);
-      return;
-    }
-    itinerary.push({
-      itemId: `${candidateId}-${index + 1}`,
-      label: stop.label,
-      location: stop.location,
-      startAt: iso(begin),
-      endAt: iso(finish),
-      ...(stop.travelMinutesFromPrevious !== undefined ? { travelMinutesFromPrevious: stop.travelMinutesFromPrevious } : {}),
-      evidenceIds: [...stop.evidenceIds],
-      tags: stop.tags.map((t) => t.toLowerCase()),
-    });
-    cursor = finish;
-  });
-  return { itinerary, leftOut };
-}
-
-function buildCandidate(state: TripState, option: ResearchOption, result: ResearchResult, startMs: number, endMs: number): TripCandidate {
+function buildCandidate(state: TripState, option: ResearchOption, result: ResearchResult, startMs: number, endMs: number, timeZone: string): TripCandidate {
   const ids = participantIds(state);
   const candidateId = `${state.tripId}-r${state.revision}-${option.optionId}`;
-  const { itinerary, leftOut } = schedule(option, candidateId, startMs, endMs);
+  const { itinerary, leftOut } = scheduleStops(option.stops, candidateId, startMs, endMs, timeZone);
 
   const shared: CostItem[] = option.costs.map((c) => ({ ...c, costId: `${option.optionId}:${c.costId}`, allocation: 'equal_shared' as const, evidenceIds: [...c.evidenceIds] }));
   const personal: CostItem[] = option.perPersonCosts.flatMap((template) =>
@@ -101,7 +80,7 @@ function buildCandidate(state: TripState, option: ResearchOption, result: Resear
 
   const cited = new Set([...option.evidenceIds, ...itinerary.flatMap((i) => i.evidenceIds), ...shared.flatMap((c) => c.evidenceIds), ...personal.flatMap((c) => c.evidenceIds)]);
   const tradeoffs = [...option.tradeoffs];
-  for (const stop of leftOut) tradeoffs.push(`Left out "${stop}": not enough time in these dates.`);
+  for (const stop of leftOut) tradeoffs.push(`Left out "${stop.label}": ${stop.reason}.`);
   const unknown = [...option.costs, ...option.perPersonCosts].filter((c) => c.priceStatus === 'unknown').map((c) => c.label);
   if (unknown.length > 0) tradeoffs.push(`Price not found: ${unknown.join(', ')}. The total is only a lower bound until it is checked.`);
   if (option.suggestedContingencyPerPersonCents === undefined) tradeoffs.push('No contingency has been set yet.');
@@ -188,7 +167,13 @@ function conflictReplies(state: TripState, excluded: readonly TripCandidate[], p
  * involves a cap, whether a limit may change. Fixture or live is carried on every candidate; a research
  * failure throws and is never answered with fixture facts.
  */
-export async function planTrip(state: TripState, researchProvider: ResearchProvider): Promise<PlanOutcome> {
+export async function planTrip(state: TripState, researchProvider: ResearchProvider, options: PlanOptions = {}): Promise<PlanOutcome> {
+  const timeZone = options.timeZone ?? DEFAULT_TIME_ZONE;
+  try {
+    assertTimeZone(timeZone);
+  } catch {
+    throw new PlanningError('NOT_READY', `I don't recognize the time zone "${timeZone}".`);
+  }
   if (!checkReadiness(state).ready) {
     throw new PlanningError('NOT_READY', "I can't plan yet: some details are missing or don't agree.");
   }
@@ -205,7 +190,7 @@ export async function planTrip(state: TripState, researchProvider: ResearchProvi
   const startMs = Date.parse(request.window.startAt);
   const endMs = startMs + nights * 24 * MS_PER_HOUR;
 
-  const built = result.options.map((o) => buildCandidate(state, o, result, startMs, endMs));
+  const built = result.options.map((o) => buildCandidate(state, o, result, startMs, endMs, timeZone));
   const ranked = rankCandidates(state, built).map((r) => r.candidate);
   const shown = ranked.slice(0, OPTIONS_SHOWN);
   const provisional = built.filter(isProvisional).slice(0, shown.length === 0 ? 2 : 1);
@@ -242,6 +227,6 @@ export async function planTrip(state: TripState, researchProvider: ResearchProvi
 }
 
 /** The candidates to install: up to two feasible options, best first, plus any provisional one. */
-export async function generateCandidates(state: TripState, researchProvider: ResearchProvider): Promise<TripCandidate[]> {
-  return (await planTrip(state, researchProvider)).candidates;
+export async function generateCandidates(state: TripState, researchProvider: ResearchProvider, options: PlanOptions = {}): Promise<TripCandidate[]> {
+  return (await planTrip(state, researchProvider, options)).candidates;
 }

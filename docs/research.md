@@ -12,7 +12,7 @@ Status as of 2026-10-10. Everything here is pure TypeScript with no database, ch
 | `validateCandidate(state, candidate)` | `src/planning/budget.ts` | Hard-limit check: caps, dates, duration, must-dos, drive limit. Returns `{ feasible, violations, unknownEssentials }`. |
 | `allocateCosts`, `reprice` | `src/planning/budget.ts` | Exact-cent per-person totals; `reprice` recomputes totals and feasibility against current state. |
 | `rankCandidates`, `explainRanking` | `src/planning/rank.ts` | Feasible only; preferences covered, then lower upper cost, then less driving, then ID. |
-| `planTrip(state, provider)` / `generateCandidates` | `src/planning/generate.ts` | Research, build candidates, return up to two feasible options plus a provisional one, or explain the conflict. |
+| `planTrip(state, provider, { timeZone? })` / `generateCandidates` | `src/planning/generate.ts` | Research, build candidates, return up to two feasible options plus a provisional one, or explain the conflict. Itineraries are scheduled by `src/planning/schedule.ts`. |
 | `answerGuideQuestion(state, question, provider, { now? })` | `src/planning/guide.ts` | Cited, plan-relative answers with budget effect. Never changes the plan. |
 | `ResearchProvider`, `createResearchProvider`, `createFixtureProvider`, `guardLiveProvider` | `src/research/` | Provider interface, fixture provider, validation wrapper for live providers. |
 | `createGeminiProvider`, `geminiConfigFromEnv` | `src/research/gemini.ts` | Live Gemini + Google Search grounding provider, with the price pass in `src/research/pricing.ts`. |
@@ -50,7 +50,7 @@ npx tsc --noEmit -p tsconfig.b-check.json     # typecheck B's files
 npx vitest run tests/planning tests/research    # B's tests
 ```
 
-Last run (2026-10-10): typecheck clean; 320 tests passed, 1 skipped (the live test, which needs a key). Mutation checks (deliberately breaking a rule and confirming tests fail) were run for readiness, budget caps and contingency, revision invalidation, feasibility filtering, per-person cost expansion, stale-revision checks, provider failure handling, result validation, guide cap exclusion, display-time sanitizing and Gemini price handling.
+Last run (2026-10-10): typecheck clean; 336 tests passed, 1 skipped (the live test, which needs a key). Mutation checks (deliberately breaking a rule and confirming tests fail) were run for readiness, budget caps and contingency, revision invalidation, feasibility filtering, per-person cost expansion, stale-revision checks, provider failure handling, result validation, guide cap exclusion, display-time sanitizing and Gemini price handling.
 
 Acceptance fixture (caps $200/$250/$300; shared upper costs $480 and $450; $20 food and $10 contingency each): the options total $190 and $180 per person with no cap exceeded. Lowering Mason's cap to $180 drops the $190 option, clears acceptances and moves to revision 2. The $180 option stays and needs fresh acceptance from all three.
 
@@ -101,8 +101,8 @@ Live check, 2026-10-10 (three-person fixture trip, 2 nights, 3 people): a full p
 - **Search suggestions display.** Google's terms for showing `search_suggestions` were not readable from the documentation I could fetch. Check https://ai.google.dev/gemini-api/terms#grounding-with-google-search before the page or chat shows grounded answers.
 - **Citation offsets for non-ASCII text.** Offsets are treated as UTF-8 byte offsets and converted. Live samples were plain ASCII, so the conversion is tested only on built data.
 - **Redirect link lifetime** is unknown.
-- **Itinerary times.** `planTrip` lays stops out back to back from the trip start, in UTC. A fixture hike can land overnight and day two can be empty. Costs and feasibility are unaffected. Day-based scheduling in the trip's local timezone is not built.
-- **Timezone.** Dates are ISO timestamps; no local timezone is carried on the trip yet.
+- **Itinerary times** are laid out on real days (`src/planning/schedule.ts`): stops start no earlier than 9:00 and finish by 20:00 local time, a stop that would run late moves to the next morning, and a stop longer than a day or that cannot finish before the trip ends is left out with the reason shown. Visit lengths for live results are partly assumed (see above). Travel between stops is taken as given; real routing and opening hours are not checked.
+- **Timezone.** The shared contracts have no trip timezone, so `planTrip(state, provider, { timeZone })` defaults to `America/New_York` (fits an NC road trip). C should add a timezone to the trip and pass it in. The trip start is the start of the first common window, so a window that starts at midnight starts the trip at midnight.
 - **Community research.** Reddit access needs an authorized arrangement and is not implemented. Community evidence today comes only from fixtures or from whatever sites search returns, labeled by domain. Contributors are never called locals.
 - **Nature and sustainability research** for aligned tracks is not built.
 - **Availability** is not checked for any option, live or fixture. All outputs say so.
