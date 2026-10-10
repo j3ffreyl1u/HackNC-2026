@@ -1,0 +1,94 @@
+# Planning and research (Worker B)
+
+Status as of 2026-10-10. Everything here is pure TypeScript with no database, chat or bank imports. B never writes SQLite, sends Photon messages or calls banking.
+
+## What B delivers
+
+| Export | File | Purpose |
+| --- | --- | --- |
+| `checkReadiness(state, { now? })` | `src/planning/readiness.ts` | Deterministic checklist: `{ ready, missing, conflicts, questions }`. At most two related questions, none repeated within 12 hours. |
+| `applyCommand(state, command, { now? })` | `src/planning/commands.ts` | Domain transitions. Returns `{ state, replies, researchRequested, rejection? }`. |
+| `installCandidates(state, researchedAtRevision, candidates)` | `src/planning/commands.ts` | Installs researched candidates; discards results for an older revision (`STALE_REVISION`). |
+| `validateCandidate(state, candidate)` | `src/planning/budget.ts` | Hard-limit check: caps, dates, duration, must-dos, drive limit. Returns `{ feasible, violations, unknownEssentials }`. |
+| `allocateCosts`, `reprice` | `src/planning/budget.ts` | Exact-cent per-person totals; `reprice` recomputes totals and feasibility against current state. |
+| `rankCandidates`, `explainRanking` | `src/planning/rank.ts` | Feasible only; preferences covered, then lower upper cost, then less driving, then ID. |
+| `planTrip(state, provider)` / `generateCandidates` | `src/planning/generate.ts` | Research, build candidates, return up to two feasible options plus a provisional one, or explain the conflict. |
+| `answerGuideQuestion(state, question, provider, { now? })` | `src/planning/guide.ts` | Cited, plan-relative answers with budget effect. Never changes the plan. |
+| `ResearchProvider`, `createResearchProvider`, `createFixtureProvider`, `guardLiveProvider` | `src/research/` | Provider interface, fixture provider, validation wrapper for live providers. |
+| `createGeminiProvider`, `geminiConfigFromEnv` | `src/research/gemini.ts` | Live Gemini + Google Search grounding provider. |
+
+Types are provisional in `src/planning/types.ts` and `src/research/types.ts`. Fields marked `PROPOSAL` there are additions C should adopt or replace when `src/contracts/index.ts` publishes trip types (`essential` on `CostItem`, `tags` on itinerary items, `dataSource` on candidates, `roster`, `web` evidence kind, `ApplyResult.rejection`). Contingency is the **total** shared amount, split equally.
+
+## Integration notes for C
+
+1. **Command flow.** Call `applyCommand(state, command, { now })`, pass your own timestamp for determinism (it falls back to the clock). On `rejection`, state is the same object; send the private reply. Save state only if `state !== previous`.
+2. **Research flow.** When `researchRequested` is true: read `state.revision`, run `planTrip(state, provider)` **outside** any DB transaction, then reload the trip. Call `installCandidates(current, outcome.revision, outcome.candidates)`; on `STALE_REVISION` drop the result and, if `researchRequested` is still true for the new state, run again. Enqueue `outcome.replies` only if install succeeded.
+3. **Material changes restart research.** A confirmed change to a cap, dates, must-do, origin, length, region or car starts a new revision, clears acceptances and re-checks every candidate. If nothing standing is feasible and the trip is ready, `applyCommand` returns `researchRequested: true`.
+4. **Guide questions.** `ask_guide` is a no-op in `applyCommand`. Call `answerGuideQuestion` yourself for that action. It is informational and returns `{ text, evidence, mode }`.
+5. **Funding.** `request_funding` is refused (`MISSING_APPROVAL`) until the plan is approved, then returns state unchanged. Funding belongs to your adapter.
+6. **Public snapshot.** `Violation.memberId` and `overByCents` on budget violations identify who is over their cap. Strip them from the public snapshot and use `publicFeasibilitySummary`. `privateOverage(feasibility, memberId)` is for that member's private message only.
+7. **Research mode.** Choose explicitly: `createResearchProvider({ mode: 'mock', fixtures: defaultFixtures })` or `{ mode: 'live', live: createGeminiProvider(config) }`. Live mode with no provider throws `RESEARCH_UNAVAILABLE`; there is no fallback to fixtures. Show `ResearchError.userMessage` and offer manual input or retry.
+8. **Search suggestions.** Live results may carry `searchSuggestionsHtml`. It is passed through, not displayed anywhere yet. See "Not verified".
+9. **Env.** `GEMINI_API_KEY` (required for live) and `GEMINI_MODEL` (optional, default `gemini-3.8-flash`). Please add both to `.env.example`. `.env` is already gitignored.
+
+## Behavior that is easy to get wrong
+
+- A stated maximum is a constraint, never a contribution. The sum of caps is never used. Each person's own upper total (shared share + their personal costs + contingency share) must fit their own cap.
+- Unknown costs are never zero. An unknown essential price makes a candidate `feasible: false` with no violations (provisional), so it cannot be selected or approved.
+- A tentative statement does not count. Restating the same value is not a change. Preference changes re-rank but do not void a plan.
+- Selecting an option is not accepting it. Approval needs every consenting participant to accept the exact candidate at the current revision.
+- Public replies never contain a cap, an overage amount or who is over. Private amounts go only to that person.
+- Research requests contain places, dates and interests only. No money, names or calendars.
+- Retrieved text is data. It is sanitized (control and invisible characters removed, length bounded) at the provider and again before display.
+
+## Verification
+
+Run from the repository root:
+
+```bash
+npx tsc --noEmit -p tsconfig.b-check.json     # typecheck B's files
+npx vitest run tests/planning tests/research    # B's tests
+```
+
+Last run (2026-10-10): typecheck clean; 297 tests passed, 1 skipped (the live test, which needs a key). Mutation checks (deliberately breaking a rule and confirming tests fail) were run for readiness, budget caps and contingency, revision invalidation, feasibility filtering, per-person cost expansion, stale-revision checks, provider failure handling, result validation, guide cap exclusion, display-time sanitizing and Gemini price handling.
+
+Acceptance fixture (caps $200/$250/$300; shared upper costs $480 and $450; $20 food and $10 contingency each): the options total $190 and $180 per person with no cap exceeded. Lowering Mason's cap to $180 drops the $190 option, clears acceptances and moves to revision 2. The $180 option stays and needs fresh acceptance from all three.
+
+### Live verification (Gemini)
+
+| Check | Result |
+| --- | --- |
+| Plain `POST /v1beta/interactions` with `gemini-3.8-flash` | Verified 2026-10-10: HTTP 200. |
+| Same request with the `google_search` tool, free-tier key | HTTP 429 quota. Google's pricing page lists Search grounding as not available on the free tier. |
+| Same request after the project got billing credit | Verified 2026-10-10: HTTP 200, grounded answer with `url_citation` annotations. |
+| Smoke test `tests/research/gemini.live.test.ts` | Passed 2026-10-10: 4 options, 7 sources, about 6.6 s. |
+| Parser against a real captured response | `tests/research/captured/gemini-interaction.json` (signatures and usage removed). |
+
+Reproduce the live check (reads `GEMINI_API_KEY`; one read-only request):
+
+```bash
+set -a; source .env; set +a; npx vitest run tests/research/gemini.live.test.ts
+```
+
+`source` fails if `.env` has lines that are not plain `NAME=value`. Without a key the test skips, and a skipped run proves nothing.
+
+Cost: a first unconstrained call ran 16 searches and about 173k prompt tokens (49 s, roughly 13 cents). With the prompt limited to 4 searches and `thinking_level: low`, a call is about 6 s and 16k tokens (about 1 to 2 cents). Search queries are billed per query after 5,000 free per month.
+
+### Findings from live responses
+
+- Citation links are Google redirect URLs (`vertexaisearch.cloud.google.com/grounding-api-redirect/...`). The real site is only in the citation `title` (a domain), which is what source classification uses.
+- Citations cover parts of each line, not every field. A price counts as an estimate only if a citation covers that field; otherwise it is unknown.
+- The model returned `unknown` for every price and for visit lengths in testing. Stops with an unknown length are planned at 2 hours and flagged as an assumption.
+
+## Not verified, or open
+
+- **Live options are never approvable today.** No live option has had a price for every essential cost, so live candidates are provisional. A price lookup step, a way for the group to supply costs, or a product decision is needed before a live demo can reach an approved plan. Mock mode is not affected.
+- **Search suggestions display.** Google's terms for showing `search_suggestions` were not readable from the documentation I could fetch. Check https://ai.google.dev/gemini-api/terms#grounding-with-google-search before the page or chat shows grounded answers.
+- **Citation offsets for non-ASCII text.** Offsets are treated as UTF-8 byte offsets and converted. Live samples were plain ASCII, so the conversion is tested only on built data.
+- **Redirect link lifetime** is unknown.
+- **Itinerary times.** `planTrip` lays stops out back to back from the trip start, in UTC. A fixture hike can land overnight and day two can be empty. Costs and feasibility are unaffected. Day-based scheduling in the trip's local timezone is not built.
+- **Timezone.** Dates are ISO timestamps; no local timezone is carried on the trip yet.
+- **Community research.** Reddit access needs an authorized arrangement and is not implemented. Community evidence today comes only from fixtures or from whatever sites search returns, labeled by domain. Contributors are never called locals.
+- **Nature and sustainability research** for aligned tracks is not built.
+- **Availability** is not checked for any option, live or fixture. All outputs say so.
+- Nothing here claims a booking, a guaranteed price or real inventory.
