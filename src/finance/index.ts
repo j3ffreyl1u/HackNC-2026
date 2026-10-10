@@ -160,12 +160,13 @@ export function createFinanceService(dependencies: FinanceDependencies): Finance
       if (!isBankSeeder(bank)) {
         throw new FinanceConfigError('the configured bank adapter cannot provision demo accounts');
       }
-      const resolve = async (label: string, initialBalanceCents: number): Promise<string> => {
+      const resolve = async (label: string, initialBalanceCents: number, configuredAccountId: string): Promise<string> => {
         const existing = store.getMeta(config.householdId, seedKey(label)) ?? undefined;
         const accountId = await bank.provisionAccount({
           label: `${config.householdId}-${label}`,
           initialBalanceCents,
           existingAccountId: existing,
+          configuredAccountId,
         });
         if (accountId !== existing) store.setMeta(config.householdId, seedKey(label), accountId);
         return accountId;
@@ -173,12 +174,12 @@ export function createFinanceService(dependencies: FinanceDependencies): Finance
 
       const members = [];
       for (const m of config.members) {
-        members.push({ ...m, bankAccountId: await resolve(`member-${m.userId}`, MEMBER_STARTING_BALANCE_CENTS) });
+        members.push({ ...m, bankAccountId: await resolve(`member-${m.userId}`, MEMBER_STARTING_BALANCE_CENTS, m.bankAccountId) });
       }
-      const householdAccountId = await resolve('household', 0);
+      const householdAccountId = await resolve('household', 0, config.householdAccountId);
       const recipients = [];
       for (const r of config.recipients) {
-        recipients.push({ ...r, bankAccountId: await resolve(`recipient-${r.recipientId}`, 0) });
+        recipients.push({ ...r, bankAccountId: await resolve(`recipient-${r.recipientId}`, 0, r.bankAccountId) });
       }
       return { ...config, householdAccountId, members, recipients };
     },

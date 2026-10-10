@@ -51,6 +51,8 @@ export interface BankSeeder {
     label: string;
     initialBalanceCents: number;
     existingAccountId?: string;
+    /** The ID written in the household config; real banks adopt (and verify) it rather than create one. */
+    configuredAccountId?: string;
   }): Promise<string>;
 }
 
