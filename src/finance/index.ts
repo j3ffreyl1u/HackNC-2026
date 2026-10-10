@@ -7,14 +7,12 @@ import type {
   HouseholdSnapshot,
   OutboundMessage,
 } from './contracts-local';
+import { FinanceEngine } from './engine';
+import { FinanceConfigError, NotImplementedError, type Clock, type IdGenerator } from './runtime';
 import { LedgerStore } from './store';
 
-export interface Clock {
-  now(): Date;
-}
-
-/** Produces unique IDs; the prefix names the kind of entity (e.g. `prop`, `op`). */
-export type IdGenerator = (prefix: string) => string;
+export { FinanceConfigError, NotImplementedError };
+export type { Clock, IdGenerator };
 
 export interface FinanceDependencies {
   store: LedgerStore;
@@ -39,22 +37,6 @@ export interface FinanceService {
   claimInbound(eventId: string): Promise<boolean>;
   completeInbound(eventId: string): Promise<void>;
   close(): Promise<void>;
-}
-
-/** Invalid enrollment or seeding configuration: an operator error, not a user-facing domain rejection. */
-export class FinanceConfigError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'FinanceConfigError';
-  }
-}
-
-/** A service method whose milestone has not been built yet. Never reports success. */
-export class NotImplementedError extends Error {
-  constructor(method: string) {
-    super(`FinanceService.${method} is not implemented yet`);
-    this.name = 'NotImplementedError';
-  }
 }
 
 const MEMBER_COUNT = 3;
@@ -109,18 +91,19 @@ export function validateHouseholdConfig(config: HouseholdConfig): void {
 export function createFinanceService(dependencies: FinanceDependencies): FinanceService {
   const { store, bank, clock } = dependencies;
   const nowIso = () => clock.now().toISOString();
+  const engine = new FinanceEngine(store, clock, dependencies.newId);
 
   return {
-    async execute(_command: Command): Promise<ExecuteResult> {
-      throw new NotImplementedError('execute');
+    async execute(command: Command): Promise<ExecuteResult> {
+      return engine.execute(command);
     },
 
     async reconcile(_householdId: string): Promise<void> {
-      throw new NotImplementedError('reconcile');
+      throw new NotImplementedError('FinanceService.reconcile');
     },
 
     async getSnapshot(_householdId: string): Promise<HouseholdSnapshot> {
-      throw new NotImplementedError('getSnapshot');
+      throw new NotImplementedError('FinanceService.getSnapshot');
     },
 
     async pendingMessages(): Promise<OutboundMessage[]> {
@@ -140,15 +123,15 @@ export function createFinanceService(dependencies: FinanceDependencies): Finance
     },
 
     async advanceDemoCycle(_householdId: string, _cycleId: string): Promise<void> {
-      throw new NotImplementedError('advanceDemoCycle');
+      throw new NotImplementedError('FinanceService.advanceDemoCycle');
     },
 
     async getConversationContext(_actorId: string, _spaceId: string, _targetMessageId?: string) {
-      throw new NotImplementedError('getConversationContext');
+      throw new NotImplementedError('FinanceService.getConversationContext');
     },
 
     async processReminders(_householdId: string): Promise<void> {
-      throw new NotImplementedError('processReminders');
+      throw new NotImplementedError('FinanceService.processReminders');
     },
 
     /** Idempotent: refreshes enrollment, never touches ledger state, sets the first demo cycle once. */

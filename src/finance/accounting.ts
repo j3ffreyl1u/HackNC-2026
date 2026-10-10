@@ -16,6 +16,14 @@ export function assertCents(value: number, label = 'amount'): void {
   }
 }
 
+/** Format integer cents as dollars for messages, e.g. 4800 -> "$48.00". */
+export function formatUsd(cents: number): string {
+  assertCents(cents);
+  const dollars = Math.floor(cents / 100);
+  const rest = String(cents % 100).padStart(2, '0');
+  return `$${dollars.toLocaleString('en-US')}.${rest}`;
+}
+
 /**
  * Equal split of a total across members. Any remainder cents go one each to the
  * earliest members in the given (stable, configured) order: 100 / 3 -> 34, 33, 33.
