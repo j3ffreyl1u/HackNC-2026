@@ -136,7 +136,7 @@ export interface SpectrumCredentials {
 /** Lazy live construction. Requires `spectrum-ts` installed by C and real credentials. */
 export async function loadSpectrumApp(creds: SpectrumCredentials): Promise<{ app: SpectrumAppLike; imessage: SpectrumIMessageLike }> {
   if (!creds.projectId || !creds.projectSecret) {
-    throw new Error('CHAT_MODE=photon requires PROJECT_ID and PROJECT_SECRET');
+    throw new Error('CHAT_MODE=photon requires SPECTRUM_PROJECT_ID and SPECTRUM_PROJECT_SECRET');
   }
   const core = 'spectrum-ts';
   const prov = 'spectrum-ts/providers/imessage';
