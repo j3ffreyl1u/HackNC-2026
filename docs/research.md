@@ -50,7 +50,7 @@ npx tsc --noEmit -p tsconfig.b-check.json     # typecheck B's files
 npx vitest run tests/planning tests/research    # B's tests
 ```
 
-Last run (2026-10-10): typecheck clean; 336 tests passed, 1 skipped (the live test, which needs a key). Mutation checks (deliberately breaking a rule and confirming tests fail) were run for readiness, budget caps and contingency, revision invalidation, feasibility filtering, per-person cost expansion, stale-revision checks, provider failure handling, result validation, guide cap exclusion, display-time sanitizing and Gemini price handling.
+Last run (2026-10-10): typecheck clean; 338 tests passed, 1 skipped (the live test, which needs a key). Mutation checks (deliberately breaking a rule and confirming tests fail) were run for readiness, budget caps and contingency, revision invalidation, feasibility filtering, per-person cost expansion, stale-revision checks, provider failure handling, result validation, guide cap exclusion, display-time sanitizing and Gemini price handling.
 
 Acceptance fixture (caps $200/$250/$300; shared upper costs $480 and $450; $20 food and $10 contingency each): the options total $190 and $180 per person with no cap exceeded. Lowering Mason's cap to $180 drops the $190 option, clears acceptances and moves to revision 2. The $180 option stays and needs fresh acceptance from all three.
 
@@ -103,7 +103,7 @@ Live check, 2026-10-10 (three-person fixture trip, 2 nights, 3 people): a full p
 - **Redirect link lifetime** is unknown.
 - **Itinerary times** are laid out on real days (`src/planning/schedule.ts`): stops start no earlier than 9:00 and finish by 20:00 local time, a stop that would run late moves to the next morning, and a stop longer than a day or that cannot finish before the trip ends is left out with the reason shown. Visit lengths for live results are partly assumed (see above). Travel between stops is taken as given; real routing and opening hours are not checked.
 - **Timezone.** The shared contracts have no trip timezone, so `planTrip(state, provider, { timeZone })` defaults to `America/New_York` (fits an NC road trip). C should add a timezone to the trip and pass it in. The trip start is the start of the first common window, so a window that starts at midnight starts the trip at midnight.
-- **Community research.** Reddit access needs an authorized arrangement and is not implemented. Community evidence today comes only from fixtures or from whatever sites search returns, labeled by domain. Contributors are never called locals.
+- **Community research.** A standalone Reddit API integration was attempted and dropped: new Reddit Data API (script-app) access now appears to require a moderation use case, which this isn't, and the account-creation flow silently refuses apps that don't qualify. Instead, Gemini's Google Search grounding is prompted to surface forum/discussion content (Reddit, TripAdvisor forums, Quora, and similar; see `FORUM_HOSTS` in `src/research/grounding.ts`) and labels it `community`, attributed as one traveler's experience. This has not been checked against a live response that actually contains a forum hit. Contributors are never called locals.
 - **Nature and sustainability research** for aligned tracks is not built.
 - **Availability** is not checked for any option, live or fixture. All outputs say so.
 - Nothing here claims a booking, a guaranteed price or real inventory.

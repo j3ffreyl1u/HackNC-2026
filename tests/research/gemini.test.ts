@@ -91,12 +91,23 @@ describe('parseInteraction', () => {
     expect(result.limitations.join(' ')).toMatch(/1 line of the answer couldn't be read and was skipped/);
   });
 
-  it('classifies sources honestly: reddit is community, .gov is official, everything else is just web', () => {
+  it('classifies sources honestly: known forums are community, .gov is official, everything else is just web', () => {
     const kinds = (url: string) => parseInteraction(interaction([LINE_A], () => ({ url })), request(), NOW).evidence[0].kind;
     expect(kinds('https://www.reddit.com/r/NorthCarolina/x')).toBe('community');
+    expect(kinds('https://www.tripadvisor.com/ShowTopic-g1234-i56')).toBe('community');
+    expect(kinds('https://www.quora.com/What-to-do-in-Boone')).toBe('community');
     expect(kinds('https://www.ncparks.gov/x')).toBe('official');
     expect(kinds('https://travelblog.example.com/x')).toBe('web');
     expect(kinds('https://notgov.example.com/gov')).toBe('web');
+    // A name is never enough: this is not an actual forum host.
+    expect(kinds('https://mycommunity.example.com/x')).toBe('web');
+  });
+
+  it('matches a forum host by exact domain or subdomain, never a lookalike', () => {
+    const kinds = (url: string) => parseInteraction(interaction([LINE_A], () => ({ url })), request(), NOW).evidence[0].kind;
+    expect(kinds('https://old.reddit.com/r/x')).toBe('community');
+    expect(kinds('https://not-reddit.com/x')).toBe('web');
+    expect(kinds('https://reddit.com.evil.example/x')).toBe('web');
   });
 
   it('ignores annotations that are not url citations or have no usable link', () => {
@@ -191,6 +202,12 @@ describe('buildPrompt', () => {
   it('limits the model to a few searches and asks for numeric hours', () => {
     expect(buildPrompt(request())).toMatch(/at most 4 searches/);
     expect(buildPrompt(request())).toMatch(/plain number of hours/);
+  });
+
+  it('asks for forum/discussion content, attributed as individual experience', () => {
+    const prompt = buildPrompt(request({ purpose: 'guide', question: 'Any local tips?' }));
+    expect(prompt).toMatch(/forum or discussion threads/);
+    expect(prompt).toMatch(/one traveler's experience, never as an established fact/);
   });
 
   it('quotes a guide question as data and tells the model not to follow search results', () => {

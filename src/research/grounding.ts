@@ -60,10 +60,30 @@ const HOSTNAME = /^(?:[a-z0-9-]+\.)+[a-z]{2,}$/i;
  * Grounding links are Google redirect URLs, so the real site is read from the citation's title, which the API
  * sets to the site's domain. Only when the title isn't a domain is the link's own host used.
  */
+/**
+ * Hosts known to be discussion forums or Q&A sites, where a hit is someone's individual post, not a
+ * publisher's own claim. Matched by exact domain or subdomain, never by a word like "community" appearing
+ * in an unrelated hostname, so a blog is never misclassified just because of its name.
+ */
+const FORUM_HOSTS = [
+  'reddit.com',
+  'tripadvisor.com', // includes TripAdvisor's forum subpaths, which read the same as its reviews
+  'quora.com',
+  'flyertalk.com',
+  'city-data.com',
+  'thorntree.lonelyplanet.com',
+  'fodors.com', // the Fodor's Travel Talk forum
+  'travellerspoint.com',
+];
+
+function isForumHost(host: string): boolean {
+  return FORUM_HOSTS.some((forum) => host === forum || host.endsWith(`.${forum}`));
+}
+
 export function kindOf(url: string, title: string | undefined): SourceEvidence['kind'] {
   const shown = title?.trim().toLowerCase();
   const host = shown && HOSTNAME.test(shown) ? shown.replace(/^www\./, '') : new URL(url).hostname.toLowerCase();
-  if (host === 'reddit.com' || host.endsWith('.reddit.com')) return 'community';
+  if (isForumHost(host)) return 'community';
   if (host.endsWith('.gov')) return 'official';
   return 'web'; // a search hit is not known to be official, so it is never labeled so
 }
