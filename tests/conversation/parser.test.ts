@@ -234,6 +234,17 @@ describe('confirming a hedged budget', () => {
     expect(cmds(r)).toEqual([]);
     expect(r.kind === 'reply' && r.message.audience).toEqual({ kind: 'private', memberId: 'mason' });
   });
+  it('with a budget question AND a plan both open, a bare yes asks which and records nothing', async () => {
+    const { service } = setup({ pendingConfirmation: { field: 'budget', valueCents: 25000 }, actionable: [accept] });
+    for (const t of ['Yes it is', 'yes', 'no']) {
+      const r = await service.parseInbound(msg({ text: t }));
+      expect(cmds(r)).toEqual([]);
+      expect(r.kind === 'reply' && r.message.audience).toEqual({ kind: 'private', memberId: 'mason' });
+    }
+    // an explicit, unambiguous instruction still works
+    expect(cmds(await service.parseInbound(msg({ text: 'accept cand-a v3' })))[0]!.action.kind).toBe('accept_candidate');
+    expect(updates(await service.parseInbound(msg({ text: 'my max is $250' })))[0]).toMatchObject({ field: 'budget', value: 25000, certainty: 'confirmed' });
+  });
   it('yes without any pending question is still ignored', async () => {
     const { service } = setup();
     expect((await service.parseInbound(msg({ text: 'yes it is' }))).kind).toBe('ignored');

@@ -133,7 +133,11 @@ export function createParser(deps: ConversationDependencies) {
 
   function resolveAnswer(msg: InboundMessage, ctx: TripConversationContext, yes: boolean): ParseResult {
     const pending = ctx.pendingConfirmation;
-    if (pending && ctx.actionable.length === 0) {
+    if (pending && ctx.actionable.length > 0) {
+      // A bare yes/no could answer either question. Never guess: a plan acceptance is a financial commitment.
+      return reply(msg, `Quick check, I have two questions open: is ${formatCents(pending.valueCents).replace(/\.00$/, '')} your firm maximum, and the plan awaiting you. Say "my max is $X" for the budget, or "accept <id> v<n>" / "pick <id>" for the plan.`, 'which2', true);
+    }
+    if (pending) {
       if (!yes) return reply(msg, 'No problem. What is your firm maximum for the whole trip, including food and travel?', 'budget-no', true);
       // They confirmed the exact amount we asked about, so it is recorded as confirmed (it is still their own budget).
       return { kind: 'command', command: updateCommand(msg, ctx, { field: 'budget', value: pending.valueCents }, false) };
