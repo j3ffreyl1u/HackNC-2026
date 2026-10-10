@@ -11,7 +11,11 @@ import { ResearchError, type PerPersonCostTemplate, type ResearchOption, type Re
 
 export const DEFAULT_MODEL = 'gemini-3.8-flash';
 export const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com';
-const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_TIMEOUT_MS = 90_000;
+/** Each search query is billed and slow, so the model is told to keep them few. */
+const MAX_SEARCHES = 4;
+/** A stop whose visit length wasn't found is planned as this long, and the plan says it is an assumption. */
+const ASSUMED_STOP_HOURS = 2;
 const MAX_OPTIONS = 4;
 const MAX_DOLLARS = 1_000_000;
 
@@ -54,6 +58,7 @@ export function buildPrompt(request: ResearchRequest): string {
     task,
     `Trip: ${trip.join('; ') || 'no details given'}.`,
     `Reply with one line per option and nothing else, in exactly this format:\n${COLUMNS}`,
+    `Run at most ${MAX_SEARCHES} searches in total. Write each stop's hours as a plain number of hours (for example 2 or 1.5), or unknown.`,
     'Include only what a search result supports. Write "unknown" instead of guessing a number. Do not invent places, prices or opening hours.',
   ].join('\n\n');
 }
@@ -73,6 +78,19 @@ interface TextBlock {
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
+/**
+ * Citation offsets in grounding responses count UTF-8 bytes (the same as characters for plain ASCII, which is
+ * all live testing has shown so far). When the text has other characters, convert so a citation still lands on
+ * the line it belongs to.
+ */
+function toCharOffsets(text: string, annotations: Annotation[]): Annotation[] {
+  // eslint-disable-next-line no-control-regex
+  if (/^[\u0000-\u007f]*$/.test(text)) return annotations;
+  const bytes = Buffer.from(text, 'utf8');
+  const toChar = (offset: number) => bytes.subarray(0, Math.max(0, Math.min(offset, bytes.length))).toString('utf8').length;
+  return annotations.map((a) => ({ ...a, start: toChar(a.start), end: toChar(a.end) }));
+}
+
 function textBlocks(interaction: unknown): { blocks: TextBlock[]; suggestions: string[] } {
   const steps = isRecord(interaction) && Array.isArray(interaction.steps) ? interaction.steps : [];
   const blocks: TextBlock[] = [];
@@ -91,14 +109,21 @@ function textBlocks(interaction: unknown): { blocks: TextBlock[]; suggestions: s
         if (!Number.isInteger(a.start_index) || !Number.isInteger(a.end_index)) continue;
         annotations.push({ url: a.url, title: typeof a.title === 'string' ? a.title : undefined, start: a.start_index as number, end: a.end_index as number });
       }
-      blocks.push({ text: item.text, annotations });
+      blocks.push({ text: item.text, annotations: toCharOffsets(item.text, annotations) });
     }
   }
   return { blocks, suggestions };
 }
 
-function kindOf(url: string): SourceEvidence['kind'] {
-  const host = new URL(url).hostname.toLowerCase();
+const HOSTNAME = /^(?:[a-z0-9-]+\.)+[a-z]{2,}$/i;
+
+/**
+ * Grounding links are Google redirect URLs, so the real site is read from the citation's title, which the API
+ * sets to the site's domain. Only when the title isn't a domain is the link's own host used.
+ */
+function kindOf(url: string, title: string | undefined): SourceEvidence['kind'] {
+  const shown = title?.trim().toLowerCase();
+  const host = shown && HOSTNAME.test(shown) ? shown.replace(/^www\./, '') : new URL(url).hostname.toLowerCase();
   if (host === 'reddit.com' || host.endsWith('.reddit.com')) return 'community';
   if (host.endsWith('.gov')) return 'official';
   return 'web'; // a search hit is not known to be official, so it is never labeled so
@@ -114,29 +139,48 @@ function parseRange(field: string): { lowCents: number; highCents: number } | un
   return { lowCents: low * 100, highCents: high * 100 };
 }
 
-function cost(costId: string, category: CostItem['category'], label: string, field: string, evidenceIds: string[], allocation: CostItem['allocation']): CostItem {
-  const range = parseRange(field);
-  // Search grounding never establishes a price, so a number is at best an estimate, and anything else is unknown.
+/**
+ * A number counts as an estimate only when a citation covers the very text it came from; an uncited number is
+ * the model's own guess and is treated as unknown. Search grounding never makes a price verified.
+ */
+function cost(costId: string, category: CostItem['category'], label: string, field: string, evidenceIds: string[], allocation: CostItem['allocation'], covered: boolean): CostItem {
+  const range = covered ? parseRange(field) : undefined;
   return {
     costId, category, label, lowCents: range?.lowCents ?? 0, highCents: range?.highCents ?? 0, allocation,
     evidenceIds: range ? evidenceIds : [], priceStatus: range ? 'estimate' : 'unknown',
   };
 }
 
-function foodTemplate(field: string, evidenceIds: string[]): PerPersonCostTemplate {
-  const { allocation: _allocation, memberId: _memberId, ...template } = cost('food', 'food', 'Food', field, evidenceIds, 'personal');
+function foodTemplate(field: string, evidenceIds: string[], covered: boolean): PerPersonCostTemplate {
+  const { allocation: _allocation, memberId: _memberId, ...template } = cost('food', 'food', 'Food', field, evidenceIds, 'personal', covered);
   return template;
 }
 
-function parseStops(field: string, evidenceIds: string[]): ResearchStop[] {
+function parseStops(field: string, evidenceIds: string[]): { stops: ResearchStop[]; assumed: boolean } {
   const stops: ResearchStop[] = [];
+  let assumed = false;
   for (const part of field.split(';')) {
     const [label, location, hours, tags] = part.split('~').map((x) => x.trim());
-    const h = Number(hours);
-    if (!label || !location || !Number.isFinite(h) || h <= 0 || h > 24) continue;
+    if (!label || !location) continue;
+    let h = Number(hours);
+    if (!Number.isFinite(h) || h <= 0 || h > 24) {
+      h = ASSUMED_STOP_HOURS; // the visit length wasn't found; plan a default and say so
+      assumed = true;
+    }
     stops.push({ label: sanitizeRetrievedText(label, 80), location: sanitizeRetrievedText(location, 80), hours: h, tags: (tags ?? '').split('+').map((t) => t.trim().toLowerCase()).filter(Boolean), evidenceIds });
   }
-  return stops;
+  return { stops, assumed };
+}
+
+/** Where each `|`-separated field of a line sits, so a citation can be matched to the exact field it covers. */
+function fieldRanges(line: string, lineStart: number): Array<{ start: number; end: number }> {
+  const ranges: Array<{ start: number; end: number }> = [];
+  let pos = lineStart;
+  for (const piece of line.split('|')) {
+    ranges.push({ start: pos, end: pos + piece.length });
+    pos += piece.length + 1;
+  }
+  return ranges;
 }
 
 /**
@@ -171,6 +215,8 @@ export function parseInteraction(interaction: unknown, request: ResearchRequest,
       }
       const [, name, region, drive, tags, lodging, fuel, activities, food, stops, tradeoff] = fields;
       const cites = block.annotations.filter((a) => a.start < lineEnd && a.end > lineStart);
+      const ranges = fieldRanges(raw, lineStart);
+      const covers = (index: number) => block.annotations.some((a) => a.start < ranges[index].end && a.end > ranges[index].start);
       if (cites.length === 0 || name === '') {
         unsourced += 1;
         continue;
@@ -192,7 +238,7 @@ export function parseInteraction(interaction: unknown, request: ResearchRequest,
           evidenceKey.set(key, id);
           evidence.push({
             evidenceId: id, url: url.href, title: sanitizeRetrievedText(c.title ?? url.hostname, 200), retrievedAt,
-            kind: kindOf(url.href), claim: claim || sanitizeRetrievedText(tradeoff),
+            kind: kindOf(url.href, c.title), claim: claim || sanitizeRetrievedText(tradeoff),
             uncertainty: 'Found by web search and not checked against the provider; prices and availability may have changed.',
           });
         }
@@ -204,6 +250,7 @@ export function parseInteraction(interaction: unknown, request: ResearchRequest,
       }
 
       const optionId = `gem-opt-${options.length + 1}`;
+      const parsedStops = parseStops(stops, ids);
       const driveMinutes = Number(drive);
       options.push({
         optionId,
@@ -211,15 +258,19 @@ export function parseInteraction(interaction: unknown, request: ResearchRequest,
         region: sanitizeRetrievedText(region, 100),
         tags: tags.split(',').map((t) => t.trim().toLowerCase()).filter(Boolean),
         ...(Number.isInteger(driveMinutes) && driveMinutes > 0 && driveMinutes <= 1440 ? { driveMinutesFromOrigin: driveMinutes } : {}),
-        stops: parseStops(stops, ids),
+        stops: parsedStops.stops,
         costs: [
-          cost('lodging', 'accommodation', 'Lodging', lodging, ids, 'equal_shared'),
-          cost('fuel', 'fuel_parking_tolls', 'Fuel and parking', fuel, ids, 'equal_shared'),
-          cost('activities', 'activities', 'Activities', activities, ids, 'equal_shared'),
+          cost('lodging', 'accommodation', 'Lodging', lodging, ids, 'equal_shared', covers(5)),
+          cost('fuel', 'fuel_parking_tolls', 'Fuel and parking', fuel, ids, 'equal_shared', covers(6)),
+          cost('activities', 'activities', 'Activities', activities, ids, 'equal_shared', covers(7)),
         ],
-        perPersonCosts: [foodTemplate(food, ids)],
+        perPersonCosts: [foodTemplate(food, ids, covers(8))],
         evidenceIds: ids,
-        tradeoffs: [sanitizeRetrievedText(tradeoff, 200), 'Prices come from web search and are unverified estimates.'].filter(Boolean),
+        tradeoffs: [
+          sanitizeRetrievedText(tradeoff, 200),
+          'Prices, where found, come from web search and are unverified estimates.',
+          ...(parsedStops.assumed ? [`Visit lengths weren't found, so some stops are planned at ${ASSUMED_STOP_HOURS} hours as an assumption.`] : []),
+        ].filter(Boolean),
       });
     }
   }
@@ -254,7 +305,13 @@ export function createGeminiProvider(config: GeminiConfig): ResearchProvider {
         response = await doFetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-goog-api-key': config.apiKey },
-          body: JSON.stringify({ model: config.model ?? DEFAULT_MODEL, input: buildPrompt(request), tools: [{ type: 'google_search' }] }),
+          body: JSON.stringify({
+            model: config.model ?? DEFAULT_MODEL,
+            input: buildPrompt(request),
+            tools: [{ type: 'google_search' }],
+            // Low thinking: the answer is a lookup, and thinking tokens dominated cost and time in live testing.
+            generation_config: { thinking_level: 'low' },
+          }),
           signal: controller.signal,
         });
       } catch (error) {

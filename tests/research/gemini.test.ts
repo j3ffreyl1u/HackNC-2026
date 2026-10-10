@@ -130,6 +130,54 @@ describe('parseInteraction', () => {
   });
 });
 
+describe('parseInteraction: details seen in live responses', () => {
+  const fieldCovered = (lineText: string, fieldText: string) => {
+    const start = lineText.indexOf(fieldText);
+    return [{ type: 'url_citation', url: 'https://x.example/r', title: 'ncparks.gov', start_index: start, end_index: start + fieldText.length }];
+  };
+  const wrap = (text: string, annotations: unknown[]) => ({ steps: [{ type: 'model_output', content: [{ type: 'text', text, annotations }] }] });
+
+  it('a price counts only when a citation covers the field it came from', () => {
+    const covered = parseInteraction(wrap(LINE_A, fieldCovered(LINE_A, '$2,800-3,300')), request(), NOW).options[0];
+    expect(covered.costs.find((c) => c.costId === 'lodging')).toMatchObject({ priceStatus: 'estimate', lowCents: 280_000 });
+    // The same line cited only on its closing sentence: the numbers are the model's own and become unknown.
+    const only = parseInteraction(wrap(LINE_A, fieldCovered(LINE_A, 'Shorter drive, tamer views.')), request(), NOW).options[0];
+    expect(only.costs.every((c) => c.priceStatus === 'unknown')).toBe(true);
+    expect(only.perPersonCosts.every((c) => c.priceStatus === 'unknown')).toBe(true);
+  });
+
+  it('classifies a source by the domain in its title, since the link is a redirect', () => {
+    const kind = (title: string) => parseInteraction(wrap(LINE_A, [{ type: 'url_citation', url: 'https://vertexaisearch.cloud.google.com/grounding-api-redirect/abc', title, start_index: 0, end_index: LINE_A.length }]), request(), NOW).evidence[0].kind;
+    expect(kind('reddit.com')).toBe('community');
+    expect(kind('old.reddit.com')).toBe('community');
+    expect(kind('ncparks.gov')).toBe('official');
+    expect(kind('www.nps.gov')).toBe('official');
+    expect(kind('wanderlog.com')).toBe('web');
+    expect(kind('Some Blog Title')).toBe('web');
+  });
+
+  it('lines up citations when the text has non-ASCII characters (UTF-8 byte offsets)', () => {
+    const accented = LINE_A.replace('Hanging Rock weekend', 'Café Hanging Rock — weekend');
+    const second = LINE_B;
+    const text = `${accented}\n${second}`;
+    const bytes = (s: string) => Buffer.byteLength(s, 'utf8');
+    const start = bytes(accented) + 1; // the second line's first byte
+    const cite = [{ type: 'url_citation', url: 'https://x.example/r', title: 'x.example', start_index: start, end_index: start + bytes(second) }];
+    const result = parseInteraction(wrap(text, cite), request(), NOW);
+    // The citation belongs to the second line only; the accented first line must not borrow it.
+    expect(result.options.map((o) => o.name)).toEqual(['Mystery cabin']);
+    expect(result.limitations.join(' ')).toMatch(/1 suggestion was dropped/);
+  });
+
+  it('plans a stop with an unstated length at 2 hours and says it is an assumption', () => {
+    const line = LINE_A.replace('Day hike~State park~5~hiking', 'Day hike~State park~9am to 5pm~hiking');
+    const [o] = parseInteraction(wrap(line, fieldCovered(line, line)), request(), NOW).options;
+    expect(o.stops[0]).toMatchObject({ label: 'Day hike', hours: 2 });
+    expect(o.stops[1].hours).toBe(2);
+    expect(o.tradeoffs.join(' ')).toMatch(/assumption/);
+  });
+});
+
 describe('buildPrompt', () => {
   it('carries place, dates and interests but never a budget', () => {
     const prompt = buildPrompt(request());
@@ -138,6 +186,11 @@ describe('buildPrompt', () => {
     expect(prompt).toContain('at most 240 minutes of driving');
     expect(prompt).toContain('interests: hiking');
     expect(prompt).not.toMatch(/budget|cap|maximum total|\$\d/i);
+  });
+
+  it('limits the model to a few searches and asks for numeric hours', () => {
+    expect(buildPrompt(request())).toMatch(/at most 4 searches/);
+    expect(buildPrompt(request())).toMatch(/plain number of hours/);
   });
 
   it('quotes a guide question as data and tells the model not to follow search results', () => {
@@ -161,7 +214,7 @@ describe('createGeminiProvider', () => {
     expect((init.headers as Record<string, string>)['x-goog-api-key']).toBe('test-key');
     expect(url).not.toContain('test-key');
     const body = JSON.parse(init.body as string);
-    expect(body).toMatchObject({ model: DEFAULT_MODEL, tools: [{ type: 'google_search' }] });
+    expect(body).toMatchObject({ model: DEFAULT_MODEL, tools: [{ type: 'google_search' }], generation_config: { thinking_level: 'low' } });
     expect(typeof body.input).toBe('string');
     expect(result.options).toHaveLength(1);
     expect(provider.mode).toBe('live');
