@@ -47,3 +47,68 @@ function monthIndex(word: string): number | undefined {
   const full = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'][i]!;
   return full.startsWith(word) || word === 'sept' ? i : undefined;
 }
+
+const MONTH = '(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
+const SEP = '(?:to|-|–|—|through|thru|until|till)';
+const ISO_RANGE = new RegExp(`(\\d{4}-\\d{2}-\\d{2})(?:\\s*${SEP}\\s*(\\d{4}-\\d{2}-\\d{2}))?`, 'gi');
+const MD_RANGE = new RegExp(`\\b${MONTH}\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:\\s*${SEP}\\s*(?:${MONTH}\\.?\\s+)?(\\d{1,2})(?:st|nd|rd|th)?)?\\b`, 'gi');
+const SLASH_RANGE = new RegExp(`\\b(\\d{1,2})/(\\d{1,2})(?:\\s*${SEP}\\s*(\\d{1,2})/(\\d{1,2}))?\\b`, 'gi');
+
+export interface ParsedWindow { start: string; end: string }
+
+const iso = (y: number, m: number, d: number) => `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+
+/**
+ * Deterministic date-window parsing for trip availability, no AI. Finds ISO ranges (2026-10-17 to 2026-10-19),
+ * "Oct 17-19", "Oct 30 - Nov 2", "October 17th through 19th", "10/17-10/19", and single days. A missing year
+ * is the reference year, or the next year if that date has already passed. Impossible or reversed
+ * ranges are dropped. Returns de-duplicated windows sorted by start (at most 6).
+ */
+export function parseDateWindows(input: string, reference: string): ParsedWindow[] {
+  const ref = new Date(reference);
+  if (Number.isNaN(ref.getTime())) return [];
+  const today = ref.toISOString().slice(0, 10);
+  const refYear = ref.getUTCFullYear();
+  const out: ParsedWindow[] = [];
+
+  const resolve = (sm: number, sd: number, em: number | undefined, ed: number | undefined) => {
+    if (sm < 1 || sm > 12) return;
+    let y = refYear;
+    let start = iso(y, sm, sd);
+    if (!isValidIsoDate(start)) return;
+    if (start < today) { y += 1; start = iso(y, sm, sd); if (!isValidIsoDate(start)) return; }
+    let end = start;
+    if (em !== undefined && ed !== undefined) {
+      if (em < 1 || em > 12) return;
+      end = iso(y, em, ed);
+      if (isValidIsoDate(end) && end < start) end = iso(y + 1, em, ed);
+      if (!isValidIsoDate(end)) return;
+    }
+    out.push({ start, end });
+  };
+
+  let rest = input;
+  rest = rest.replace(ISO_RANGE, (_m, a: string, b?: string) => {
+    const end = b ?? a;
+    if (isValidIsoDate(a) && isValidIsoDate(end) && end >= a) out.push({ start: a, end });
+    return ' ';
+  });
+  rest = rest.replace(MD_RANGE, (_m, mo: string, d: string, mo2?: string, d2?: string) => {
+    const sm = monthIndex(mo.toLowerCase());
+    if (sm === undefined) return ' ';
+    const em = d2 === undefined ? undefined : mo2 ? monthIndex(mo2.toLowerCase()) : sm;
+    if (d2 !== undefined && em === undefined) return ' ';
+    resolve(sm + 1, Number(d), em === undefined ? undefined : em + 1, d2 === undefined ? undefined : Number(d2));
+    return ' ';
+  });
+  rest.replace(SLASH_RANGE, (_m, m1: string, d1: string, m2?: string, d2?: string) => {
+    resolve(Number(m1), Number(d1), m2 === undefined ? undefined : Number(m2), d2 === undefined ? undefined : Number(d2));
+    return ' ';
+  });
+
+  const seen = new Set<string>();
+  return out
+    .filter((w) => !seen.has(w.start + w.end) && !!seen.add(w.start + w.end))
+    .sort((a, b) => a.start.localeCompare(b.start))
+    .slice(0, 6);
+}
