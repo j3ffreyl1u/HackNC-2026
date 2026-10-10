@@ -1,4 +1,4 @@
-import type { BankTransferResult, BankingAdapter, SubmitTransferInput } from './bank';
+import type { BankSeeder, BankTransferResult, BankingAdapter, SubmitTransferInput } from './bank';
 
 /** What the next submitTransfer call should do, consumed in FIFO order. */
 export type InjectedBehavior =
@@ -31,7 +31,7 @@ export interface MockBankOptions {
   supportsFindTransfer?: boolean;
 }
 
-export class MockBank implements BankingAdapter {
+export class MockBank implements BankingAdapter, BankSeeder {
   private readonly balances = new Map<string, number>();
   private readonly transfers: StoredTransfer[] = [];
   private readonly behaviors: InjectedBehavior[] = [];
@@ -82,6 +82,20 @@ export class MockBank implements BankingAdapter {
       transfer.status = 'failed';
       transfer.reason = 'declined by provider';
     }
+  }
+
+  /**
+   * Deterministic account IDs per label. An account the bank already holds keeps its balance;
+   * only an unknown account is created with the starting balance.
+   */
+  async provisionAccount(input: {
+    label: string;
+    initialBalanceCents: number;
+    existingAccountId?: string;
+  }): Promise<string> {
+    const accountId = input.existingAccountId ?? `mock-${input.label.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`;
+    if (!this.balances.has(accountId)) this.balances.set(accountId, input.initialBalanceCents);
+    return accountId;
   }
 
   async getBalance(accountId: string): Promise<number> {

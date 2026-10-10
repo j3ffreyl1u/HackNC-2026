@@ -38,6 +38,26 @@ export interface BankingAdapter {
   findTransfer(operationId: string, fromAccountId: string): Promise<BankTransferResult | null>;
 }
 
+/**
+ * Optional capability for demo seeding. Adapters that can create or adopt sandbox accounts
+ * implement it; the finance service uses it from `seedDemoBanking` only, never at startup.
+ */
+export interface BankSeeder {
+  /**
+   * Return a usable account ID for `label`. When `existingAccountId` is given, adopt it
+   * (verifying it where the provider allows) instead of creating another account.
+   */
+  provisionAccount(input: {
+    label: string;
+    initialBalanceCents: number;
+    existingAccountId?: string;
+  }): Promise<string>;
+}
+
+export function isBankSeeder(bank: BankingAdapter): bank is BankingAdapter & BankSeeder {
+  return typeof (bank as Partial<BankSeeder>).provisionAccount === 'function';
+}
+
 /** Confirm a provider result matches what we asked for before counting it as paid. */
 export function transferMatches(
   result: BankTransferResult,
