@@ -1,0 +1,32 @@
+[
+  {
+    "eventId": "evt-october-summary",
+    "messageId": "msg-october-summary",
+    "senderId": "mason",
+    "spaceId": "mock-space",
+    "visibility": "group",
+    "occurredAt": "2026-10-10T12:00:00.000Z",
+    "text": "What is still due for October?"
+  },
+  {
+    "eventId": "evt-jordan-share-consent",
+    "messageId": "msg-jordan-share-consent",
+    "senderId": "jordan",
+    "spaceId": "mock-space",
+    "visibility": "private",
+    "occurredAt": "2026-10-10T12:02:00.000Z",
+    "text": "Yes, you can ask the household about covering my share."
+  },
+  {
+    "eventId": "evt-mason-approval-reaction",
+    "messageId": "msg-mason-approval-reaction",
+    "senderId": "mason",
+    "spaceId": "mock-space",
+    "visibility": "group",
+    "occurredAt": "2026-10-10T12:05:00.000Z",
+    "reaction": {
+      "targetMessageId": "provider-proposal-message-1",
+      "emoji": "\uD83D\uDC4D"
+    }
+  }
+]

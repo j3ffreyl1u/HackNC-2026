@@ -19,7 +19,8 @@ let close: (() => Promise<void>) | undefined;
 afterEach(async () => { await close?.(); close = undefined; });
 
 async function start(demoMode = true) {
-  const finance = { getSnapshot: async () => snapshot, advanceDemoCycle: vi.fn(async () => undefined) } as unknown as FinanceService;
+  const getSnapshot = vi.fn(async () => snapshot);
+  const finance = { getSnapshot, advanceDemoCycle: vi.fn(async () => undefined) } as unknown as FinanceService;
   const server = createAppServer({ finance, config, demoMode });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
@@ -29,13 +30,21 @@ async function start(demoMode = true) {
 }
 
 describe('app HTTP routes', () => {
-  it('returns only the public snapshot DTO for the enrolled household', async () => {
-    const { base } = await start();
+  it('projects only the public snapshot DTO, even if Finance includes extra private fields', async () => {
+    const { base, finance } = await start();
+    vi.mocked(finance.getSnapshot).mockResolvedValue({
+      ...snapshot,
+      privateBalanceCents: 12345,
+      privateMessages: ['Jordan asked for help'],
+      credentials: { bankAccountId: 'private-bank-id' },
+    } as unknown as HouseholdSnapshot);
     expect(await (await fetch(`${base}/api/config`)).json()).toEqual({ householdId: 'demo-house', demoMode: true });
     const response = await fetch(`${base}/api/households/demo-house/snapshot`);
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual(snapshot);
-    expect(JSON.stringify(snapshot)).not.toContain('bankAccountId');
+    const body = await response.text();
+    expect(JSON.parse(body)).toEqual(snapshot);
+    expect(body).not.toContain('Jordan asked for help');
+    expect(body).not.toContain('private-bank-id');
   });
 
   it('rejects malformed cycle requests and delegates valid local changes', async () => {

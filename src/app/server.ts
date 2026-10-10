@@ -29,7 +29,7 @@ export function createAppServer(options: { finance: FinanceService; config: Hous
         try { householdId = decodeURIComponent(snapshot[1]); }
         catch { return json(res, 400, { error: 'Invalid household ID' }); }
         if (householdId !== options.config.householdId) return json(res, 404, { error: 'Household not found' });
-        return json(res, 200, await options.finance.getSnapshot(householdId));
+        return json(res, 200, publicSnapshot(await options.finance.getSnapshot(householdId)));
       }
       if (req.method === 'POST' && url.pathname === '/api/demo/advance-cycle') {
         if (!options.demoMode || !isLoopback(req.socket.remoteAddress)) return json(res, 404, { error: 'Not found' });
@@ -61,6 +61,24 @@ export function createAppServer(options: { finance: FinanceService; config: Hous
     }
   });
 }
+
+/** Whitelist the browser DTO so accidental private fields from a service never cross HTTP. */
+function publicSnapshot(snapshot: Awaited<ReturnType<FinanceService['getSnapshot']>>) {
+  return {
+    householdId: snapshot.householdId,
+    cycleId: snapshot.cycleId,
+    currency: snapshot.currency,
+    balanceCents: snapshot.balanceCents,
+    bills: snapshot.bills.map(({ billId, title, amountCents, dueDate, status }) => ({ billId, title, amountCents, dueDate, status })),
+    contributions: snapshot.contributions.map(({ billId, userId, agreedCents, confirmedCents, coveredForUserId }) => ({
+      billId, userId, agreedCents, confirmedCents,
+      ...(coveredForUserId === undefined ? {} : { coveredForUserId }),
+    })),
+    debts: snapshot.debts.map(({ debtId, debtorId, creditorId, originalCents, remainingCents }) => ({ debtId, debtorId, creditorId, originalCents, remainingCents })),
+    activity: snapshot.activity.map(({ activityId, occurredAt, description, status }) => ({ activityId, occurredAt, description, status })),
+  };
+}
+
 function isLoopback(address?: string): boolean {
   return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
 }

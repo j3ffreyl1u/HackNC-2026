@@ -1,4 +1,6 @@
 ﻿import { describe, expect, it, vi } from 'vitest';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import type { ConversationService, FinanceService, InboundMessage, OutboundMessage, ParseResult } from '../../src/contracts/index.js';
 import { createEventHandler, drainOutbox } from '../../src/app/events.js';
 
@@ -25,6 +27,25 @@ function conversationStub(overrides: Partial<ConversationService> = {}): Convers
 }
 
 describe('event composition', () => {
+  it('uses stable fixture event IDs to ignore provider retries before reparsing', async () => {
+    const events = JSON.parse(await readFile(resolve('tests/fixtures/events.json'), 'utf8')) as InboundMessage[];
+    const fixtureEvent = events[0];
+    expect(events).toHaveLength(3);
+    expect(events[1].visibility).toBe('private');
+    expect(events[2].reaction?.emoji).toBe(String.fromCodePoint(0x1f44d));
+    const conversation = conversationStub();
+    const finance = financeStub({ claimInbound: vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false) });
+    const handle = createEventHandler(conversation, finance);
+
+    await handle(fixtureEvent);
+    await handle(fixtureEvent);
+
+    expect(finance.claimInbound).toHaveBeenNthCalledWith(1, fixtureEvent.eventId);
+    expect(finance.claimInbound).toHaveBeenNthCalledWith(2, fixtureEvent.eventId);
+    expect(conversation.parseInbound).toHaveBeenCalledTimes(1);
+    expect(finance.completeInbound).toHaveBeenCalledTimes(1);
+  });
+
   it('serializes inbound messages through parsing and finance handling', async () => {
     const parseStarted: string[] = [];
     let releaseFirst!: () => void;
