@@ -143,3 +143,19 @@ describe('MockBank lookup and idempotency', () => {
     expect((await bank.getTransfer('missing')).status).toBe('unknown');
   });
 });
+
+describe('MockBank provisioning', () => {
+  it('creates a deterministic account with the starting balance', async () => {
+    const id = await bank.provisionAccount({ label: 'demo-house-member-mason', initialBalanceCents: 100_000 });
+    expect(id).toBe('mock-demo-house-member-mason');
+    expect(await bank.getBalance(id)).toBe(100_000);
+  });
+
+  it('adopts an existing account without resetting its balance', async () => {
+    const id = await bank.provisionAccount({ label: 'x', initialBalanceCents: 100 });
+    await bank.submitTransfer(input({ fromAccountId: id, toAccountId: 'acct-house', amountCents: 40 }));
+    const again = await bank.provisionAccount({ label: 'x', initialBalanceCents: 100, existingAccountId: id });
+    expect(again).toBe(id);
+    expect(await bank.getBalance(id)).toBe(60);
+  });
+});
