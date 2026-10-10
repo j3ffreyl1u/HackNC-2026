@@ -1,13 +1,11 @@
 import { reprice } from './budget.js';
 import { ConstraintError, effectiveAvailability, effectiveBudget, effectiveMustDos, recordConstraint, resolveGroupField, validateUpdate } from './constraints.js';
-import { MoneyError, assertCents } from './money.js';
 import { checkReadiness, openQuestionKeys } from './readiness.js';
 import { clearAnsweredQuestions, recordQuestions } from './questions.js';
 import { displayName, participantIds } from './state.js';
 import type {
   ApplyResult,
   ConstraintUpdate,
-  CostItem,
   MemberId,
   ReadinessQuestion,
   TripCandidate,
@@ -239,58 +237,6 @@ function acceptCandidate(state: TripState, command: TripCommand, candidateId: st
  * `ask_guide` and `request_funding` change nothing here: guide answers come from `answerGuideQuestion`, and
  * funding belongs to the funding adapter once the plan is approved.
  */
-const normLabel = (text: string) => text.trim().toLowerCase();
-
-/**
- * Fill in a cost research left unknown: every candidate at the current revision with a matching unknown item
- * (by label, case-insensitively, and shared/personal scope) gets that amount as a point estimate. A `personal`
- * figure applies to every participant's matching item, the same as a researched per-person template. This is
- * a stated amount, not sourced evidence: no evidence ID is invented, and the candidate's tradeoffs say who
- * supplied it so it is never confused with something a citation backs.
- */
-function provideCost(state: TripState, command: TripCommand, label: string, cents: number, scope: 'shared' | 'personal'): ApplyResult {
-  try {
-    assertCents(cents, 'price');
-  } catch (error) {
-    if (error instanceof MoneyError) return reject(state, command.actorId, 'INVALID_CONSTRAINT', error.message);
-    throw error;
-  }
-  const cleanLabel = label.trim();
-  if (cleanLabel === '') return reject(state, command.actorId, 'INVALID_CONSTRAINT', 'What is that a price for?');
-  const wanted = normLabel(cleanLabel);
-  const allocation = scope === 'shared' ? 'equal_shared' : 'personal';
-  const who = displayName(state, command.actorId);
-  const asMoney = (c: number) => (c === 0 ? 'free' : `$${(c / 100).toFixed(2)}`);
-
-  let touchedAny = false;
-  const before = new Map(state.candidates.map((c) => [c.candidateId, c.feasibility.feasible]));
-  const candidates = state.candidates.map((candidate) => {
-    if (candidate.revision !== state.revision) return candidate;
-    let touched = false;
-    const costs = candidate.costs.map((cost) => {
-      if (cost.priceStatus !== 'unknown' || cost.allocation !== allocation || normLabel(cost.label) !== wanted) return cost;
-      touched = true;
-      return { ...cost, lowCents: cents, highCents: cents, priceStatus: 'estimate' } as CostItem;
-    });
-    if (!touched) return candidate;
-    touchedAny = true;
-    const tradeoffs = [...candidate.tradeoffs, `${cleanLabel}: ${who} said ${asMoney(cents)}, not an independently verified source.`];
-    return reprice(state, { ...candidate, costs, tradeoffs });
-  });
-
-  if (!touchedAny) {
-    return reject(state, command.actorId, 'AMBIGUOUS_ACTION', `I don't have an unknown ${scope} price called "${cleanLabel}" on the current options.`);
-  }
-  const next: TripState = { ...state, candidates };
-  const newlyFeasible = candidates.filter((c) => c.feasibility.feasible && before.get(c.candidateId) === false);
-  const status = next.status === 'gathering' && candidates.some((c) => c.feasibility.feasible) ? 'proposed' : next.status;
-  const text =
-    newlyFeasible.length > 0
-      ? `Got it: ${cleanLabel} is ${asMoney(cents)}. ${newlyFeasible.map((c) => c.title).join(', ')} now fits everyone's limits.`
-      : `Got it: ${cleanLabel} is ${asMoney(cents)}. I've updated the options, but at least one still doesn't fit, or still has another unknown price.`;
-  return { state: { ...next, status }, replies: [{ audience: { kind: 'group' }, text }], researchRequested: false };
-}
-
 export function applyCommand(state: TripState, command: TripCommand, options: ApplyOptions = {}): ApplyResult {
   const now = options.now ?? new Date().toISOString();
   if (command.tripId !== state.tripId) {
@@ -317,8 +263,6 @@ export function applyCommand(state: TripState, command: TripCommand, options: Ap
         return reject(state, command.actorId, 'MISSING_APPROVAL', "Contributions can only be requested once everyone has approved a plan.");
       }
       return { state, replies: [], researchRequested: false };
-    case 'provide_cost':
-      return provideCost(state, command, action.label, action.cents, action.scope);
     default:
       return reject(state, command.actorId, 'AMBIGUOUS_ACTION', "I didn't understand what to do with that.");
   }

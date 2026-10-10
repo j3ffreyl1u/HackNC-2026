@@ -19,7 +19,7 @@ Status as of 2026-10-10. Everything here is pure TypeScript with no database, ch
 
 Types are provisional in `src/planning/types.ts` and `src/research/types.ts`. Fields marked `PROPOSAL` there are additions C should adopt or replace when `src/contracts/index.ts` publishes trip types (`essential` on `CostItem`, `tags` on itinerary items, `dataSource` on candidates, `roster`, `web` evidence kind, `ApplyResult.rejection`). Contingency is the **total** shared amount, split equally.
 
-**New since the first draft, still PROPOSAL pending Cameron's approval:** `TripAction` gained a `provide_cost` kind (`{ kind: 'provide_cost', label, cents, scope: 'shared' | 'personal' }`, shape per Jeffrey's 2026-10-10 Slack message) handled in `src/planning/commands.ts`. It fills in a cost research left unknown: every candidate at the current revision with a matching unknown item (by `label`, case-insensitively, and `scope`) is repriced with that figure as a point estimate, with no evidence ID invented (it is a stated amount, recorded in the candidate's tradeoffs with who said it). A `personal` figure applies to every participant's matching item equally, same as a researched per-person template. It never bumps the revision or touches acceptances, since filling in a missing fact isn't a hard-constraint change. Once this lands in the shared contracts, B's local type is a drop-in match; A is expected to do the chat-side intent parsing (recognizing "parking was $12" as this command).
+**Manual costs are C's.** Group-supplied prices and stop confirmations (`confirm_cost`, `confirm_stop`) are implemented in C's `src/app/planning-adapter.ts` against the published contracts. B had a duplicate `provide_cost` action; it was removed.
 
 ## Integration notes for C
 
@@ -30,7 +30,8 @@ Types are provisional in `src/planning/types.ts` and `src/research/types.ts`. Fi
 5. **Funding.** `request_funding` is refused (`MISSING_APPROVAL`) until the plan is approved, then returns state unchanged. Funding belongs to your adapter.
 6. **Public snapshot.** `Violation.memberId` and `overByCents` on budget violations identify who is over their cap. Strip them from the public snapshot and use `publicFeasibilitySummary`. `privateOverage(feasibility, memberId)` is for that member's private message only.
 7. **Research mode.** Choose explicitly: `createResearchProvider({ mode: 'mock', fixtures: defaultFixtures })` or `{ mode: 'live', live: createGeminiProvider(config) }`. Live mode with no provider throws `RESEARCH_UNAVAILABLE`; there is no fallback to fixtures. Show `ResearchError.userMessage` and offer manual input or retry.
-8. **Search suggestions.** Live results may carry `searchSuggestionsHtml`. It is passed through, not displayed anywhere yet. See "Not verified".
+8. **Search suggestions.** Live results may carry `searchSuggestionsHtml`. B's live provider is experimental (see the correction under "Verified: Google Search Suggestions terms"); C's private research view is the compliant path.
+10. **Question fields.** Each `ReadinessQuestion` and `PendingQuestion` now carries `field` (the constraint a reply would set, e.g. `budget`, `availability`), set by `fieldForKey` in `src/planning/questions.ts`. Use `q.field` instead of splitting `key`. It is absent for roster and consent questions.
 9. **Env.** `GEMINI_API_KEY` (required for live) and `GEMINI_MODEL` (optional, default `gemini-3.8-flash`). Please add both to `.env.example`. `.env` is already gitignored.
 
 ## Behavior that is easy to get wrong
@@ -52,7 +53,7 @@ npx tsc --noEmit -p tsconfig.b-check.json     # typecheck B's files
 npx vitest run tests/planning tests/research    # B's tests
 ```
 
-Last run (2026-10-10): typecheck clean; 353 tests passed, 1 skipped (the live test, which needs a key). Mutation checks (deliberately breaking a rule and confirming tests fail) were run for readiness, budget caps and contingency, revision invalidation, feasibility filtering, per-person cost expansion, stale-revision checks, provider failure handling, result validation, guide cap exclusion, display-time sanitizing and Gemini price handling.
+Last run (2026-10-10): typecheck clean; 344 tests passed, 1 skipped (the live test, which needs a key). Mutation checks (deliberately breaking a rule and confirming tests fail) were run for readiness, budget caps and contingency, revision invalidation, feasibility filtering, per-person cost expansion, stale-revision checks, provider failure handling, result validation, guide cap exclusion, display-time sanitizing and Gemini price handling.
 
 Acceptance fixture (caps $200/$250/$300; shared upper costs $480 and $450; $20 food and $10 contingency each): the options total $190 and $180 per person with no cap exceeded. Lowering Mason's cap to $180 drops the $190 option, clears acceptances and moves to revision 2. The $180 option stays and needs fresh acceptance from all three.
 
@@ -109,11 +110,11 @@ Read directly from https://ai.google.dev/gemini-api/terms, 2026-10-10 (the earli
 - Interactions with the interface may be monitored, but not tied specifically to a given Search Suggestion or Grounded Result.
 - No specific attribution wording is required for Search Suggestions themselves (the terms only note that applicable law may separately require attributing AI-generated content).
 
-None of this is implemented yet — it is a rendering constraint for the chat/page layer, not a B-side change.
+**Correction (2026-10-10), after reviewing C's integration branch.** An earlier version of this section called this a rendering constraint for the chat layer only. That was too narrow. The terms say not to modify grounded results or mix other content into them, and to show them to the user who asked. B's live price pass extracts numbers from grounded text, stores them in the plan and shows them to the whole group, which does not fit a strict reading. C's live path avoids this: `createLivePlanner` in `src/app/live-research.ts` builds a manual cost worksheet with every price unknown and shows the grounded answer, with its search suggestions, only to the person who asked. So B's Gemini provider (`src/research/gemini.ts`) and price pass (`src/research/pricing.ts`) are **experimental and not used by the integrated app in live mode**; the fixture provider is what the app uses for mock mode. Keep them for development and testing only unless someone obtains Google's written permission or restructures the use. This is not legal advice.
 
 ## Not verified, or open
 
-- **Live prices are estimates with gaps.** See "Live price pass" above. A live option is approvable only if every essential cost was found with a citation and fits every cap; admissions are often not found, which keeps an option provisional. `provide_cost` (see above) lets the group fill gaps once C publishes the contract.
+- **Live prices (experimental, not used by the app; see the correction above) are estimates with gaps.** See "Live price pass" above. A live option is approvable only if every essential cost was found with a citation and fits every cap; admissions are often not found, which keeps an option provisional. C's `confirm_cost` lets the group fill gaps.
 - **Citation offsets for non-ASCII text.** Offsets are treated as UTF-8 byte offsets and converted. Live samples were plain ASCII, so the conversion is tested only on built data.
 - **Redirect link lifetime** is unknown. Revisiting a captured redirect link after real time has passed is the only way to check this; it hasn't been done.
 - **Live response with an actual forum/community hit.** The forum-host classification and the prompt wording asking for traveler discussion content (`src/research/grounding.ts`, `src/research/gemini.ts`) are built and unit-tested against synthetic data only; no live response so far has actually returned a forum URL to classify.

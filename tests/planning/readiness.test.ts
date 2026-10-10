@@ -6,6 +6,7 @@ import {
   MAX_QUESTIONS_PER_TURN,
   QUESTION_COOLDOWN_MS,
   clearAnsweredQuestions,
+  fieldForKey,
   recordQuestions,
 } from '../../src/planning/questions.js';
 import { createTrip } from '../../src/planning/state.js';
@@ -337,5 +338,121 @@ describe('questions', () => {
     let answered = asked;
     for (const id of members) answered = put(answered, id, 'origin', { city: 'Chapel Hill' });
     expect(clearAnsweredQuestions(answered, openQuestionKeys(answered)).pendingQuestions).toEqual([]);
+  });
+});
+
+describe('question fields', () => {
+  const fieldsOf = (state: TripState) => Object.fromEntries(checkReadiness(state).questions.map((q) => [q.key, q.field]));
+
+  it('maps every key readiness produces to the constraint its answer would set', () => {
+    expect(fieldForKey('origin')).toBe('origin');
+    expect(fieldForKey('conflict:origin')).toBe('origin');
+    expect(fieldForKey('duration')).toBe('duration');
+    expect(fieldForKey('conflict:duration')).toBe('duration');
+    expect(fieldForKey('region')).toBe('region');
+    expect(fieldForKey('conflict:region')).toBe('region');
+    expect(fieldForKey('transport')).toBe('transport');
+    expect(fieldForKey('conflict:transport')).toBe('transport');
+    expect(fieldForKey('vehicle')).toBe('transport');
+    expect(fieldForKey('availability')).toBe('availability');
+    expect(fieldForKey('conflict:dates')).toBe('availability');
+    expect(fieldForKey('availability_unconfirmed:alex')).toBe('availability');
+    expect(fieldForKey('budget:alex')).toBe('budget');
+    expect(fieldForKey('budget_unconfirmed:alex')).toBe('budget');
+    expect(fieldForKey('must_dos_unconfirmed:alex')).toBe('must_dos');
+    expect(fieldForKey('preferences')).toBe('preferences');
+  });
+
+  it('roster and consent questions set no constraint', () => {
+    expect(fieldForKey('consent')).toBeUndefined();
+    expect(fieldForKey('roster')).toBeUndefined();
+    expect(fieldForKey('something-new')).toBeUndefined();
+    const people = roster.map((m) => (m.memberId === 'alex' ? { ...m, consented: false } : m));
+    const [q] = checkReadiness(createTrip('t', people)).questions;
+    expect(q.key).toBe('consent');
+    expect('field' in q).toBe(false);
+  });
+
+  it('every question carries the field its key maps to, across the situations readiness covers', () => {
+    const states: TripState[] = [
+      createTrip('empty', roster),
+      trip(['origin', 'duration', 'region', 'transport']),
+      trip(['availability']),
+      trip(['budget']),
+      trip(['preferences']),
+      put(trip(), 'mason', 'budget', { cents: 15_000 }, 'tentative'),
+      put(trip(), 'alex', 'availability', { intervals: [OTHER_WEEKEND] }, 'tentative'),
+      put(trip(), 'jordan', 'must_dos', { items: ['vegetarian food'] }, 'tentative'),
+      put(put(trip(['origin']), 'mason', 'origin', { city: 'Raleigh' }), 'alex', 'origin', { city: 'Durham' }),
+    ];
+    let seen = 0;
+    for (const state of states) {
+      for (const q of checkReadiness(state).questions) {
+        seen += 1;
+        expect(q.field).toBe(fieldForKey(q.key));
+        expect(q.field).toBeDefined();
+      }
+    }
+    expect(seen).toBeGreaterThan(8);
+  });
+
+  it('maps every open key, not just the two asked this turn: only roster and consent have no field', () => {
+    const noCar = trip(['transport']);
+    let noVehicle = noCar;
+    for (const id of members) noVehicle = put(noVehicle, id, 'transport', { mode: 'car', vehicleAvailable: false });
+    const disagree = (field: 'duration' | 'region' | 'transport', a: never, b: never) => {
+      let state = trip([field]);
+      state = put(state, 'mason', field, a);
+      state = put(state, 'alex', field, b);
+      return put(state, 'jordan', field, a);
+    };
+    let datesClash = trip(['availability']);
+    datesClash = put(datesClash, 'mason', 'availability', { intervals: [WEEKEND] });
+    datesClash = put(datesClash, 'alex', 'availability', { intervals: [OTHER_WEEKEND] });
+    datesClash = put(datesClash, 'jordan', 'availability', { intervals: [WEEKEND] });
+    const people = roster.map((m) => (m.memberId === 'alex' ? { ...m, consented: false } : m));
+    const states: TripState[] = [
+      createTrip('empty', roster),
+      createTrip('waiting', people),
+      createTrip('alone', roster.slice(0, 1)),
+      noVehicle,
+      disagree('duration', { nights: 2 } as never, { nights: 3 } as never),
+      disagree('region', { searchRegion: 'NC mountains' } as never, { searchRegion: 'NC coast' } as never),
+      disagree('transport', { mode: 'car', vehicleAvailable: true } as never, { mode: 'car', vehicleAvailable: false } as never),
+      datesClash,
+      put(trip(), 'alex', 'availability', { intervals: [OTHER_WEEKEND] }, 'tentative'),
+      put(trip(), 'mason', 'budget', { cents: 15_000 }, 'tentative'),
+      put(trip(), 'jordan', 'must_dos', { items: ['vegetarian food'] }, 'tentative'),
+      trip(['preferences']),
+    ];
+    const keys = new Set(states.flatMap((state) => [...openQuestionKeys(state)]));
+    for (const wanted of ['consent', 'roster', 'vehicle', 'conflict:duration', 'conflict:region', 'conflict:transport', 'conflict:dates', 'availability_unconfirmed:alex', 'budget_unconfirmed:mason', 'must_dos_unconfirmed:jordan', 'preferences', 'origin']) {
+      expect(keys).toContain(wanted);
+    }
+    for (const key of keys) {
+      if (key === 'consent' || key === 'roster') expect(fieldForKey(key)).toBeUndefined();
+      else expect(fieldForKey(key), `no field for ${key}`).toBeDefined();
+    }
+  });
+
+  it('reports the right field for the specific situations, public and private', () => {
+    expect(fieldsOf(trip(['budget']))).toMatchObject({ 'budget:mason': 'budget' });
+    expect(fieldsOf(put(trip(), 'mason', 'budget', { cents: 15_000 }, 'tentative'))).toEqual({ 'budget_unconfirmed:mason': 'budget' });
+    expect(fieldsOf(put(trip(), 'jordan', 'must_dos', { items: ['vegetarian food'] }, 'tentative'))).toEqual({ 'must_dos_unconfirmed:jordan': 'must_dos' });
+    expect(fieldsOf(put(put(trip(['origin']), 'mason', 'origin', { city: 'Raleigh' }), 'alex', 'origin', { city: 'Durham' }))).toEqual({ 'conflict:origin': 'origin' });
+  });
+
+  it('a recorded pending question keeps its field, so a later short reply can be read against it', () => {
+    const state = trip(['budget']);
+    const asked = recordQuestions(state, checkReadiness(state).questions, NOW);
+    expect(asked.pendingQuestions.map((q) => [q.key, q.field])).toEqual([
+      ['budget:mason', 'budget'],
+      ['budget:alex', 'budget'],
+    ]);
+    const group = recordQuestions(createTrip('t', roster), checkReadiness(createTrip('t', roster)).questions, NOW);
+    expect(group.pendingQuestions.every((q) => q.field !== undefined)).toBe(true);
+    const consent = roster.map((m) => (m.memberId === 'alex' ? { ...m, consented: false } : m));
+    const noField = recordQuestions(createTrip('t', consent), checkReadiness(createTrip('t', consent)).questions, NOW);
+    expect('field' in noField.pendingQuestions[0]).toBe(false);
   });
 });
