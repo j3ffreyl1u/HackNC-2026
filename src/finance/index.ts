@@ -11,12 +11,15 @@ import { Billing } from './billing.js';
 import { CycleFlow } from './cycle.js';
 import { FinanceEngine } from './engine.js';
 import { Ledger } from './ledger.js';
+import { Reminders } from './reminders.js';
 import { Notifier } from './support.js';
+import { Views } from './views.js';
 import { BankProcessor } from './reconcile.js';
 import { CycleTransitionError, FinanceConfigError, NotImplementedError, type Clock, type IdGenerator } from './runtime.js';
 import { LedgerStore } from './store.js';
 
 export { CycleTransitionError, FinanceConfigError, NotImplementedError };
+export { UnknownActorError } from './views.js';
 export type { Clock, IdGenerator, FinanceService };
 
 export interface FinanceDependencies {
@@ -80,7 +83,9 @@ export function createFinanceService(dependencies: FinanceDependencies): Finance
   const nowIso = () => clock.now().toISOString();
   const engine = new FinanceEngine(store, clock, dependencies.newId);
   const ledger = new Ledger(store);
-  const cycles = new CycleFlow(store, ledger, new Billing(store, ledger, new Notifier(store, ledger), dependencies.newId), nowIso);
+  const cycles = new CycleFlow(store, ledger, new Billing(store, ledger, new Notifier(store, ledger), dependencies.newId), new Notifier(store, ledger), nowIso);
+  const views = new Views(store, ledger);
+  const reminders = new Reminders(store, ledger, clock);
   const processor = new BankProcessor(store, bank, clock, dependencies.newId);
 
   // Bank work runs one pass at a time so an operation is never sent or settled twice concurrently.
@@ -104,8 +109,8 @@ export function createFinanceService(dependencies: FinanceDependencies): Finance
       await serialize(() => processor.pump(householdId));
     },
 
-    async getSnapshot(_householdId: string): Promise<HouseholdSnapshot> {
-      throw new NotImplementedError('FinanceService.getSnapshot');
+    async getSnapshot(householdId: string): Promise<HouseholdSnapshot> {
+      return views.snapshot(householdId);
     },
 
     async pendingMessages(): Promise<OutboundMessage[]> {
@@ -128,12 +133,12 @@ export function createFinanceService(dependencies: FinanceDependencies): Finance
       cycles.advance(householdId, cycleId);
     },
 
-    async getConversationContext(_actorId: string, _spaceId: string, _targetMessageId?: string) {
-      throw new NotImplementedError('FinanceService.getConversationContext');
+    async getConversationContext(actorId: string, spaceId: string, targetMessageId?: string) {
+      return views.conversationContext(actorId, spaceId, targetMessageId);
     },
 
-    async processReminders(_householdId: string): Promise<void> {
-      throw new NotImplementedError('FinanceService.processReminders');
+    async processReminders(householdId: string): Promise<void> {
+      reminders.process(householdId);
     },
 
     /** Idempotent: refreshes enrollment, never touches ledger state, sets the first demo cycle once. */

@@ -498,7 +498,7 @@ describe('edits and privacy boundaries', () => {
 
     for (const user of ['mason', 'alex', 'jordan']) await run(user, { kind: 'get_summary', cycleId: '2026-10' });
     const [mason, alex, jordan] = ['mason', 'alex', 'jordan'].map((u) => privateTexts(u).at(-1)!);
-    expect(mason).not.toContain('owe');
+    expect(mason).not.toMatch(/\bowes?\b/);
     expect(alex).toContain('Jordan owes you $48.00');
     expect(jordan).toContain('You owe Alex $48.00');
   });

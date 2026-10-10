@@ -323,6 +323,9 @@ export class FinanceEngine {
       const direction = debt.debtorId === ctx.actor.userId ? `You owe ${names.get(other) ?? other}` : `${names.get(other) ?? other} owes you`;
       lines.push(`${direction} ${formatUsd(debt.remainingCents)} from an earlier bill.`);
     }
+    for (const open of this.ledger.actionableProposals(ctx.householdId, ctx.actor.userId)) {
+      lines.push(`Open request: ${open.description} (${formatUsd(open.amountCents)}). Approve with "approve ${open.proposalId} v${open.version}".`);
+    }
     lines.push('All amounts are simulated sandbox money in the shared household account.');
     this.notify.toPrivate(ctx, ctx.actor.userId, `deliv:${ctx.command.commandId}:summary`, lines.join('\n'));
     return 'accepted';

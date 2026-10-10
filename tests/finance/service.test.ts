@@ -3,7 +3,6 @@ import type { BankingAdapter } from '../../src/finance/bank.js';
 import type { HouseholdConfig, OutboundMessage } from '../../src/contracts/index.js';
 import {
   FinanceConfigError,
-  NotImplementedError,
   createFinanceService,
   type FinanceService,
 } from '../../src/finance/index.js';
@@ -169,14 +168,6 @@ describe('durable inbound and outbox', () => {
     await service.recordDelivery('d-1', 'prov-77');
     expect(await service.lookupProposal('prov-77')).toEqual({ proposalId: 'prop-1', proposalVersion: 3 });
     expect(await service.lookupProposal('unrelated-message')).toBeNull();
-  });
-});
-
-describe('milestones not built yet', () => {
-  it('fails loudly instead of reporting success', async () => {
-    await expect(service.getSnapshot('demo-house')).rejects.toThrow(NotImplementedError);
-    await expect(service.getConversationContext('mason', 'space-1')).rejects.toThrow(NotImplementedError);
-    await expect(service.processReminders('demo-house')).rejects.toThrow(NotImplementedError);
   });
 });
 

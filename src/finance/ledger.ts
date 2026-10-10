@@ -510,6 +510,95 @@ export class Ledger {
       );
   }
 
+  // ---- read models ------------------------------------------------------------
+
+  /** The one household a member belongs to (single-household MVP). */
+  householdIdForMember(userId: string): string | null {
+    const row = this.db.prepare('SELECT household_id FROM members WHERE user_id = ? LIMIT 1').get(userId) as
+      | { household_id: string }
+      | undefined;
+    return row ? row.household_id : null;
+  }
+
+  billsForHousehold(householdId: string): BillRecord[] {
+    const rows = this.db
+      .prepare('SELECT * FROM bills WHERE household_id = ? ORDER BY created_at, rowid')
+      .all(householdId) as BillRow[];
+    return rows.map(toBill);
+  }
+
+  /** Confirmed money by payer and beneficiary for a bill. */
+  allocationsForBill(billId: string): Array<{ payerId: string; beneficiaryId: string; amountCents: number; kind: AllocationKind }> {
+    const rows = this.db
+      .prepare(
+        `SELECT payer_id, beneficiary_id, SUM(amount_cents) AS cents, kind FROM allocations
+          WHERE bill_id = ? GROUP BY payer_id, beneficiary_id, kind ORDER BY MIN(rowid)`,
+      )
+      .all(billId) as Array<{ payer_id: string; beneficiary_id: string; cents: number; kind: AllocationKind }>;
+    return rows.map((r) => ({ payerId: r.payer_id, beneficiaryId: r.beneficiary_id, amountCents: r.cents, kind: r.kind }));
+  }
+
+  /** Household account balance as the ledger knows it: confirmed inflows minus confirmed outgoing payments. */
+  ledgerBalance(householdId: string): number {
+    const inflow = this.db
+      .prepare(
+        `SELECT COALESCE(SUM(a.amount_cents), 0) AS cents FROM allocations a JOIN bills b ON b.bill_id = a.bill_id
+          WHERE b.household_id = ?`,
+      )
+      .get(householdId) as { cents: number };
+    const outflow = this.db
+      .prepare(
+        `SELECT COALESCE(SUM(o.amount_cents), 0) AS cents
+           FROM bank_operations o JOIN proposals p ON p.proposal_id = o.proposal_id
+          WHERE o.household_id = ? AND p.purpose = 'bill_payment' AND o.status = 'confirmed'`,
+      )
+      .get(householdId) as { cents: number };
+    return inflow.cents - outflow.cents;
+  }
+
+  debtsForHousehold(householdId: string): DebtRecord[] {
+    const rows = this.db
+      .prepare('SELECT * FROM debts WHERE household_id = ? ORDER BY created_at, rowid')
+      .all(householdId) as DebtRow[];
+    return rows.map(toDebt);
+  }
+
+  /** Bank activity, newest first, described by the proposal it carried out. Failure reasons stay out. */
+  operationActivity(
+    householdId: string,
+    limit: number,
+  ): Array<{ operationId: string; occurredAt: string; description: string; status: string }> {
+    const rows = this.db
+      .prepare(
+        `SELECT o.operation_id, o.updated_at, o.status, p.description FROM bank_operations o
+           JOIN proposals p ON p.proposal_id = o.proposal_id
+          WHERE o.household_id = ? ORDER BY o.rowid DESC LIMIT ?`,
+      )
+      .all(householdId, limit) as Array<{ operation_id: string; updated_at: string; status: string; description: string }>;
+    return rows.map((r) => ({ operationId: r.operation_id, occurredAt: r.updated_at, description: r.description, status: r.status }));
+  }
+
+  /** Proposals this member may approve right now: awaiting their approval at the current version. */
+  actionableProposals(householdId: string, userId: string): ProposalRecord[] {
+    const rows = this.db
+      .prepare(`SELECT * FROM proposals WHERE household_id = ? AND status = 'proposed' ORDER BY created_at, rowid`)
+      .all(householdId) as ProposalRow[];
+    return rows
+      .map(toProposal)
+      .filter((p) => p.requiredActorIds.includes(userId) && !this.store.approvalsFor(p.proposalId, p.version).includes(userId));
+  }
+
+  /** The member's own coverage question still waiting for their private answer. */
+  awaitingConsentRequest(userId: string): CoverageRequestRecord | null {
+    const row = this.db
+      .prepare(
+        `SELECT * FROM coverage_requests WHERE debtor_id = ? AND status = 'awaiting_share_consent'
+          ORDER BY created_at DESC, rowid DESC LIMIT 1`,
+      )
+      .get(userId) as CoverageRow | undefined;
+    return row ? toCoverage(row) : null;
+  }
+
   // ---- coverage requests ----------------------------------------------------
 
   insertCoverageRequest(r: CoverageRequestRecord, now: string): void {
