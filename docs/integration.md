@@ -1,4 +1,4 @@
-﻿# Integration notes
+# Integration notes
 
 `src/contracts/index.ts` is the shared contract source for application wiring. It matches the fixed event, command, outbox, snapshot, configuration, service, result, and conversation-context contracts from `AGENTS.md`. Finance still uses temporary local declarations and should switch to type-only imports from this module in its next owned change.
 
@@ -10,8 +10,4 @@ Integration request for Finance: expose `LedgerStore.markDeliveryUncertain(deliv
 
 The HTTP server exposes `GET /api/households/:householdId/snapshot`, a minimal public config response, and a demo-only local cycle route. It binds to loopback. The browser receives no banking credentials or private messages. Startup currently uses mock banking only; live modes fail configuration validation.
 
-
-The Windows run currently reports an existing Finance test teardown failure in 	ests/finance/store.test.ts (durability across reopen > refuses a database written by a newer schema): the rejected SQLite open remains locked when the test removes its temp directory. This is outside C-owned files and needs a Finance-side fix. 
-pm run typecheck, 
-pm run build, and all C app tests pass.
-
+Verification on Windows: `npm run typecheck`, `npm run build`, `npm test -- tests/app` (8 tests), and `npm audit` pass. The full suite has 81 passing tests and one Finance-owned teardown failure in `tests/finance/store.test.ts` (`durability across reopen > refuses a database written by a newer schema`): the rejected SQLite open remains locked when the test removes its temporary directory. This needs a Finance-side fix.
