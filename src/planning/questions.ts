@@ -1,4 +1,4 @@
-import type { PendingQuestion, ReadinessQuestion, TripState } from './types.js';
+import type { ConstraintField, PendingQuestion, ReadinessQuestion, TripState } from './types.js';
 
 /** The exact words for a missing budget. Asked privately, since a limit may be sensitive. */
 export const BUDGET_QUESTION = "What's your maximum total for this trip, including food and travel?";
@@ -8,6 +8,37 @@ export const MAX_QUESTIONS_PER_TURN = 2;
 
 /** An unanswered question is not asked again automatically until this long has passed. */
 export const QUESTION_COOLDOWN_MS = 12 * 60 * 60 * 1000;
+
+/**
+ * The constraint a question's answer would set, from its key (`budget:alex`, `conflict:origin`, ...). One place
+ * maps every key readiness produces, so a reply can be read against the field it answers. Roster and consent
+ * questions set no constraint and return `undefined`.
+ */
+export function fieldForKey(key: string): ConstraintField | undefined {
+  const [head, tail] = key.split(':');
+  const name = head === 'conflict' ? tail : head;
+  switch (name) {
+    case 'origin':
+    case 'duration':
+    case 'region':
+    case 'transport':
+    case 'preferences':
+    case 'budget':
+      return name;
+    case 'vehicle':
+      return 'transport';
+    case 'availability':
+    case 'dates':
+    case 'availability_unconfirmed':
+      return 'availability';
+    case 'budget_unconfirmed':
+      return 'budget';
+    case 'must_dos_unconfirmed':
+      return 'must_dos';
+    default:
+      return undefined; // consent, roster
+  }
+}
 
 /** Questions are grouped by what they are about; one turn asks about one topic only. */
 export type QuestionTopic = 'people' | 'basics' | 'dates' | 'money' | 'preferences';
@@ -46,6 +77,7 @@ export function recordQuestions(state: TripState, asked: readonly ReadinessQuest
   const added: PendingQuestion[] = asked.map((q) => ({
     questionId: `${q.key}@${now}`,
     key: q.key,
+    ...(q.field !== undefined ? { field: q.field } : {}),
     audience: q.audience,
     text: q.text,
     askedAt: now,

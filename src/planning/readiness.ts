@@ -8,7 +8,7 @@ import {
   statedPreferences,
 } from './constraints.js';
 import { formatUsd } from './money.js';
-import { BUDGET_QUESTION, selectQuestions, type QuestionCandidate } from './questions.js';
+import { BUDGET_QUESTION, fieldForKey, selectQuestions, type QuestionCandidate } from './questions.js';
 import { displayName, participants, participantIds } from './state.js';
 import type { ConstraintValues, ReadinessQuestion, ReadinessResult, TripState } from './types.js';
 
@@ -41,10 +41,14 @@ function evaluate(state: TripState): Evaluation {
   const missing: string[] = [];
   const conflicts: string[] = [];
   const candidates: QuestionCandidate[] = [];
+  const field = (key: string) => {
+    const f = fieldForKey(key);
+    return f === undefined ? {} : { field: f };
+  };
   const group = (topic: QuestionCandidate['topic'], key: string, text: string) =>
-    candidates.push({ topic, question: { audience: { kind: 'group' }, text, key } });
+    candidates.push({ topic, question: { audience: { kind: 'group' }, text, key, ...field(key) } });
   const privately = (topic: QuestionCandidate['topic'], memberId: string, key: string, text: string) =>
-    candidates.push({ topic, question: { audience: { kind: 'private', memberId }, text, key } });
+    candidates.push({ topic, question: { audience: { kind: 'private', memberId }, text, key, ...field(key) } });
 
   // -- people: a confirmed roster of at least two who have agreed to plan with the bot
   const waiting = state.roster.filter((m) => !m.consented).map((m) => m.memberId);

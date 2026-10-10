@@ -1,0 +1,86 @@
+{
+ "id": "v1_ChdyY3ZLYXRtQUxzMmlfdU1QNjdxdjJRYxIXcmN2S2F0bUFMczJpX3VNUDY3cXYyUWM",
+ "status": "completed",
+ "usage": {
+  "note": "omitted"
+ },
+ "created": "2026-10-10T23:35:12Z",
+ "updated": "2026-10-10T23:35:12Z",
+ "service_tier": "standard",
+ "steps": [
+  {
+   "id": "call_217115",
+   "signature": "[omitted]",
+   "type": "google_search_call",
+   "arguments": {
+    "queries": [
+     "top attractions in Montreal Quebec"
+    ]
+   },
+   "search_type": "web_search"
+  },
+  {
+   "call_id": "call_217115",
+   "signature": "[omitted]",
+   "type": "google_search_result",
+   "result": [
+    {
+     "search_suggestions": "<style>\n.container {\n  align-items: center;\n  border-radius: 8px;\n  display: flex;\n  font-family: Google Sans, Roboto, sans-serif;\n  font-size: 14px;\n  line-hei…[truncated]"
+    }
+   ],
+   "is_error": false
+  },
+  {
+   "signature": "[omitted]",
+   "type": "thought"
+  },
+  {
+   "content": [
+    {
+     "text": "OPTION | Basilique Notre-Dame de Montréal | Cette célèbre église néo-gothique impressionne les visiteurs avec son décor bleu éclatant et ses boiseries finement sculptées.\nOPTION | Parc du Mont-Royal | Cet immense espace vert offre un superbe panorama sur la métropole depuis le belvédère Kondiaronk.\nOPTION | Musée des beaux-arts de Montréal | Ce musée réputé abrite une collection exceptionnelle d'œuvres d'art internationales et québécoises.",
+     "annotations": [
+      {
+       "start_index": 0,
+       "end_index": 177,
+       "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQFSkHyLGRaunux-p3_nZncip84nroq7Rlg7ORXFF_piLUIwbSfWgmQOmi2NN5QNm6mK4jCdm5WOV2oB4-TYbz3KI3eWBw3lbSkS_2iDYG6Zi4L7aKr9gIFp5aiSJew-Jyde",
+       "title": "youtube.com",
+       "type": "url_citation"
+      },
+      {
+       "start_index": 0,
+       "end_index": 177,
+       "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQF_Z-71Zm8LxzzXEgMipUxZWBt7qwX-7C4iV8_rlyX_qTnPdCTdRiuAPNoy0hb_n8aBE9XDifoSy2iNimZX8zqCnYyd_21Vzpxgkhx0L0K5h-tDnOn9vawfbJd-mZW9pVpVQN2-KZZl9P2Amb6pipo=",
+       "title": "atlasobscura.com",
+       "type": "url_citation"
+      },
+      {
+       "start_index": 179,
+       "end_index": 309,
+       "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQFSkHyLGRaunux-p3_nZncip84nroq7Rlg7ORXFF_piLUIwbSfWgmQOmi2NN5QNm6mK4jCdm5WOV2oB4-TYbz3KI3eWBw3lbSkS_2iDYG6Zi4L7aKr9gIFp5aiSJew-Jyde",
+       "title": "youtube.com",
+       "type": "url_citation"
+      },
+      {
+       "start_index": 179,
+       "end_index": 309,
+       "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQGB5HZetW80lWmTHOVahGcd7dmV5StIAEqKME24ikyyb1nkpY-qW-NdCM3PhuTtP-nvvJtHWrS4nsHmWk9E20UOGU_gTUrmD8ibnwS9XEOoWwEcQoCGGeuNIJJAHhVWitGYZMR5CJoh0WYULoTjAldfDXumX5gWaWg-OtkxY5o0Og==",
+       "title": "bonjourquebec.com",
+       "type": "url_citation"
+      },
+      {
+       "start_index": 311,
+       "end_index": 461,
+       "url": "https://vertexaisearch.cloud.google.com/grounding-api-redirect/AUZIYQFSkHyLGRaunux-p3_nZncip84nroq7Rlg7ORXFF_piLUIwbSfWgmQOmi2NN5QNm6mK4jCdm5WOV2oB4-TYbz3KI3eWBw3lbSkS_2iDYG6Zi4L7aKr9gIFp5aiSJew-Jyde",
+       "title": "youtube.com",
+       "type": "url_citation"
+      }
+     ],
+     "type": "text"
+    }
+   ],
+   "type": "model_output"
+  }
+ ],
+ "object": "interaction",
+ "model": "gemini-3.8-flash"
+}

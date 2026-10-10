@@ -176,6 +176,8 @@ export interface PendingQuestion {
   questionId: string;
   /** What the question is about, e.g. `budget:alex` or `dates`. Used to avoid asking the same thing twice. */
   key: string;
+  /** The constraint a reply to this question would set. Absent for questions about who is in the trip. */
+  field?: ConstraintField;
   audience: { kind: 'group' } | { kind: 'private'; memberId: MemberId };
   text: string;
   askedAt: string;
@@ -202,6 +204,8 @@ export interface ReadinessQuestion {
   text: string;
   /** PROPOSAL: matches `PendingQuestion.key`. */
   key: string;
+  /** The constraint a reply would set, so a short answer like "250" can be read against it. Absent for roster/consent questions. */
+  field?: ConstraintField;
 }
 
 export interface ReadinessResult {
@@ -217,16 +221,7 @@ export type TripAction =
   | { kind: 'select_candidate'; candidateId: string; revision: number }
   | { kind: 'accept_candidate'; candidateId: string; revision: number }
   | { kind: 'ask_guide'; question: string }
-  | { kind: 'request_funding' }
-  /**
-   * PROPOSAL, pending Cameron's approval in the shared contracts (shape per Jeffrey's Slack message,
-   * 2026-10-10). Fills in a cost research left unknown: `label` matches `CostItem.label` case-insensitively,
-   * `scope` picks `equal_shared` or `personal` costs. Applies to every candidate at the current revision with
-   * a matching unknown cost; a `personal` figure applies the same supplied amount to every participant's
-   * matching item, same as a researched per-person cost template. The actor is recorded, not invented as a
-   * source: this is a stated amount, not evidence with a URL.
-   */
-  | { kind: 'provide_cost'; label: string; cents: number; scope: 'shared' | 'personal' };
+  | { kind: 'request_funding' };
 
 export interface TripCommand {
   commandId: string;
