@@ -19,6 +19,8 @@ Status as of 2026-10-10. Everything here is pure TypeScript with no database, ch
 
 Types are provisional in `src/planning/types.ts` and `src/research/types.ts`. Fields marked `PROPOSAL` there are additions C should adopt or replace when `src/contracts/index.ts` publishes trip types (`essential` on `CostItem`, `tags` on itinerary items, `dataSource` on candidates, `roster`, `web` evidence kind, `ApplyResult.rejection`). Contingency is the **total** shared amount, split equally.
 
+**New since the first draft, still PROPOSAL pending Cameron's approval:** `TripAction` gained a `provide_cost` kind (`{ kind: 'provide_cost', label, cents, scope: 'shared' | 'personal' }`, shape per Jeffrey's 2026-10-10 Slack message) handled in `src/planning/commands.ts`. It fills in a cost research left unknown: every candidate at the current revision with a matching unknown item (by `label`, case-insensitively, and `scope`) is repriced with that figure as a point estimate, with no evidence ID invented (it is a stated amount, recorded in the candidate's tradeoffs with who said it). A `personal` figure applies to every participant's matching item equally, same as a researched per-person template. It never bumps the revision or touches acceptances, since filling in a missing fact isn't a hard-constraint change. Once this lands in the shared contracts, B's local type is a drop-in match; A is expected to do the chat-side intent parsing (recognizing "parking was $12" as this command).
+
 ## Integration notes for C
 
 1. **Command flow.** Call `applyCommand(state, command, { now })`, pass your own timestamp for determinism (it falls back to the clock). On `rejection`, state is the same object; send the private reply. Save state only if `state !== previous`.
@@ -50,7 +52,7 @@ npx tsc --noEmit -p tsconfig.b-check.json     # typecheck B's files
 npx vitest run tests/planning tests/research    # B's tests
 ```
 
-Last run (2026-10-10): typecheck clean; 338 tests passed, 1 skipped (the live test, which needs a key). Mutation checks (deliberately breaking a rule and confirming tests fail) were run for readiness, budget caps and contingency, revision invalidation, feasibility filtering, per-person cost expansion, stale-revision checks, provider failure handling, result validation, guide cap exclusion, display-time sanitizing and Gemini price handling.
+Last run (2026-10-10): typecheck clean; 353 tests passed, 1 skipped (the live test, which needs a key). Mutation checks (deliberately breaking a rule and confirming tests fail) were run for readiness, budget caps and contingency, revision invalidation, feasibility filtering, per-person cost expansion, stale-revision checks, provider failure handling, result validation, guide cap exclusion, display-time sanitizing and Gemini price handling.
 
 Acceptance fixture (caps $200/$250/$300; shared upper costs $480 and $450; $20 food and $10 contingency each): the options total $190 and $180 per person with no cap exceeded. Lowering Mason's cap to $180 drops the $190 option, clears acceptances and moves to revision 2. The $180 option stays and needs fresh acceptance from all three.
 
@@ -95,12 +97,26 @@ Live check, 2026-10-10 (three-person fixture trip, 2 nights, 3 people): a full p
 - Citations cover parts of each line, not every field. A price counts as an estimate only if a citation covers that field; otherwise it is unknown.
 - Asked for a whole option's costs in one answer, the model returned `unknown` for every price and for visit lengths, which is why the price pass above exists. Stops with an unknown length are planned at 2 hours and flagged as an assumption.
 
+### Verified: Google Search Suggestions terms
+
+Read directly from https://ai.google.dev/gemini-api/terms, 2026-10-10 (the earlier attempt to fetch the `#grounding-with-google-search` anchor had failed to surface this text). Whoever renders a grounded answer in chat or on the web page (likely A, since B only passes `searchSuggestionsHtml` through) must follow these:
+
+- Grounded Results may be shown only to the end user who submitted the prompt, together with their associated Search Suggestion(s).
+- The Grounded Result and Search Suggestions must not be modified, and no other content may be interspersed with them, without Google's written permission.
+- No interstitial content may be placed between a Search Suggestion/Link and its destination page, and end users may not be redirected away from or otherwise blocked from the destination page.
+- When a Grounded Result is resubmitted for refinement, its associated Search Suggestions/Links must still be shown with the final result.
+- A click on a Search Suggestion is governed by Google's own Terms of Service once the user reaches google.com; no click-through is required of us.
+- Interactions with the interface may be monitored, but not tied specifically to a given Search Suggestion or Grounded Result.
+- No specific attribution wording is required for Search Suggestions themselves (the terms only note that applicable law may separately require attributing AI-generated content).
+
+None of this is implemented yet — it is a rendering constraint for the chat/page layer, not a B-side change.
+
 ## Not verified, or open
 
-- **Live prices are estimates with gaps.** See "Live price pass" above. A live option is approvable only if every essential cost was found with a citation and fits every cap; admissions are often not found, which keeps an option provisional.
-- **Search suggestions display.** Google's terms for showing `search_suggestions` were not readable from the documentation I could fetch. Check https://ai.google.dev/gemini-api/terms#grounding-with-google-search before the page or chat shows grounded answers.
+- **Live prices are estimates with gaps.** See "Live price pass" above. A live option is approvable only if every essential cost was found with a citation and fits every cap; admissions are often not found, which keeps an option provisional. `provide_cost` (see above) lets the group fill gaps once C publishes the contract.
 - **Citation offsets for non-ASCII text.** Offsets are treated as UTF-8 byte offsets and converted. Live samples were plain ASCII, so the conversion is tested only on built data.
-- **Redirect link lifetime** is unknown.
+- **Redirect link lifetime** is unknown. Revisiting a captured redirect link after real time has passed is the only way to check this; it hasn't been done.
+- **Live response with an actual forum/community hit.** The forum-host classification and the prompt wording asking for traveler discussion content (`src/research/grounding.ts`, `src/research/gemini.ts`) are built and unit-tested against synthetic data only; no live response so far has actually returned a forum URL to classify.
 - **Itinerary times** are laid out on real days (`src/planning/schedule.ts`): stops start no earlier than 9:00 and finish by 20:00 local time, a stop that would run late moves to the next morning, and a stop longer than a day or that cannot finish before the trip ends is left out with the reason shown. Visit lengths for live results are partly assumed (see above). Travel between stops is taken as given; real routing and opening hours are not checked.
 - **Timezone.** The shared contracts have no trip timezone, so `planTrip(state, provider, { timeZone })` defaults to `America/New_York` (fits an NC road trip). C should add a timezone to the trip and pass it in. The trip start is the start of the first common window, so a window that starts at midnight starts the trip at midnight.
 - **Community research.** A standalone Reddit API integration was attempted and dropped: new Reddit Data API (script-app) access now appears to require a moderation use case, which this isn't, and the account-creation flow silently refuses apps that don't qualify. Instead, Gemini's Google Search grounding is prompted to surface forum/discussion content (Reddit, TripAdvisor forums, Quora, and similar; see `FORUM_HOSTS` in `src/research/grounding.ts`) and labels it `community`, attributed as one traveler's experience. This has not been checked against a live response that actually contains a forum hit. Contributors are never called locals.
