@@ -53,3 +53,7 @@ Spectrum is pinned at spectrum-ts@12.10.1 and dynamically loaded only for CHAT_M
 Live enrollment now accepts any nonempty fixed participant phone list in config, with unique E.164 providerUserId values, internal IDs, display names and consentedAt timestamps. No dynamic group join changes enrollment. Live state starts gathering with no synthetic budgets or dates; chat supplies those facts. Unknown senders/groups remain ignored.
 
 
+
+## Jeffrey handoff update
+
+Reviewed A commit 0f2d108. Shared conversation ConstraintValue now preserves region maxTravelMinutes?: number and transport vehicleAvailable?: boolean. C respects explicit false vehicle availability and carries optional drive limits without inventing a four-hour bound. The commands ParseResult (clarification and expects included) and per-delivery SendResult retain A's shapes. A Mac user can copy src/conversation/contracts-local.ts from the published handoff; PowerShell is not required. Apply C's 7e46cc6 and the follow-up contract fix to A's current branch; the intermediate module-snapshot commit is unnecessary when A/B are already integrated.

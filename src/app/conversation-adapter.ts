@@ -18,7 +18,7 @@ export function localMidnight(date: string, timeZone: string): string {
   return new Date(instant).toISOString();
 }
 
-function convert(command: A.TripCommand, timeZone: string): C.TripCommand {
+export function convert(command: A.TripCommand, timeZone: string): C.TripCommand {
   if (command.action.kind !== 'update_constraint') return command as C.TripCommand;
   const u = command.action.update;
   let value: unknown;
@@ -26,9 +26,9 @@ function convert(command: A.TripCommand, timeZone: string): C.TripCommand {
     case 'budget': case 'preferences': case 'must_dos': value = u.value; break;
     case 'availability': value = u.value.map(w => ({ startAt: localMidnight(w.start, timeZone), endAt: localMidnight(new Date(Date.parse(`${w.end}T00:00:00Z`) + 86400000).toISOString().slice(0, 10), timeZone), timeZone })); break;
     case 'origin': value = { city: u.value, region: '', timeZone }; break;
-    case 'region': value = { label: u.value, maxTravelMinutes: 240 }; break;
+    case 'region': value = { label: u.value, ...(u.maxTravelMinutes !== undefined ? { maxTravelMinutes: u.maxTravelMinutes } : {}) }; break;
     case 'duration': value = { nights: u.value }; break;
-    case 'transport': value = { mode: 'road_trip', hasVehicle: u.value === 'own_vehicle' || (/\b(car|vehicle|drive)\b/i.test(u.value) && !/\b(no|not|without)\b/i.test(u.value)) }; break;
+    case 'transport': value = { mode: 'road_trip', hasVehicle: u.vehicleAvailable ?? (u.value === 'own_vehicle' || (/\b(car|vehicle|drive)\b/i.test(u.value) && !/\b(no|not|without)\b/i.test(u.value))) }; break;
   }
   return { ...command, action: { kind: 'update_constraint', update: { ...u, value } as C.ConstraintUpdate } };
 }

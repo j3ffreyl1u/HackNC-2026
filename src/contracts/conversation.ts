@@ -28,8 +28,8 @@ export type ConstraintValue =
   | { field: 'availability'; value: DateWindow[] }
   | { field: 'preferences'; value: string[] }
   | { field: 'must_dos'; value: string[] }
-  | { field: 'transport'; value: string }
-  | { field: 'region'; value: string }
+  | { field: 'transport'; value: string; vehicleAvailable?: boolean }
+  | { field: 'region'; value: string; maxTravelMinutes?: number }
   | { field: 'origin'; value: string }
   | { field: 'duration'; value: number };
 

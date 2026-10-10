@@ -41,7 +41,7 @@ function fromUpdate(r: B.ConstraintRecord, timeZone: string): C.MemberConstraint
     case 'availability': value = r.value.intervals.map(w => ({ ...w, timeZone })); break;
     case 'preferences': case 'must_dos': value = r.value.items; break;
     case 'transport': value = { mode: 'road_trip', hasVehicle: r.value.vehicleAvailable }; break;
-    case 'region': value = { label: r.value.searchRegion ?? r.value.destination ?? '', maxTravelMinutes: r.value.maxTravelMinutes ?? 240 }; break;
+    case 'region': value = { label: r.value.searchRegion ?? r.value.destination ?? '', ...(r.value.maxTravelMinutes !== undefined ? { maxTravelMinutes: r.value.maxTravelMinutes } : {}) }; break;
     case 'origin': value = { city: r.value.city, region: '', timeZone }; break;
     case 'duration': value = r.value; break;
   }
