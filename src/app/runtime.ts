@@ -32,6 +32,8 @@ export interface ApplicationRuntimeDependencies {
   conversation: ConversationService;
   planner: PlannerAdapter;
   tripId: string;
+  /** Address of the trip page, put into messages that point at the full plan. Defaults to the words "the trip page". */
+  planUrl?: string;
 }
 
 export interface ApplicationRuntime {
@@ -45,6 +47,8 @@ export interface ApplicationRuntime {
 /** App composition boundary: identity, revision control, dedupe, outbox, and stale-research protection. */
 export function createApplicationRuntime(dependencies: ApplicationRuntimeDependencies): ApplicationRuntime {
   const { repository, conversation, planner, tripId } = dependencies;
+  /** Messages from the planner point at the trip page with a token; this puts the real address in. */
+  const withPlanLink = (text: string) => text.replaceAll('{{PLAN_LINK}}', dependencies.planUrl ?? 'the trip page');
   const queued: Promise<void>[] = [];
   let processQueue: Promise<void> = Promise.resolve();
   let outboxDrain: Promise<void> | undefined;
@@ -281,7 +285,7 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
     };
     const groupSpaceId = (await repository.getEnrollment(tripId))?.groupSpaceId ?? '';
     const messages = researchReplies
-      ? researchReplies.map((reply, index) => makeMessage(tripId, `research:${sourceState.revision}:${index}`, { ...reply, proposalRef: reply.proposalRef ? { ...reply.proposalRef, kind: 'select' } : undefined }))
+      ? researchReplies.map((reply, index) => makeMessage(tripId, `research:${sourceState.revision}:${index}`, { ...reply, text: withPlanLink(reply.text), proposalRef: reply.proposalRef ? { ...reply.proposalRef, kind: 'select' } : undefined }))
       : candidates.flatMap((candidate) => candidateMessages(candidate, tripId, groupSpaceId));
     const outcome = await repository.commitEvent({
       eventId: `research:${tripId}:${sourceState.revision}`,

@@ -90,17 +90,17 @@ describe('planTrip: the acceptance fixture', () => {
     }
   });
 
-  it('the chat messages carry sources, estimates and the fixture label, tied to the exact revision', async () => {
+  it('the chat messages are short: two options tied to the exact revision, one link to the full plan, and the demo label', async () => {
     const outcome = await planTrip(readyState(), provider);
     const proposals = outcome.replies.filter((r) => r.proposalRef);
-    expect(proposals.map((r) => r.proposalRef?.revision)).toEqual([1, 1, 1]);
+    expect(proposals.map((r) => r.proposalRef?.revision)).toEqual([1, 1]);
     const text = groupText(outcome);
-    expect(text).toContain('revision 1');
-    expect(text).toContain('https://fixtures.invalid/');
-    expect(text).toMatch(/estimates/);
-    expect(text).toMatch(/fixture data/i);
-    expect(text).toMatch(/at least/); // the provisional option’s total is a lower bound
-    expect(text).toMatch(/Availability was not checked/);
+    expect(text).toContain('{{PLAN_LINK}}');              // sources, itinerary and costs live on the trip page
+    expect(text).not.toContain('https://fixtures.invalid/');
+    expect(text).toMatch(/about \$[\d,.]+-\$[\d,.]+ each/);
+    expect(text).toMatch(/demo data/i);
+    expect(text).toMatch(/Maybe: /);                       // the option whose prices are incomplete is flagged, not proposed
+    for (const reply of outcome.replies) expect(reply.text.length).toBeLessThan(420);
   });
 
   it('the chat messages never contain a private cap', async () => {
@@ -114,7 +114,7 @@ describe('planTrip: hard limits filter', () => {
     const outcome = await planTrip(readyState({ mason: 18_000, alex: 25_000, jordan: 30_000 }), provider);
     expect(outcome.candidates.filter((c) => c.feasibility.feasible).map((c) => c.title)).toEqual(['State park and small-town weekend']);
     expect(outcome.excluded.map((c) => c.title)).toEqual(['Mountain cabin weekend']);
-    expect(groupText(outcome)).toContain('Here are an option');
+    expect(groupText(outcome)).toContain('found a trip that fit');
   });
 
   it('an option that fits only if the group’s caps are summed is still rejected', async () => {
@@ -127,10 +127,10 @@ describe('planTrip: hard limits filter', () => {
     const outcome = await planTrip(readyState({ mason: 5_000, alex: 5_000, jordan: 5_000 }), provider);
     expect(outcome.candidates.every((c) => !c.feasibility.feasible)).toBe(true);
     const text = groupText(outcome);
-    expect(text).toMatch(/couldn't find an option that fits everyone's limits/);
-    expect(text).toMatch(/over at least one person's maximum/);
-    expect(text).toMatch(/Would any of you be open to/);
-    expect(text).toMatch(/won't change anyone's limits unless they say so/);
+    expect(text).toMatch(/couldn't find a 2-night trip .*that works for both of you/);
+    expect(text).toMatch(/cost more than at least one of you wants to spend/);
+    expect(text).toMatch(/A few ways to fix it/);
+    expect(text).toMatch(/never change anyone's limit unless they say so/);
     expect(text).not.toMatch(/\$50|5,?000|Mason|Alex|Jordan/);
   });
 
@@ -139,8 +139,8 @@ describe('planTrip: hard limits filter', () => {
     const privates = outcome.replies.filter((r) => r.audience.kind === 'private');
     expect(privates).toHaveLength(1);
     expect(privates[0].audience).toEqual({ kind: 'private', memberId: 'mason' });
-    expect(privates[0].text).toMatch(/\$\d+\.\d\d over your maximum/);
-    expect(privates[0].text).toMatch(/Only if you want to/);
+    expect(privates[0].text).toMatch(/about \$\d+\.\d\d over your max/);
+    expect(privates[0].text).toMatch(/If you're okay stretching/);
   });
 
   it('a stated must-do that no option covers rules everything out', async () => {
@@ -155,7 +155,7 @@ describe('planTrip: hard limits filter', () => {
     for (const id of ids) state = put(state, id, 'region', { searchRegion: 'NC mountains', maxTravelMinutes: 60 });
     const outcome = await planTrip(state, provider);
     expect(outcome.candidates).toEqual([]);
-    expect(groupText(outcome)).toMatch(/Nothing matched the place and drive limit/);
+    expect(groupText(outcome)).toMatch(/couldn't find anything around NC mountains that matched/);
   });
 
   it('stops that cannot fit in the dates are left out and said so', async () => {

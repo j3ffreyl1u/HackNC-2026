@@ -110,37 +110,64 @@ const hasNoPrices = (c: TripCandidate) => c.costs.every((x) => x.priceStatus ===
 /** No limit is broken so far and at least some prices are known, but an essential one is still missing. */
 const isProvisional = (c: TripCandidate) => c.feasibility.violations.length === 0 && c.feasibility.unknownEssentials.length > 0 && !hasNoPrices(c);
 
-function describeOption(c: TripCandidate, rank: number): string {
+/** Where the full plan lives. The app swaps this for the real trip-page address when it sends the message. */
+export const PLAN_LINK = '{{PLAN_LINK}}';
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** "Nov 14-16": the trip's first and last day in local time. */
+function tripDates(c: TripCandidate, timeZone: string): string {
+  const day = (iso: string) => {
+    const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone, month: 'numeric', day: 'numeric' }).formatToParts(Date.parse(iso)).map((x) => [x.type, x.value]));
+    return { m: Number(p.month), d: Number(p.day) };
+  };
+  const s = day(c.startAt), e = day(c.endAt);
+  return s.m === e.m ? `${MONTHS[s.m - 1]} ${s.d}-${e.d}` : `${MONTHS[s.m - 1]} ${s.d}-${MONTHS[e.m - 1]} ${e.d}`;
+}
+
+const clip = (text: string, max: number) => (text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`);
+
+/** Two short lines per option. The itinerary, costs and sources live on the trip page, not in the chat. */
+function describeOption(c: TripCandidate, rank: number, timeZone: string): string {
   const low = Math.min(...c.perPersonTotals.map((t) => t.lowCents));
   const high = Math.max(...c.perPersonTotals.map((t) => t.highCents));
   const provisional = isProvisional(c);
-  const lines = [
-    `${provisional ? 'Provisional: ' : `Option ${rank}: `}${c.title}`,
-    `${c.startAt.slice(0, 10)} to ${c.endAt.slice(0, 10)}. About ${provisional ? 'at least ' : ''}${formatUsd(low)} to ${formatUsd(high)} each (estimates; the upper figure includes contingency).`,
-    c.itinerary.length > 0 ? `Plan: ${c.itinerary.map((i) => i.label).join(', then ')}.` : '',
-    ...c.tradeoffs,
-    ...c.evidence.slice(0, 3).map((e) => `Source: ${describeEvidence(e)} ${e.url}`),
-  ];
-  return lines.filter(Boolean).join('\n');
+  return [
+    `${provisional ? 'Maybe' : `Option ${rank}`}: ${c.title}`,
+    `${tripDates(c, timeZone)} · about ${provisional ? 'at least ' : ''}${formatUsd(low)}-${formatUsd(high)} each${c.tradeoffs[0] ? `\n${clip(c.tradeoffs[0], 140)}` : ''}`,
+  ].join('\n');
 }
 
-/** Why nothing fits, and what could change, as questions rather than assumptions. No cap is named. */
+/** What is in the way when nothing fits, in plain words, with ways out. No one's limit is named in the group message. */
 function conflictReplies(state: TripState, excluded: readonly TripCandidate[], provisional: readonly TripCandidate[]): TripReply[] {
   const replies: TripReply[] = [];
   const kinds = new Set(excluded.flatMap((c) => c.feasibility.violations.map((v) => v.kind)));
-  const lines = ["I couldn't find an option that fits everyone's limits, so I'm not proposing one."];
-  if (kinds.has('budget')) lines.push('Every option I found was over at least one person\'s maximum.');
-  if (kinds.has('availability')) lines.push('Some options fall outside everyone\'s available dates.');
-  if (kinds.has('must_do')) lines.push("Some options don't cover a must-have.");
-  if (kinds.has('region')) lines.push('Some options are a longer drive than you wanted.');
-  if (provisional.length > 0) lines.push('Others have prices I could not find yet, so I can\'t say whether they fit.');
-  if (excluded.length === 0 && provisional.length === 0) lines.push('Nothing matched the place and drive limit you gave me.');
-  const asks: string[] = [];
-  if (kinds.has('budget')) asks.push('a shorter or cheaper trip');
-  if (kinds.has('availability')) asks.push('more dates');
-  if (kinds.has('region') || excluded.length === 0) asks.push('a wider search area or a longer drive');
-  if (asks.length > 0) lines.push(`Would any of you be open to ${asks.join(', ')}? I won't change anyone's limits unless they say so.`);
-  replies.push({ audience: { kind: 'group' }, text: lines.join(' ') });
+  const region = resolveGroupField(state, 'region');
+  const place = region.status === 'agreed' ? ((region.value as ConstraintValues['region']).destination ?? (region.value as ConstraintValues['region']).searchRegion) : undefined;
+  const duration = resolveGroupField(state, 'duration');
+  const nights = duration.status === 'agreed' ? (duration.value as ConstraintValues['duration']).nights : undefined;
+  const reasons: string[] = [];
+  const ideas: string[] = [];
+  if (kinds.has('budget')) {
+    reasons.push('the trips I found cost more than at least one of you wants to spend');
+    ideas.push('raise a max a little (I\'ll quietly let whoever is closest know by how much, and I never change anyone\'s limit unless they say so)', 'make it shorter');
+  }
+  if (provisional.length > 0) reasons.push("a couple others looked good, but I couldn't find all their prices, so I can't tell if they fit");
+  if (kinds.has('availability')) { reasons.push('some fell outside the days you\'re both free'); ideas.push('open up a few more dates'); }
+  if (kinds.has('must_do')) { reasons.push("some missed a must-have"); ideas.push('relax a must-have'); }
+  if (kinds.has('region') || (excluded.length === 0 && provisional.length === 0)) {
+    reasons.push(excluded.length === 0 && provisional.length === 0 ? `I couldn't find anything${place ? ` around ${place}` : ''} that matched` : 'some were a longer drive than you wanted');
+    ideas.push('look somewhere different or a bit farther');
+  }
+  const head = `Hmm, I couldn't find ${nights ? `a ${nights}-night trip` : 'a trip'}${place ? ` to ${place}` : ''} that works for both of you yet.`;
+  replies.push({
+    audience: { kind: 'group' },
+    text: [
+      head,
+      reasons.length > 0 ? `Here's what's getting in the way:\n${reasons.map((r) => `• ${r}`).join('\n')}` : '',
+      ideas.length > 0 ? `A few ways to fix it:\n${ideas.map((i) => `• ${i}`).join('\n')}` : '',
+      `Tell me what you're up for, like "my max is $400" or "I could do 1 night", and I'll look again.`,
+    ].filter(Boolean).join('\n\n'),
+  });
 
   // The one person who would have to stretch hears the exact amount, privately.
   const cheapest = [...excluded].sort(
@@ -148,11 +175,11 @@ function conflictReplies(state: TripState, excluded: readonly TripCandidate[], p
   )[0];
   if (cheapest) {
     for (const id of participantIds(state)) {
-      const note = privateOverage(cheapest.feasibility, id);
-      if (note) {
+      const over = cheapest.feasibility.violations.find((v) => v.kind === 'budget' && v.memberId === id && v.overByCents !== undefined);
+      if (over) {
         replies.push({
           audience: { kind: 'private', memberId: id },
-          text: `${displayName(state, id)}, the closest option was ${cheapest.title}. ${note} Only if you want to, tell me a higher maximum; otherwise I'll keep looking within your current one.`,
+          text: `${displayName(state, id)}, the closest one was ${cheapest.title}, and it came in about ${formatUsd(over.overByCents as number)} over your max. If you're okay stretching, just tell me your new max. If not, no worries, I'll keep looking within yours.`,
         });
       }
     }
@@ -199,21 +226,21 @@ export async function planTrip(state: TripState, researchProvider: ResearchProvi
 
   const replies: TripReply[] = [];
   if (shown.length > 0) {
-    const intro = explainRanking(rankCandidates(state, shown)).join(' ');
     shown.forEach((c, i) => {
-      const text = describeOption(c, i + 1);
+      const text = describeOption(c, i + 1, timeZone);
       replies.push({
         audience: { kind: 'group' },
-        text: i === 0 ? `Here are ${shown.length === 1 ? 'an option' : 'two options'} for revision ${state.revision}. ${intro}\n\n${text}` : text,
+        text: i === 0 ? `Good news, I found ${shown.length === 1 ? 'a trip' : 'two trips'} that fit everyone's budget!\n\n${text}` : text,
         proposalRef: { candidateId: c.candidateId, revision: state.revision },
       });
     });
-    for (const c of provisional) {
-      replies.push({ audience: { kind: 'group' }, text: describeOption(c, 0), proposalRef: { candidateId: c.candidateId, revision: state.revision } });
-    }
+    const maybe = provisional.length > 0 ? `I also found ${provisional.map((c) => c.title).join(' and ')}, but I couldn't price all of it yet, so it's on the page as a maybe.\n\n` : '';
+    replies.push({
+      audience: { kind: 'group' },
+      text: `${maybe}The full plan with the day-by-day, costs and sources is here: ${PLAN_LINK}\n\nReply "pick ${shown.length === 1 ? '1' : '1" or "pick 2'}" when you've decided, or give a thumbs up to the one you like.`,
+    });
   } else {
     replies.push(...conflictReplies(state, excluded, provisional));
-    for (const c of provisional) replies.push({ audience: { kind: 'group' }, text: describeOption(c, 0) });
   }
   if (unpriced.length > 0) {
     replies.push({
@@ -221,7 +248,9 @@ export async function planTrip(state: TripState, researchProvider: ResearchProvi
       text: `I also found ${unpriced.map((c) => c.title).join(', ')}, but couldn't find any prices for ${unpriced.length === 1 ? 'it' : 'them'}, so I'm not proposing ${unpriced.length === 1 ? 'it' : 'them'}.`,
     });
   }
-  if (result.limitations.length > 0) replies.push({ audience: { kind: 'group' }, text: `Keep in mind: ${result.limitations.join(' ')}` });
+  if (shown.length > 0 || provisional.length > 0) {
+    replies.push({ audience: { kind: 'group' }, text: result.mode === 'fixture' ? 'Heads up: this is demo data, so the prices are made up.' : 'These prices are estimates from web searches, so double-check them before you book anything.' });
+  }
 
   return { revision: state.revision, mode: result.mode, candidates: [...shown, ...provisional], excluded, replies, limitations: result.limitations };
 }

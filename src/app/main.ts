@@ -36,7 +36,9 @@ export async function startApp(): Promise<() => Promise<void>> {
     const planner = display ? createLivePlanner(display, enrollment.groupSpaceId)
       : config.researchMode === 'live' ? createPlannerAdapter(createResearchProvider({ mode: 'live', live: createGeminiProvider(geminiConfigFromEnv(process.env)!) }), enrollment.groupSpaceId)
       : createPlannerAdapter(createResearchProvider({ mode: 'mock', fixtures: defaultFixtures }), enrollment.groupSpaceId);
-    runtime = createApplicationRuntime({ repository, conversation: chat.conversation, planner, tripId: enrollment.tripId });
+    // Phones can only open the trip page if this is an address they can reach (set PUBLIC_BASE_URL to a tunnel or LAN address).
+    const planUrl = `${(process.env.PUBLIC_BASE_URL?.trim() || `http://127.0.0.1:${config.port}`).replace(/\/+$/, '')}/?trip=${encodeURIComponent(enrollment.tripId)}`;
+    runtime = createApplicationRuntime({ repository, conversation: chat.conversation, planner, tripId: enrollment.tripId, planUrl });
     await runtime.start();
     const port = await server.listen(config.port);
     console.log(`Local trip plan page: http://127.0.0.1:${port}`);
