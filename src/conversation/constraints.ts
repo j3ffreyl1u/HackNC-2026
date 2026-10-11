@@ -54,6 +54,9 @@ export const properCase = (text: string): string => (text === text.toLowerCase()
 const CORRECTION = /^(?:oh\s+|um+\s+|hmm+\s+)?(?:wait\b|actually\b|scratch that|i mean\b|sorry\b|oops\b|correction\b|make that\b|no,?\s+(?:wait|make|i mean|actually))/i;
 /** "not into breweries anymore", "drop the museums", "take hiking off": the person is taking a liking back, not adding one. */
 const TAKE_BACK_PHRASE = /^(?:(?:actually|wait|oh|um|hmm|ok(?:ay)?|so)[,\s]+)*(?:(?:i(?:'m| am)\s+)?(?:not into|don'?t (?:like|want)|do not (?:like|want))\s+(.+?)\s+(?:anymore|any more|now)|(?:i(?:'m| am)\s+)?no longer (?:into|like|want|interested in)\s+(.+)|(?:drop|remove|forget|scratch|skip)\s+(?:the\s+)?(.+?)(?:\s+from (?:my|the) (?:list|likes))?|take\s+(.+?)\s+off(?:\s+(?:my|the) list)?|changed my mind about\s+(.+))[.!]*$/i;
+/** Flying: a statement about the trip, not a question about flights. */
+const PLANE = /\b(?:fly|flying|flight|flights|plane|airplane|by air|airfare)\b/i;
+const NOT_PLANE = /\b(?:don'?t|do not|won'?t|not|no)\s+(?:want\s+to\s+|going\s+to\s+|gonna\s+)?(?:fly|flying|flights?|plane)\b|\bhate\s+flying\b|\bflying\s+(?:is|isn'?t)\b/i;
 const NOT_ORIGIN = /^(?:there|here|home|it|that|this|them|where|somewhere|anywhere)$/i;
 /** A sentence that is a question ("how long is the drive to Asheville") is not a statement of where we are going. */
 const QUESTION_START = /^(?:how|what|what's|whats|where|when|which|who|why|is|are|does|do|can|could|will|would|should)\b/i;
@@ -162,7 +165,11 @@ function extractSentence(s: string, reference: string, pending: ConstraintField 
     const maxTravelMinutes = parseMaxTravelMinutes(value);
     push({ field: 'region', value, ...(maxTravelMinutes !== undefined ? { maxTravelMinutes } : {}) });
   }
-  if (/\bi(?:'ve|\s+have|\s+got)\s+(?:got\s+)?(?:a\s+|my\s+)?(?:own\s+)?(?:car|vehicle|truck|suv)\b|\bi\s+can\s+drive\b|\bi(?:'ll| will)\s+drive\b|\b(?:we|i)(?:'ll| will| can| could)?\s+(?:take|use|bring|drive)\s+(?:my|our|the)\s+(?:own\s+)?(?:car|truck|suv|van|vehicle)\b/i.test(s)) push({ field: 'transport', value: 'own_vehicle', vehicleAvailable: true });
+  // Driving or flying: "we'll fly", "flights", "by plane" is a plane trip; a bare "driving" answers "driving or flying?" and leaves whose car still to ask.
+  if (!s.includes('?') && PLANE.test(s) && !NOT_PLANE.test(s)) push({ field: 'transport', value: 'plane', vehicleAvailable: false });
+  else if (pending === 'transport' && /^(?:(?:ok(?:ay)?|fine|yeah|yes|so|alright|sure|let'?s|lets)[\s,]+)*(?:(?:we(?:'ll| will| are|'re)?|i(?:'ll| will)?)\s+)?(?:probably\s+|just\s+)?(?:drive|driving|by car|car|a car|road ?trip|take a car|taking a car|drive there|driving there)(?:\s+(?:then|instead|please|it is|for sure))*[.!\s]*$/i.test(s.trim())) push({ field: 'transport', value: 'driving', vehicleAvailable: false });
+  else if (pending === 'transport' && /^(?:mine|my car|my truck|me|i do|i will|i can|i have one|i have a car|my own)[.!\s]*$/i.test(s.trim())) push({ field: 'transport', value: 'own_vehicle', vehicleAvailable: true });
+  else if (/\bi(?:'ve|\s+have|\s+got)\s+(?:got\s+)?(?:a\s+|my\s+)?(?:own\s+)?(?:car|vehicle|truck|suv)\b|\bi\s+can\s+drive\b|\bi(?:'ll| will)\s+drive\b|\b(?:we|i)(?:'ll| will| can| could)?\s+(?:take|use|bring|drive)\s+(?:my|our|the)\s+(?:own\s+)?(?:car|truck|suv|van|vehicle)\b/i.test(s)) push({ field: 'transport', value: 'own_vehicle', vehicleAvailable: true });
   else if (pending === 'transport' && !s.includes('?') && CAR_BROKEN.test(s)) push({ field: 'transport', value: 'no_vehicle', vehicleAvailable: false });
   else if (pending === 'transport' && !s.includes('?') && !QUESTION_START.test(s) && /\b(?:has|have|got|owns?|can (?:drive|bring))\s+(?:one|it|a ride|a vehicle|a car|a truck|an suv)\b|\b(?:do|does)\b|\bmy (?:car|truck)\b/i.test(s) && !/\b(?:no|nobody|none|don'?t|doesn'?t|not)\b/i.test(s)) push({ field: 'transport', value: 'own_vehicle', vehicleAvailable: true });
   else if (pending === 'transport' && !s.includes('?') && /\b(?:nobody|no ?one|none of us|neither of us|no)\b|\b(?:don'?t|doesn'?t|do not|does not)\s+(?:have|got|own)\b/i.test(s)) push({ field: 'transport', value: 'no_vehicle', vehicleAvailable: false });

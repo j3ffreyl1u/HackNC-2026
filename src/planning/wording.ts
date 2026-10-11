@@ -11,8 +11,10 @@ export const Q = {
   duration: 'How many nights are you thinking?',
   durationConfirm: 'Just to confirm: how many nights is the trip?',
   region: 'Got a place in mind, or how far are you up for driving?',
-  transport: 'Does anyone have a car we can take?',
-  vehicle: 'I can only plan road trips for now, so I need a car. Could anyone drive or borrow one?',
+  transport: 'Are you planning on driving or flying?',
+  /** Asked of one person on someone else's behalf ("ask Mason if he has a car"). */
+  carOwner: 'Does anyone have a car we can take?',
+  vehicle: 'Whose car are we taking? Say "my car" or a name.',
   // Each person's own
   dates: 'Which dates could you do for the trip?',
   datesChanged: 'You mentioned some different dates. Are your usable dates still the ones you gave before, or have they changed?',

@@ -78,7 +78,7 @@ function ackPart(v: ConstraintValue, tentative: boolean): string {
     case 'duration': return `${v.value} night${v.value === 1 ? '' : 's'}`;
     case 'origin': return `leaving from ${titleCase(v.value)}`;
     case 'region': return /^(?:within|any)\b/.test(v.value) ? v.value : /\b(?:beach(?:es)?|coast|mountains?|lakes?|shore|countryside)\b/i.test(v.value) ? (/^the\b/i.test(v.value) ? v.value : `the ${v.value}`) : titleCase(v.value);
-    case 'transport': return v.vehicleAvailable === true ? "there's a car" : v.vehicleAvailable === false ? 'no car for you' : `transport: ${v.value}`;
+    case 'transport': return v.value === 'plane' ? "you're flying" : v.value === 'driving' ? "you're driving" : v.vehicleAvailable === true ? "there's a car" : v.vehicleAvailable === false ? 'no car for you' : `transport: ${v.value}`;
     case 'preferences': if (v.value.length > 0 && v.value.every((x) => x.startsWith('not:'))) return `I'll drop ${list(v.value.map((x) => x.slice(4)))} from what you're into`;
       return v.value.includes('no preference') ? 'no strong preferences' : `you ${tentative ? 'might be' : "'re"} into ${list(v.value)}`.replace("you 're", "you're");
     case 'must_dos': return v.value.length ? `must-haves: ${list(v.value)}` : 'no must-haves';
@@ -90,7 +90,7 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** Plain facts the model may use to answer a casual question. Only what is already fine to repeat: never a budget amount. */
 function chatFacts(ctx: TripConversationContext): string[] {
-  const word: Record<string, string> = { availability: 'free dates', budget: 'a maximum budget', preferences: 'what they like', origin: 'the starting city', region: 'where to go', duration: 'how many nights', transport: 'a car', must_dos: 'must-haves' };
+  const word: Record<string, string> = { availability: 'free dates', budget: 'a maximum budget', preferences: 'what they like', origin: 'the starting city', region: 'where to go', duration: 'how many nights', transport: "how you're getting there", must_dos: 'must-haves' };
   const facts: string[] = [];
   const status = { gathering: 'still gathering everyone\'s details', researching: 'looking up trip options right now', proposed: 'options have been sent and are waiting for picks', awaiting_acceptance: 'a plan was picked and is waiting for everyone\'s OK', approved: 'the plan is approved' }[ctx.status ?? 'gathering'];
   facts.push(`Trip status: ${status}.`);

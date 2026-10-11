@@ -212,6 +212,11 @@ const TYPICAL = {
 
 export const TYPICAL_LABEL = 'typical cost, not a found price';
 
+/** A round-trip airfare per person, deliberately generous at the top. Flights are never looked up here: an estimate, labelled as one. */
+export function typicalFlights(groupSize: number): Priced {
+  return { lowCents: groupSize * 18_000, highCents: groupSize * 45_000, evidenceIds: [], assumption: 'Flights are a typical round-trip fare per person, not a price I found. Check real fares before booking.' };
+}
+
 export function typicalLodging(nights: number, groupSize: number): Priced {
   const rooms = Math.ceil(groupSize / DEFAULT_SLEEPS);
   return {
@@ -282,7 +287,9 @@ export async function priceOption(option: ResearchOption, request: ResearchReque
   const notes: string[] = [];
   // Fuel, food and admissions run while lodging is looked up. Hotels with real prices for the group's dates come first;
   // only if that finds nothing (or fails) is the web-search lodging question asked.
-  const others = Promise.allSettled([fuelPrompt(option, request), mealPrompt(option), ...(lookupAdmissions ? [admissionPrompt(option)] : [])].map(ask));
+  const flying = request.travel === 'plane';
+  // Flying: no fuel lookup (no one is driving there); airfare is an estimate added below.
+  const others = Promise.allSettled([flying ? Promise.resolve(undefined) : ask(fuelPrompt(option, request)), ask(mealPrompt(option)), ...(lookupAdmissions ? [ask(admissionPrompt(option))] : [])]);
   let foundLodging: Priced | undefined;
   if (settings.lookupLodging) {
     try { foundLodging = await settings.lookupLodging(option, request, store); }
@@ -300,7 +307,7 @@ export async function priceOption(option: ResearchOption, request: ResearchReque
     notes.push(`The ${what} lookup for ${option.name} failed, so that price is unknown.`);
     return undefined;
   };
-  const foundFuel = priceFuel(reading(0, 'fuel'), store);
+  const foundFuel = flying ? undefined : priceFuel(reading(0, 'fuel'), store);
   const foundFood = priceMeals(reading(1, 'food'), nights, store);
   const foundAdmissions = lookupAdmissions ? priceAdmissions(reading(2, 'admission'), option.stops.slice(0, 5).map((s) => s.label), store) : undefined;
 
@@ -316,8 +323,9 @@ export async function priceOption(option: ResearchOption, request: ResearchReque
   const lodgingPick = pick('lodging', foundLodging, () => typicalLodging(nights, groupSize));
   // A missing drive time falls back to the longest drive the group allowed, then to a typical weekend drive. Never unknown.
   const driveGuessed = option.driveMinutesFromOrigin === undefined;
-  const fuelPick = pick('fuel', foundFuel, () => typicalFuel(option.driveMinutesFromOrigin ?? request.maxTravelMinutes ?? TYPICAL.defaultDriveMinutes));
-  const parkingPick = typical ? { priced: typicalParking(nights), assumed: true } : { priced: undefined, assumed: false };
+  const fuelPick = flying ? { priced: typicalFlights(groupSize), assumed: true } : pick('fuel', foundFuel, () => typicalFuel(option.driveMinutesFromOrigin ?? request.maxTravelMinutes ?? TYPICAL.defaultDriveMinutes));
+  if (flying) assumedKinds.push('flights');
+  const parkingPick = typical && !flying ? { priced: typicalParking(nights), assumed: true } : { priced: undefined, assumed: false };
   if (parkingPick.priced) assumedKinds.push('parking');
   const admissionsPick = pick('admissions', foundAdmissions, () => typicalAdmissions(option));
   const foodPick = pick('food', foundFood, () => typicalMeals(nights));
@@ -330,13 +338,13 @@ export async function priceOption(option: ResearchOption, request: ResearchReque
   const evidenceIds = [...new Set([...option.evidenceIds, ...[lodging, fuel, admissions, food].flatMap((p) => p?.evidenceIds ?? [])])];
   const tradeoffs = option.tradeoffs.filter((t) => !t.startsWith('Prices, where found'));
   if (lodging) tradeoffs.push(lodging.assumption ?? ASSUMPTIONS.lodging);
-  if (fuel) tradeoffs.push(ASSUMPTIONS.fuel);
+  if (fuel) tradeoffs.push(flying ? (fuel.assumption ?? '') : ASSUMPTIONS.fuel);
   if (admissions) tradeoffs.push(ASSUMPTIONS.admissions);
   if (food) tradeoffs.push(ASSUMPTIONS.food);
   tradeoffs.push('Prices come from web search and are unverified estimates.');
-  if (fuelPick.assumed && driveGuessed) tradeoffs.push("I didn't find the drive time, so fuel assumes the longest drive you allowed (or about 4 hours each way).");
+  if (!flying && fuelPick.assumed && driveGuessed) tradeoffs.push("I didn't find the drive time, so fuel assumes the longest drive you allowed (or about 4 hours each way).");
   if (assumedKinds.length > 0) {
-    tradeoffs.push(`${assumedKinds.join(', ')} ${assumedKinds.length === 1 ? 'is a typical cost' : 'are typical costs'} for a mid-range road trip, not a price I found. The upper figures are deliberately generous.`);
+    tradeoffs.push(`${assumedKinds.join(', ')} ${assumedKinds.length === 1 ? 'is a typical cost' : 'are typical costs'} for a mid-range ${flying ? 'trip' : 'road trip'}, not a price I found. The upper figures are deliberately generous.`);
     notes.push(`Used typical costs for ${assumedKinds.join(', ')} at ${option.name}; no sourced price was found.`);
   }
   const missing = [!lodging && 'lodging', !fuel && 'fuel', !admissions && 'admissions', !food && 'food'].filter(Boolean);
@@ -349,7 +357,7 @@ export async function priceOption(option: ResearchOption, request: ResearchReque
       ...option,
       costs: [
         { ...item('lodging', 'accommodation', 'Lodging', lodging, lodgingPick.assumed), allocation: 'equal_shared' },
-        { ...item('fuel', 'fuel_parking_tolls', typical ? 'Fuel' : 'Fuel (parking and tolls not included)', fuel, fuelPick.assumed), allocation: 'equal_shared' },
+        { ...item(flying ? 'flights' : 'fuel', 'fuel_parking_tolls', flying ? 'Round-trip flights' : typical ? 'Fuel' : 'Fuel (parking and tolls not included)', fuel, fuelPick.assumed), allocation: 'equal_shared' },
         ...(parkingPick.priced ? [{ ...item('parking', 'fuel_parking_tolls', 'Parking', parkingPick.priced, true), allocation: 'equal_shared' as const }] : []),
       ],
       perPersonCosts: [template(item('admissions', 'activities', 'Admissions', admissions, admissionsPick.assumed)), template(item('food', 'food', 'Food', food, foodPick.assumed))],

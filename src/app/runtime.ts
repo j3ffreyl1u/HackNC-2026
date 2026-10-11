@@ -399,7 +399,7 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
           const toAsker = (text: string) => makeMessage(tripId, `relay-ack:${message.eventId}:${index}`, { audience: { kind: 'private', memberId: member.memberId }, text });
           if (!target) { replies.push(toAsker(`I'm not sure who ${relay.to} is.`)); continue; }
           const asker = member.displayName;
-          const wording: Record<string, string> = { availability: Q.dates, budget: Q.budget, preferences: Q.preferences, origin: Q.origin, duration: Q.duration, region: Q.region, transport: Q.transport };
+          const wording: Record<string, string> = { availability: Q.dates, budget: Q.budget, preferences: Q.preferences, origin: Q.origin, duration: Q.duration, region: Q.region, transport: Q.carOwner };
           const toTarget = target.displayName;
           const body = relay.mode === 'invite'
             ? `Hey ${toTarget}! ${asker} wants to plan a trip with you and asked me to get you started. Tell me where you'd be leaving from, which dates work for you, and what you like, whenever you're ready.`
@@ -911,7 +911,7 @@ function othersShared(state: TripState, actorId: string): Array<{ memberId: stri
     if (state.status === 'gathering' && nights) shared.push(`wants ${nights.value.nights} night${nights.value.nights === 1 ? '' : 's'}`);
     if (state.status === 'gathering' && from) shared.push(`is leaving from ${from.value.city}`);
     if (state.status === 'gathering' && place) shared.push(/^(?:within|any)\b/i.test(place.value.label) ? `is up for ${place.value.label}` : `wants to go to ${place.value.label}`);
-    if (state.status === 'gathering' && car) shared.push(car.value.hasVehicle ? 'has a car' : "doesn't have a car");
+    if (state.status === 'gathering' && car) shared.push(car.value.mode === 'plane' ? 'is flying' : car.value.hasVehicle ? 'has a car' : "doesn't have a car");
     if (!latest('budget')) missing.push('budget');
     return { memberId: m.memberId, name: m.displayName, shared, missing };
   });
@@ -932,6 +932,7 @@ function basicsChangeNotes(before: TripState, after: TripState, actorId: string)
     if (b.field === 'origin') notes.push(`${who} changed the starting point to ${b.value}.${ask}`);
     else if (b.field === 'duration') notes.push(`${who} changed the trip to ${b.value} night${b.value === 1 ? '' : 's'}.${ask}`);
     else if (b.field === 'region') notes.push(`${who} changed the place to ${b.value}.${ask}`);
+    else if (b.field === 'transport' && b.value === 'plane') notes.push(`${who} changed the plan to flying.${ask}`);
     else if (b.field === 'transport' && b.vehicleAvailable === false) notes.push(`Heads up, ${who} says there isn't a car after all.${ask}`);
   }
   return notes;
@@ -945,7 +946,7 @@ function settledText(key: string, state: TripState): string | undefined {
     case 'conflict:duration': { const d = value('duration'); return d && d.field === 'duration' ? `Great, ${d.value} night${d.value === 1 ? '' : 's'} it is.` : undefined; }
     case 'conflict:origin': { const o = value('origin'); return o && o.field === 'origin' ? `Great, we'll plan the trip from ${o.value}.` : undefined; }
     case 'conflict:region': { const r = value('region'); return r && r.field === 'region' ? `Great, we'll plan around ${r.value}.` : undefined; }
-    case 'conflict:transport': return "Great, so we've got a car.";
+    case 'conflict:transport': { const t = value('transport'); return t && t.field === 'transport' && t.value === 'plane' ? "Great, we're flying." : "Great, so we're driving."; }
     case 'conflict:dates': return 'Nice, your dates line up now.';
     default: return undefined;
   }
@@ -959,7 +960,7 @@ function sharedBasics(state: TripState): ConstraintValue[] {
   if (origin) out.push({ field: 'origin', value: origin.value.city });
   if (duration) out.push({ field: 'duration', value: duration.value.nights });
   if (region) out.push({ field: 'region', value: region.value.label, ...(region.value.maxTravelMinutes !== undefined ? { maxTravelMinutes: region.value.maxTravelMinutes } : {}) });
-  if (transport) out.push({ field: 'transport', value: transport.value.hasVehicle ? 'own_vehicle' : 'no_vehicle', vehicleAvailable: transport.value.hasVehicle });
+  if (transport) out.push({ field: 'transport', value: transport.value.mode === 'plane' ? 'plane' : transport.value.hasVehicle ? 'own_vehicle' : 'no_vehicle', vehicleAvailable: transport.value.hasVehicle });
   return out;
 }
 

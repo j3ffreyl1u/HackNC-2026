@@ -149,7 +149,8 @@ function normalizeValue<F extends ConstraintField>(field: F, value: ConstraintVa
       return { items: cleanList((v as ConstraintValues['must_dos']).items, 'must-dos', true) } as ConstraintValues[F];
     case 'transport': {
       const t = v as ConstraintValues['transport'];
-      if (t.mode !== 'car') return invalid('This planner only handles road trips by car for now.');
+      if (t.mode === 'plane') return { mode: 'plane', vehicleAvailable: false } as ConstraintValues[F];
+      if (t.mode !== 'car') return invalid('This planner handles trips by car or by plane.');
       if (typeof t.vehicleAvailable !== 'boolean') return invalid('Does the group have a car? Please say yes or no.');
       return { mode: 'car', vehicleAvailable: t.vehicleAvailable } as ConstraintValues[F];
     }
@@ -322,7 +323,7 @@ export function resolveGroupField<F extends 'transport' | 'region' | 'duration' 
   if (positions.length === 0) return { status: 'unset', tentativeOnly: sawTentative };
   const distinct = new Set(positions.map((p) => canonical(p.value)));
   // One person with a car is enough for the group: "I have a car" and "I don't" are not in conflict.
-  if (field === 'transport' && distinct.size > 1) {
+  if (field === 'transport' && distinct.size > 1 && positions.every((p) => (p.value as ConstraintValues['transport']).mode !== 'plane')) {
     const driver = positions.find((p) => (p.value as ConstraintValues['transport']).vehicleAvailable);
     if (driver) return { status: 'agreed', value: driver.value, authors: positions.map((p) => p.memberId) };
   }

@@ -15,6 +15,9 @@ import type { ConstraintValues, ReadinessQuestion, ReadinessResult, TripState } 
 
 const MIN_PARTICIPANTS = 2;
 
+/** Getting there is settled: flying needs no car, driving needs someone's car. */
+const travelSorted = (t: ConstraintValues['transport']): boolean => t.mode === 'plane' || t.vehicleAvailable === true;
+
 export interface ReadinessOptions {
   /** The current time, used only to avoid repeating a recent unanswered question. */
   now?: string;
@@ -153,18 +156,18 @@ function evaluate(state: TripState): Evaluation {
     group('basics', 'transport', Q.transport);
   } else if (transport.status === 'conflict') {
     conflicts.push('transport');
-    group('basics', 'conflict:transport', 'I have conflicting answers about whether you have a car. Does anyone have one for the trip?');
-  } else if (!(transport.value as ConstraintValues['transport']).vehicleAvailable) {
+    group('basics', 'conflict:transport', "Some of you said driving and some said flying, so I have conflicting answers. Are you driving or flying?");
+  } else if (!travelSorted(transport.value as ConstraintValues['transport'])) {
     missing.push('vehicle');
     group('basics', 'vehicle', Q.vehicle);
   }
 
   // -- everyone gets a say in the shared basics: anyone who has not weighed in is asked whether the plan so far works
-  if (origin.status === 'agreed' && duration.status === 'agreed' && region.status === 'agreed' && transport.status === 'agreed' && (transport.value as ConstraintValues['transport']).vehicleAvailable) {
+  if (origin.status === 'agreed' && duration.status === 'agreed' && region.status === 'agreed' && transport.status === 'agreed' && travelSorted(transport.value as ConstraintValues['transport'])) {
     const authors = new Set([...origin.authors, ...duration.authors, ...region.authors, ...transport.authors]);
     for (const id of ids.filter((x) => !authors.has(x))) {
       missing.push(`confirm_basics:${id}`);
-      privately('basics', id, `confirm_basics:${id}`, `Hey ${displayName(state, id)}! ${names(state, [...authors])} started planning a trip with you. So far the idea is ${describeBasics(origin.value, duration.value, region.value)}, with a car.${authorsSaid(state, [...authors])} I share who's free when with the group to find a weekend; budgets stay private. Does that work for you, or would you change anything?`);
+      privately('basics', id, `confirm_basics:${id}`, `Hey ${displayName(state, id)}! ${names(state, [...authors])} started planning a trip with you. So far the idea is ${describeBasics(origin.value, duration.value, region.value)}, ${(transport.value as ConstraintValues['transport']).mode === 'plane' ? 'flying' : 'with a car'}.${authorsSaid(state, [...authors])} I share who's free when with the group to find a weekend; budgets stay private. Does that work for you, or would you change anything?`);
     }
   }
 
@@ -272,7 +275,8 @@ export function describeGaps(state: TripState, result: Pick<ReadinessResult, 'mi
   if (result.missing.includes('origin')) items.push("where you're leaving from");
   if (result.missing.includes('duration')) items.push('how many nights');
   if (result.missing.includes('region')) items.push('where you want to go');
-  if (result.missing.includes('transport') || result.missing.includes('vehicle')) items.push('whether someone has a car');
+  if (result.missing.includes('transport')) items.push("whether you're driving or flying");
+  if (result.missing.includes('vehicle')) items.push("whose car we're taking");
   const unconfirmed = result.missing.filter((m) => m.startsWith('confirm_basics:')).map((m) => m.slice('confirm_basics:'.length));
   if (unconfirmed.length > 0) items.push(`${names(state, unconfirmed)} to say whether the plan so far works`);
   items.push(...perPerson('availability', (n) => (n === 'your' ? 'your dates' : `${n}'s dates`)));
@@ -284,7 +288,7 @@ export function describeGaps(state: TripState, result: Pick<ReadinessResult, 'mi
     if (c === 'origin') return "where you're leaving from";
     if (c === 'duration') return 'how many nights';
     if (c === 'region') return 'where to go';
-    if (c === 'transport') return 'the car situation';
+    if (c === 'transport') return "how you're getting there";
     if (c === 'dates') return 'the dates';
     if (c.startsWith('availability_unconfirmed')) return 'dates that still need a firm yes';
     if (c.startsWith('budget_unconfirmed')) return 'a budget that still needs a firm yes';
@@ -316,7 +320,7 @@ function settledBasics(state: TripState): string {
     const place = r.destination ?? r.searchRegion;
     if (place !== undefined) parts.push(titleCase(place));
   }
-  if (transport.status === 'agreed' && (transport.value as ConstraintValues['transport']).vehicleAvailable) parts.push('a car');
+  if (transport.status === 'agreed' && travelSorted(transport.value as ConstraintValues['transport'])) parts.push((transport.value as ConstraintValues['transport']).mode === 'plane' ? 'flying' : 'a car');
   return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : parts.join('');
 }
 

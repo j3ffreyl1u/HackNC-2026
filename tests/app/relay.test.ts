@@ -431,3 +431,31 @@ describe('logging a purchase from chat', () => {
     await fresh.stop(); await t.stop();
   });
 });
+
+describe('car or plane', () => {
+  it('asks driving or flying; flying needs no car; driving asks whose car', async () => {
+    const t = await live();
+    const first = await t.say(JEFF, "leaving from Chapel Hill, 2 nights, the mountains, free Nov 14-17, I like hiking");
+    expect(first.jeff.join(' ')).toMatch(/Are you planning on driving or flying\?/);
+    expect((await t.say(JEFF, 'flying')).jeff.join(' ')).toMatch(/you're flying/);
+    const mason = await t.say(MASON, "im in, free Nov 14-17, I like food");
+    expect([...mason.jeff, ...mason.mason].join(' ')).not.toMatch(/conflicting answers|isn't a car|no car/);
+    await t.stop();
+    const u = await live();
+    await u.say(JEFF, "leaving from Chapel Hill, 2 nights, the mountains, free Nov 14-17, I like hiking");
+    const driving = await u.say(JEFF, 'driving');
+    expect(driving.jeff.join(' ')).toMatch(/you're driving/);
+    expect(driving.jeff.join(' ')).toMatch(/Whose car are we taking\?/);
+    expect((await u.say(JEFF, 'mine')).jeff.join(' ')).toMatch(/there's a car/);
+    await u.stop();
+  });
+  it('one person flying and another driving is a conflict that is asked once and settled', async () => {
+    const t = await live();
+    await t.say(JEFF, "leaving from Chapel Hill, 2 nights, the mountains, free Nov 14-17, I like hiking, I have a car");
+    const clash = await t.say(MASON, "I'll fly, free Nov 14-17, I like food");
+    expect([...clash.jeff, ...clash.mason].join(' ')).toMatch(/driving and some said flying/);
+    const settled = await t.say(MASON, 'ok driving then');
+    expect([...settled.jeff, ...settled.mason].join(' ')).toMatch(/we're driving|Great/);
+    await t.stop();
+  });
+});

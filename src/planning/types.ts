@@ -39,7 +39,7 @@ export interface ConstraintValues {
   /** Hard requirements: must-dos, accessibility and dietary needs. May be empty. */
   must_dos: { items: string[] };
   /** Group level. MVP is a road trip, so the only mode is a car; this records whether the group has one. */
-  transport: { mode: 'car'; vehicleAvailable: boolean };
+  transport: { mode: 'car' | 'plane'; vehicleAvailable: boolean };
   /** Group level. A chosen destination, or a bounded search: a named region and/or a max travel time. */
   region: { destination?: string; searchRegion?: string; maxTravelMinutes?: number };
   /** Group level. Whole nights. */

@@ -37,7 +37,7 @@ export interface StoredConstraintValueByField {
   availability: AvailabilityWindow[];
   preferences: string[];
   must_dos: string[];
-  transport: { mode: 'road_trip'; hasVehicle: boolean; notes?: string };
+  transport: { mode: 'road_trip' | 'plane'; hasVehicle: boolean; notes?: string };
   region: { label: string; maxTravelMinutes?: number };
   duration: { nights: number };
   origin: { city: string; region: string; timeZone: string };

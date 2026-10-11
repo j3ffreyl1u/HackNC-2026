@@ -75,7 +75,7 @@ const GROUP_LABEL: Record<string, string> = {
   origin: 'where you leave from',
   duration: 'how long the trip is',
   region: 'where you are going',
-  transport: 'the car situation',
+  transport: "how you're getting there",
 };
 
 /** Why the plan changed, in words that never reveal a budget. */

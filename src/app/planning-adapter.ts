@@ -37,7 +37,7 @@ export function toPlanningUpdate(update: C.StoredConstraintUpdate): B.Constraint
     case 'budget': value = { cents: update.value }; break;
     case 'availability': value = { intervals: update.value.map(({ startAt, endAt }) => ({ startAt, endAt })) }; break;
     case 'preferences': case 'must_dos': value = { items: update.value }; break;
-    case 'transport': value = { mode: 'car', vehicleAvailable: update.value.hasVehicle }; break;
+    case 'transport': value = { mode: update.value.mode === 'plane' ? 'plane' : 'car', vehicleAvailable: update.value.hasVehicle }; break;
     case 'region': value = { ...placeFor(update.value.label, update.value.maxTravelMinutes), maxTravelMinutes: update.value.maxTravelMinutes }; break;
     case 'origin': value = { city: update.value.city }; break;
     case 'duration': value = update.value; break;
@@ -52,7 +52,7 @@ export function toPlanningCommandUpdate(update: C.ConstraintUpdate): B.Constrain
     case 'availability': value = { intervals: update.value.map(({ startAt, endAt }) => ({ startAt, endAt })) }; break;
     case 'preferences': case 'must_dos': value = { items: update.value }; break;
     case 'region': value = { ...placeFor(update.value, update.maxTravelMinutes), ...(update.maxTravelMinutes !== undefined ? { maxTravelMinutes: update.maxTravelMinutes } : {}) }; break;
-    case 'transport': value = { mode: 'car', vehicleAvailable: update.vehicleAvailable ?? (update.value === 'own_vehicle' ? true : update.value === 'no_vehicle' ? false : undefined) }; break;
+    case 'transport': value = update.value === 'plane' ? { mode: 'plane', vehicleAvailable: false } : { mode: 'car', vehicleAvailable: update.vehicleAvailable ?? (update.value === 'own_vehicle' ? true : update.value === 'no_vehicle' || update.value === 'driving' ? false : undefined) }; break;
     case 'origin': value = { city: update.value }; break;
     case 'duration': value = { nights: update.value }; break;
   }
@@ -65,7 +65,7 @@ function fromUpdate(r: B.ConstraintRecord, timeZone: string): C.MemberConstraint
     case 'budget': value = r.value.cents; break;
     case 'availability': value = r.value.intervals.map(w => ({ ...w, timeZone })); break;
     case 'preferences': case 'must_dos': value = r.value.items; break;
-    case 'transport': value = { mode: 'road_trip', hasVehicle: r.value.vehicleAvailable, ...((r as { rawText?: string }).rawText ? { notes: (r as { rawText?: string }).rawText } : {}) }; break;
+    case 'transport': value = { mode: r.value.mode === 'plane' ? 'plane' : 'road_trip', hasVehicle: r.value.vehicleAvailable, ...((r as { rawText?: string }).rawText ? { notes: (r as { rawText?: string }).rawText } : {}) }; break;
     case 'region': value = { label: r.value.searchRegion ?? r.value.destination ?? '', ...(r.value.maxTravelMinutes !== undefined ? { maxTravelMinutes: r.value.maxTravelMinutes } : {}) }; break;
     case 'origin': value = { city: r.value.city, region: '', timeZone }; break;
     case 'duration': value = r.value; break;
