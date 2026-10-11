@@ -207,7 +207,7 @@ describe('the Gemini provider with the price pass', () => {
     const calls: string[] = [];
     const provider = createResearchProvider({ mode: 'live', live: createGeminiProvider({ apiKey: 'k', fetch: fetchFor(calls) as never, now: () => NOW, lookupAdmissions: true, typicalCosts: false }) });
     const result = await provider.search(request);
-    expect(calls).toHaveLength(5); // 1 search + 4 price lookups for the one option
+    expect(calls).toHaveLength(6); // 1 search, 1 follow-up search (only one option came back), 4 price lookups for the one option
     const [option] = result.options;
     expect([...option.costs, ...option.perPersonCosts].every((c) => c.priceStatus === 'estimate')).toBe(true);
     const ids = new Set(result.evidence.map((e) => e.evidenceId));
@@ -225,7 +225,7 @@ describe('the Gemini provider with the price pass', () => {
       const calls: string[] = [];
       const provider = createGeminiProvider({ apiKey: 'k', fetch: fetchFor(calls) as never, now: () => NOW, ...config });
       await provider.search(req);
-      expect(calls).toHaveLength(1);
+      expect(calls.filter((c) => /LODGING \||FUEL \||MEAL \||ADMISSION \|/.test(c))).toHaveLength(0);
     }
   });
 
@@ -277,10 +277,11 @@ describe('typical costs when nothing could be found', () => {
     expect(notes.join(' ')).toMatch(/typical cost/i);
   });
 
-  it('keeps fuel unknown when there is no drive time, because distance cannot be guessed', async () => {
+  it('estimates fuel from a default drive when there is no drive time, and says so', async () => {
     const { option: priced } = await priceOption(option(null), request, nothing, store(), typical);
     const fuel = priced.costs.find((c) => c.costId === 'fuel')!;
-    expect(fuel.priceStatus).toBe('unknown');
+    expect(fuel.priceStatus).toBe('estimate');
+    expect(priced.tradeoffs.join(' ')).toMatch(/didn't find the drive time/);
     expect(priced.costs.find((c) => c.costId === 'lodging')!.priceStatus).toBe('estimate');
   });
 
@@ -307,7 +308,7 @@ describe('typical costs when nothing could be found', () => {
 });
 
 describe('research speed', () => {
-  const lines = ['A', 'B', 'C', 'D'].map((n) => `OPTION | Option ${n} | NC mountains | 150 | hiking | unknown | unknown | unknown | unknown | Hike~Linville, NC~4~hiking | A tradeoff.`);
+  const lines = ['A', 'B', 'C', 'D'].map((n) => `OPTION | Option ${n} | NC mountains | 150 | hiking | unknown | unknown | unknown | unknown | Hike~Linville ${n}, NC~4~hiking | A tradeoff.`);
   const request: ResearchRequest = { purpose: 'plan', revision: 2, origin: 'Chapel Hill', searchRegion: 'NC mountains', interests: ['hiking'], nights: 2, groupSize: 3 };
 
   it('prices the options at the same time, but never more than six requests at once', async () => {

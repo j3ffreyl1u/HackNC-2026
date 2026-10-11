@@ -72,7 +72,7 @@ describe('a live result in the planner', () => {
     expect(outcome.mode).toBe('live');
     expect(outcome.candidates).toEqual([]);
     const text = outcome.replies.map((r) => r.text).join('\n');
-    expect(text).toMatch(/couldn't find any prices/);
+    expect(text).toMatch(/couldn't price them well enough/);
     expect(text).not.toMatch(/\$0\.00/);
     expect(text).not.toMatch(/fixture data/i);
   });

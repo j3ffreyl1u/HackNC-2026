@@ -14,6 +14,13 @@ export type AskGrounded = (prompt: string) => Promise<unknown>;
 /** Only the first few options are priced: each costs about four searches' worth of requests. */
 export const PRICED_OPTIONS = 3;
 
+/** A road, not a place: "US-29 Piedmont Route", "I-81 Detour", "Bypass Route via US-301". Options and stops like these are dropped. */
+const ROAD_NUMBER = /\b(?:US|NC|VA|SR|MD|WV|PA|SC|TN|GA|KY|OH)[- ]?\d{1,3}\b|\bI-\d{1,3}\b/;
+const ROAD_WORDS = /\b(?:byways?|bypass|detour|interstate|highway|route via)\b|\broute\s*$/i;
+export function looksLikeRoute(name: string): boolean {
+  return ROAD_NUMBER.test(name) || ROAD_WORDS.test(name.trim());
+}
+
 const TAX_AND_FEES = 1.15; // lodging: listed rates often exclude taxes and fees
 const MPG_LOW = 20; // fuel: worst-case efficiency for the upper estimate
 const MPG_HIGH = 30;
@@ -196,6 +203,9 @@ const TYPICAL = {
   mealLowCents: 800,
   mealHighCents: 2_500,
   admissionHighCents: 1_500,
+  parkingHighCentsPerDay: 3_500,
+  /** When neither a drive time nor a drive limit is known: a typical one-way drive for a weekend trip. */
+  defaultDriveMinutes: 240,
 };
 
 export const TYPICAL_LABEL = 'typical cost, not a found price';
@@ -209,7 +219,7 @@ export function typicalLodging(nights: number, groupSize: number): Priced {
   };
 }
 
-/** Needs a drive time: a distance cannot be guessed. */
+/** From the drive time. With none known, callers pass the group's drive limit or the default, and say so. */
 export function typicalFuel(driveMinutes: number | undefined): Priced | undefined {
   if (driveMinutes === undefined || !Number.isFinite(driveMinutes) || driveMinutes <= 0) return undefined;
   return {
@@ -217,6 +227,11 @@ export function typicalFuel(driveMinutes: number | undefined): Priced | undefine
     highCents: Math.ceil(((2 * driveMinutes * TYPICAL.milesPerMinuteHigh) / MPG_LOW) * LOCAL_DRIVING * TYPICAL.gasHighCentsPerGallon),
     evidenceIds: [],
   };
+}
+
+/** Free at the low end (free street or lot parking); the high end is a city garage for each day of the trip. */
+export function typicalParking(nights: number): Priced {
+  return { lowCents: 0, highCents: (nights + 1) * TYPICAL.parkingHighCentsPerDay, evidenceIds: [] };
 }
 
 export function typicalMeals(nights: number): Priced {
@@ -284,7 +299,11 @@ export async function priceOption(option: ResearchOption, request: ResearchReque
     return { priced: guess, assumed: guess !== undefined };
   };
   const lodgingPick = pick('lodging', foundLodging, () => typicalLodging(nights, groupSize));
-  const fuelPick = pick('fuel', foundFuel, () => typicalFuel(option.driveMinutesFromOrigin));
+  // A missing drive time falls back to the longest drive the group allowed, then to a typical weekend drive. Never unknown.
+  const driveGuessed = option.driveMinutesFromOrigin === undefined;
+  const fuelPick = pick('fuel', foundFuel, () => typicalFuel(option.driveMinutesFromOrigin ?? request.maxTravelMinutes ?? TYPICAL.defaultDriveMinutes));
+  const parkingPick = typical ? { priced: typicalParking(nights), assumed: true } : { priced: undefined, assumed: false };
+  if (parkingPick.priced) assumedKinds.push('parking');
   const admissionsPick = pick('admissions', foundAdmissions, () => typicalAdmissions(option));
   const foodPick = pick('food', foundFood, () => typicalMeals(nights));
   const [lodging, fuel, admissions, food] = [lodgingPick.priced, fuelPick.priced, admissionsPick.priced, foodPick.priced];
@@ -300,6 +319,7 @@ export async function priceOption(option: ResearchOption, request: ResearchReque
   if (admissions) tradeoffs.push(ASSUMPTIONS.admissions);
   if (food) tradeoffs.push(ASSUMPTIONS.food);
   tradeoffs.push('Prices come from web search and are unverified estimates.');
+  if (fuelPick.assumed && driveGuessed) tradeoffs.push("I didn't find the drive time, so fuel assumes the longest drive you allowed (or about 4 hours each way).");
   if (assumedKinds.length > 0) {
     tradeoffs.push(`${assumedKinds.join(', ')} ${assumedKinds.length === 1 ? 'is a typical cost' : 'are typical costs'} for a mid-range road trip, not a price I found. The upper figures are deliberately generous.`);
     notes.push(`Used typical costs for ${assumedKinds.join(', ')} at ${option.name}; no sourced price was found.`);
@@ -314,7 +334,8 @@ export async function priceOption(option: ResearchOption, request: ResearchReque
       ...option,
       costs: [
         { ...item('lodging', 'accommodation', 'Lodging', lodging, lodgingPick.assumed), allocation: 'equal_shared' },
-        { ...item('fuel', 'fuel_parking_tolls', 'Fuel (parking and tolls not included)', fuel, fuelPick.assumed), allocation: 'equal_shared' },
+        { ...item('fuel', 'fuel_parking_tolls', typical ? 'Fuel' : 'Fuel (parking and tolls not included)', fuel, fuelPick.assumed), allocation: 'equal_shared' },
+        ...(parkingPick.priced ? [{ ...item('parking', 'fuel_parking_tolls', 'Parking', parkingPick.priced, true), allocation: 'equal_shared' as const }] : []),
       ],
       perPersonCosts: [template(item('admissions', 'activities', 'Admissions', admissions, admissionsPick.assumed)), template(item('food', 'food', 'Food', food, foodPick.assumed))],
       evidenceIds,

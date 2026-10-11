@@ -97,9 +97,9 @@ describe('planTrip: the acceptance fixture', () => {
     const text = groupText(outcome);
     expect(text).toContain('{{PLAN_LINK}}');              // sources, itinerary and costs live on the trip page
     expect(text).not.toContain('https://fixtures.invalid/');
-    expect(text).toMatch(/about \$[\d,.]+-\$[\d,.]+ each/);
+    expect(text).toMatch(/About \$\d+ each \(hotel \$\d+/);
     expect(text).toMatch(/demo data/i);
-    expect(text).toMatch(/couldn't price all of it yet/);   // the option with incomplete prices is flagged as a maybe, not proposed
+    expect(text).toMatch(/couldn't price it well enough to propose it/);   // the option with incomplete prices is flagged as a maybe, not proposed
     for (const reply of outcome.replies) expect(reply.text.length).toBeLessThan(420);
   });
 
@@ -123,15 +123,14 @@ describe('planTrip: hard limits filter', () => {
     expect(outcome.candidates.some((c) => c.feasibility.feasible)).toBe(false);
   });
 
-  it('explains the conflict, asks for consent to relax, and names nobody’s cap publicly', async () => {
+  it('explains the conflict, asks for consent to relax, and states no amount publicly', async () => {
     const outcome = await planTrip(readyState({ mason: 5_000, alex: 5_000, jordan: 5_000 }), provider);
     expect(outcome.candidates.every((c) => !c.feasibility.feasible)).toBe(true);
     const text = groupText(outcome);
     expect(text).toMatch(/couldn't find a 2-night trip .*that works for both of you/);
-    expect(text).toMatch(/cost more than at least one of you wants to spend/);
     expect(text).toMatch(/A few ways to fix it/);
     expect(text).toMatch(/never change anyone's limit unless they say so/);
-    expect(text).not.toMatch(/\$50|5,?000|Mason|Alex|Jordan/);
+    expect(text).not.toMatch(/\$\d|5,?000/);
   });
 
   it('tells each person who would have to stretch their own overage, privately', async () => {
@@ -177,7 +176,7 @@ describe('planTrip: hard limits filter', () => {
     const outcome = await planTrip(readyState(), createFixtureProvider(data, () => NOW));
     expect(outcome.candidates.map((c) => c.title)).toEqual(['State park and small-town weekend', 'Mountain cabin weekend']);
     const text = groupText(outcome);
-    expect(text).toMatch(/City and brewery weekend, but couldn't find any prices for it/);
+    expect(text).toMatch(/I also found City and brewery weekend, but I couldn't price it well enough to propose it/);
     expect(text).not.toMatch(/\$0\.00 to \$0\.00/);
   });
 
@@ -247,5 +246,75 @@ describe('end to end with the state machine', () => {
     const result = installCandidates(state, 1, candidates);
     expect(result.rejection?.code).toBe('STALE_REVISION');
     expect(result.state).toBe(state);
+  });
+});
+
+describe('planTrip: option messages read like a friend explaining', () => {
+  const proposals = async () => (await planTrip(readyState(), provider)).replies.filter((r) => r.proposalRef).map((r) => r.text);
+
+  it('is three short lines: what and when, where, a rough cost per person with its parts, and the drive', async () => {
+    for (const [i, text] of (await proposals()).entries()) {
+      const lines = text.split('\n').filter((l) => !l.startsWith('Good news'));
+      expect(lines.filter(Boolean).length, text).toBeLessThanOrEqual(4);
+      expect(text).toMatch(new RegExp(`Option ${i + 1}: .+, Oct 16-18\\.`));
+      expect(text).toMatch(/About \$\d+ each \(hotel \$\d+, food \$\d+, gas and parking \$\d+/);
+      expect(text).toMatch(/Roughly a [\d.]+ hours? drive\./);
+      expect(text).not.toContain('·');
+    }
+  });
+
+  it('the total is the sum of the parts it lists', async () => {
+    for (const text of await proposals()) {
+      const total = Number(/About \$(\d+) each/.exec(text)?.[1]);
+      const inside = /each \((.*?)\)\./.exec(text)?.[1] ?? '';
+      const parts = [...inside.matchAll(/\$(\d+)/g)].map((m) => Number(m[1]));
+      expect(parts.length).toBeGreaterThanOrEqual(3);
+      expect(parts.reduce((a, b) => a + b, 0)).toBe(total);
+    }
+  });
+
+  it('never shows a route as something to do', async () => {
+    for (const text of await proposals()) expect(text).not.toMatch(/\b(?:US|I)-\d+|byway|bypass|detour/i);
+  });
+
+  it('puts everything found-but-not-proposed in one line', async () => {
+    const text = groupText(await planTrip(readyState(), provider));
+    expect(text.match(/I also found/g) ?? []).toHaveLength(1);
+  });
+
+  it('says a provisional option is at least that much, with some prices unknown', async () => {
+    const outcome = await planTrip(readyState(), provider);
+    const maybe = outcome.candidates.find((c) => !c.feasibility.feasible);
+    expect(maybe).toBeDefined();
+    expect(outcome.replies.map((r) => r.text).join('\n')).not.toMatch(/Maybe: City/); // maybes live on the page, not as chat proposals
+  });
+});
+
+describe('planTrip: whose limit is in the way', () => {
+  const privatesOf = (o: { replies: { audience: { kind: string; memberId?: string }; text: string }[] }) => o.replies.filter((r) => r.audience.kind === 'private');
+
+  it('names the person whose limit the closest trip breaks, with no amounts, and nobody else', async () => {
+    const outcome = await planTrip(readyState({ mason: 17_000, alex: 25_000, jordan: 30_000 }), provider);
+    const text = groupText(outcome);
+    expect(text).toMatch(/Mason/);
+    expect(text).not.toMatch(/Alex|Jordan/);
+    expect(text).not.toMatch(/\$\d|\d,\d{3}|17,?000|170/);
+    expect(text).toMatch(/Mason, I'm sending you a private note/);
+  });
+
+  it('sends the exact amount only to that person', async () => {
+    const outcome = await planTrip(readyState({ mason: 17_000, alex: 25_000, jordan: 30_000 }), provider);
+    const privates = privatesOf(outcome);
+    expect(privates.map((p) => p.audience.memberId)).toEqual(['mason']);
+    expect(privates[0].text).toMatch(/\$\d+\.\d\d over your max/);
+    for (const r of outcome.replies.filter((x) => x.audience.kind === 'group')) expect(r.text).not.toMatch(/over your max|\$10\.00/);
+  });
+
+  it('names both people when both limits are in the way, and the higher limit is not blamed', async () => {
+    const outcome = await planTrip(readyState({ mason: 17_000, alex: 17_000, jordan: 30_000 }), provider);
+    const text = groupText(outcome);
+    expect(text).toMatch(/Mason and Alex/);
+    expect(text).not.toMatch(/Jordan/);
+    expect(privatesOf(outcome).map((p) => p.audience.memberId).sort()).toEqual(['alex', 'mason']);
   });
 });

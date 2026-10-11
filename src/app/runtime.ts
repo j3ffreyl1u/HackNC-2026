@@ -44,6 +44,8 @@ export interface ApplicationRuntimeDependencies {
   /** Address of the approved plan as a calendar file. Without it, the line that offers the calendar is left out. */
   calendarUrl?: string;
   fundService?: FundService;
+  /** If a search is still running after this long, the group gets one short "still looking" text (default 45 s, 0 turns it off). */
+  stillLookingMs?: number;
 }
 
 export interface ApplicationRuntime {
@@ -360,7 +362,11 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
     researchRevisions.add(state.revision);
     const task = runResearch(state).catch(() => undefined);
     queued.push(task);
+    const timer = setTimeout(() => { void sendStillLooking(state.revision).catch(() => undefined); }, dependencies.stillLookingMs ?? 45_000);
+    timer.unref?.();
+    if ((dependencies.stillLookingMs ?? 45_000) <= 0) clearTimeout(timer);
     void task.finally(() => {
+      clearTimeout(timer);
       researchRevisions.delete(state.revision);
       const index = queued.indexOf(task);
       if (index >= 0) queued.splice(index, 1);
@@ -411,6 +417,21 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
       messages,
     });
     if (outcome === 'committed') await runtime.drainOutbox();
+  }
+
+  /** One short note per search that is taking a while, so nobody wonders whether the chat is stuck. */
+  async function sendStillLooking(revision: number): Promise<void> {
+    if (stopped) return;
+    const current = await repository.loadTrip(tripId);
+    const enrollment = await repository.getEnrollment(tripId);
+    if (!current || current.revision !== revision || current.status !== 'researching' || !enrollment) return;
+    const result = await repository.commitEvent({
+      eventId: `still-looking:${tripId}:${revision}`,
+      state: current,
+      expectedRevision: revision,
+      messages: [makeMessage(tripId, `still-looking:${revision}`, { audience: { kind: 'group', spaceId: enrollment.groupSpaceId }, text: "Still looking. This one's taking a little longer than usual, and I'll send options as soon as I have them." })],
+    });
+    if (result === 'committed') await runtime.drainOutbox();
   }
 
   async function reportResearchFailure(revision: number): Promise<void> {

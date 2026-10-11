@@ -138,3 +138,11 @@ Read directly from https://ai.google.dev/gemini-api/terms, 2026-10-10 (the earli
 - **Nature and sustainability research** for aligned tracks is not built.
 - **Availability** is not checked for any option, live or fixture. All outputs say so.
 - Nothing here claims a booking, a guaranteed price or real inventory.
+
+## Places, estimates, cache and messages (2026-10-11)
+
+- The search asks for places to visit and things to do at the named destination that match the group's interests. Options and stops that are roads (`US-29`, `I-81`, "Byway", "Detour", a name ending in "Route") are dropped and counted in the limitations. If fewer than two usable options come back, one follow-up search asks for different ones.
+- With typical costs on (the live default), every essential cost has a number: lodging, fuel, parking, food and admissions. A missing drive time uses the group's longest allowed drive, then 4 hours. Typical costs are labelled "typical cost, not a found price" and carry no source. Found prices keep the citing site's name as their source.
+- Identical questions are reused for one hour (`cacheMs`, 0 turns it off); failures are never cached. Price lookups share what is left of a 45 second budget after the options search (never under 12 seconds). The runtime sends one "still looking" text after 45 seconds (`stillLookingMs`).
+- Option messages are three lines: what and when, where, and a rough cost per person (midpoint of low and high, rounded to $5, total equals the listed parts) with the drive. Found-but-not-proposed options are one line.
+- When nothing fits on budget, the group message names whoever's own limit the closest trip breaks, with no amounts; the exact overage goes only to them, privately.

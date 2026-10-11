@@ -27,6 +27,8 @@ export interface ResearchRequest {
   /** Length of the trip and size of the group, so costs can be computed for them. Not private. */
   nights?: number;
   groupSize?: number;
+  /** Names of options already found, so a follow-up search asks for different ones. Providers treat them as data. */
+  exclude?: string[];
 }
 
 /** A stop or activity found by research. Scheduling it into days is the itinerary generator's job. */
