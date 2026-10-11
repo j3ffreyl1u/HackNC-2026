@@ -531,6 +531,7 @@ export function createParser(deps: ConversationDependencies) {
     }
     // Money talk that is not a question about the log: nothing is paid or recorded here.
     if (talkativeChat && (/^(?:i|we)\s+(?:just\s+)?(?:covered|paid\s+for|bought|treated|got)\s+(?:everyone|everybody|us|all of us|the\s+(?:group|table|whole\s+\w+)|everyone'?s|everybodys)\b/i.test(lean) || /\b(?:venmo|zelle|paypal|cash\s*app|apple\s*pay)\b/i.test(lean) && /^(?:(?:can|could|should|let)\b.*|(?:venmo|zelle|paypal|cash\s*app)\b.*)$/i.test(lean))) return reply(msg, READ_ONLY_MONEY, 'read-only-money', true);
+    if (talkativeChat && /\b(?:add|put|send|save|sync)\b.*\b(?:calendar|cal|invite|ics|reminder)\b/i.test(lean) && !/^(?:how|what|when|where|why|who|which|do|does|did|is|are)\b/i.test(lean)) return reply(msg, "I can't add things to a calendar yet. Ask me for the plan and I'll list the dates so you can add them yourself.", 'no-calendar', true);
     // "can we do a day earlier": the dates are theirs to restate.
     if (talkativeChat && /^(?:(?:can|could|would)\s+we|let'?s|how about|what about)\s+(?:do\s+|go\s+|leave\s+|start\s+|make\s+it\s+)?(?:it\s+)?(?:a|one|1|two|2|a\s+couple\s+of)\s+days?\s+(?:earlier|later|before|after)$/i.test(lean)) return reply(msg, 'Tell me the exact dates you want and I\'ll update the plan, like "free Nov 13-15".', 'dates-shift', true);
     // Spending from the simulated fund: "I spent $60 on gas", "we paid 300 for the hotel", "bought food for $40", "log $20 for parking". The app asks for a yes first.
@@ -601,7 +602,7 @@ export function createParser(deps: ConversationDependencies) {
     if ((m = GUIDE.exec(text.trim()))) return one(msg, ctx, { kind: 'ask_guide', question: m[1]!.trim() });
     if ((m = ACCEPT.exec(plain))) return bindPlan(msg, ctx, 'accept', m[1]!, Number(m[2]));
     if ((m = SELECT.exec(plain)) && !(m[1]!.toLowerCase() in CHOICE_NUMBER)) return bindPlan(msg, ctx, 'select', m[1]!, m[2] ? Number(m[2]) : undefined);
-    if (actionable(ctx, 'select').length === 0 && ctx.status === 'awaiting_acceptance' && PICK_WORDS.exec(plain) && !(BARE_CHOICE.test(plain) && (ctx.pendingQuestion || ctx.pendingConfirmation))) return alreadyPicked(msg, ctx);
+    if (actionable(ctx, 'select').length === 0 && ctx.status === 'awaiting_acceptance' && PICK_WORDS.exec(plain) && !(BARE_CHOICE.test(plain) && (ctx.pendingQuestion || ctx.pendingConfirmation))) { const w = (PICK_WORDS.exec(plain)?.[1] ?? '').toLowerCase(); return alreadyPicked(msg, ctx, CHOICE_NUMBER[w] ?? (Number(w) || undefined)); }
     // "i like the cabin", "we'll take the state park": the words name exactly one of the options on offer.
     const byName = /^(?:(?:ok(?:ay)?|yeah|yes|so|alright)[,\s]+)?(?:(?:i|we)(?:'ll|'d| will| would)?\s+)?(?:(?:like|love|want)\s+the\s+|(?:prefer|go with|take|pick|choose|vote for|let'?s do|lets do|let'?s go with)\s+(?:the\s+)?)([a-z][a-z' -]{2,40}?)(?:\s+(?:one|option|plan|trip|weekend|please|then|better|best))*$/i.exec(plain);
     if (byName && actionable(ctx, 'select').length > 1) {
@@ -621,8 +622,13 @@ export function createParser(deps: ConversationDependencies) {
   }
 
   /** A pick after a plan is already chosen: say which one it is and what is needed, instead of "nothing to pick yet". */
-  function alreadyPicked(msg: InboundMessage, ctx: TripConversationContext): ParseResult {
+  function alreadyPicked(msg: InboundMessage, ctx: TripConversationContext, choice?: number): ParseResult {
     const mine = actionable(ctx, 'accept')[0];
+    // They named a different option than the one picked: say so, instead of repeating "already the pick" as if they had named the same one.
+    const named = choice === undefined ? undefined : /^Option (\d+) is (.+?)(?:,|:|$)/.exec(ctx.optionFacts?.find((f) => f.startsWith(`Option ${choice} is `)) ?? '')?.[2];
+    if (mine && named && !mine.description.toLowerCase().startsWith(named.toLowerCase()) && !named.toLowerCase().startsWith(mine.description.toLowerCase())) {
+      return reply(msg, `${mine.description} is already the pick, so I can't switch to ${named}. To go a different way, change a detail like the dates or your max and I'll bring fresh options. Otherwise say "I'm in" to lock it in.`, 'already-picked-other', true);
+    }
     return reply(msg, mine
       ? `${mine.description} is already the pick. Say "I'm in" to lock it in.`
       : "A plan is already picked and you've said you're in. I'm waiting on the others.", 'already-picked', true);
@@ -644,6 +650,7 @@ export function createParser(deps: ConversationDependencies) {
     const done = ctx.status === 'approved';
     if (/^(?:thanks?|thank you|thx|ty|appreciate|you'?re (?:awesome|great|the best|amazing|so helpful|helpful|a lifesaver|funny)|great job|good job|nice work|love it|this is (?:great|awesome|amazing|fun|cool))/i.test(text)) return reply(msg, done ? 'Anytime! Have a great trip.' : 'Anytime! Tell me if you want to change anything, or say "show us some options" when you\'re ready.', 'welcome');
     if (/^(?:(?:ok(?:ay)?|cool|nice|great|awesome|sweet|alright|yay)[\s,!.]+)*(?:see (?:you|ya|u)\b|have fun|can'?t wait|so excited|excited)/i.test(text)) return reply(msg, done ? 'See you there! Tell me if a detail changes and I will look again.' : "Sounds fun! Tell me if you want to change anything, or say \"show us some options\" when you're ready.", 'see-you');
+    if (/^(?:hold on|hang on|wait|one (?:sec|second|moment|min|minute)|give me a (?:sec|second|minute|min|moment)|brb)\b/i.test(text)) return reply(msg, "No rush. I'm here whenever you're ready.", 'hold-on');
     if (/^good ?night\b|^(?:night|nite|gn|bye|goodbye|see ya|later|ttyl|talk later)\b/i.test(text)) return reply(msg, 'Night! I\'ll be here whenever you want to pick this back up.', 'goodnight');
     if (/^(?:(?:hi|hey|hello|yo|hiya|howdy|hola|sup|wassup|what'?s up|whats up|what up|gm)\b|good )/i.test(text)) {
       // Partway through a question: put it back instead of inviting them to start over.

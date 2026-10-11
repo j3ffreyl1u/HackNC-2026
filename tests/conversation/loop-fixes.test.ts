@@ -56,3 +56,12 @@ describe('"help" is a request for the menu, not a miss', () => {
     expect(JSON.stringify(r)).toMatch(/Happy to help/);
   });
 });
+
+describe('a few more everyday messages', () => {
+  it('"hold on" and "add it to my calendar" are answered, not missed', async () => {
+    const { setup, msg } = await import('./helpers.js');
+    const ask = async (text: string) => JSON.stringify(await setup({} as never, undefined, 'direct').service.parseInbound(msg({ text, visibility: 'private', spaceId: 'dm-mason' })));
+    expect(await ask('hold on')).toMatch(/No rush/);
+    expect(await ask('add it to my calendar')).toMatch(/can't add things to a calendar/);
+  });
+});
