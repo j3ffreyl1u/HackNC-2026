@@ -48,3 +48,11 @@ describe('picking an option by its name', () => {
     expect(JSON.stringify(r)).toMatch(/c2/);
   });
 });
+
+describe('"help" is a request for the menu, not a miss', () => {
+  it('replies with what the assistant can do', async () => {
+    const { setup, msg } = await import('./helpers.js');
+    const r = await setup({} as never, undefined, 'direct').service.parseInbound(msg({ text: 'help', visibility: 'private', spaceId: 'dm-mason' }));
+    expect(JSON.stringify(r)).toMatch(/Happy to help/);
+  });
+});

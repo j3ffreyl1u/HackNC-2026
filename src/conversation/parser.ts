@@ -586,6 +586,9 @@ export function createParser(deps: ConversationDependencies) {
         ? `Still waiting on ${list(waiting)}. Say "show us some options" and I'll nudge them and check what else is open.`
         : `I have what I need from the others. Say "show us some options" when you're ready, and I'll check what's still open.`, 'status-gathering', true);
     }
+    if (/^(?:help(?:\s+me)?|menu|commands|what can i say|how does this work)[?!.\s]*$/i.test(plain) && (msg.visibility === 'private' || trip.mode === 'direct')) {
+      return reply(msg, 'Happy to help. Tell me your budget, free dates and what you\'re into, say "show us some options" when you\'re ready, or ask me about the trip. You can also say things like "ask Mason if he has a car".', 'help-menu', true);
+    }
     if (REQUEST_PLANS.test(plain)) return one(msg, ctx, { kind: 'request_plans' });
     if (REQUEST_FUNDING.test(plain)) return one(msg, ctx, { kind: 'request_funding' });
     if ((m = GUIDE.exec(text.trim()))) return one(msg, ctx, { kind: 'ask_guide', question: m[1]!.trim() });
