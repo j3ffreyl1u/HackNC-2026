@@ -12,6 +12,8 @@ export interface AppConfig {
   researchMode: ResearchMode;
   calendarMode: CalendarMode;
   fundingMode: FundingMode;
+  /** `gemini` rewords chat messages so they read like a friend texting; `off` sends the built-in text. */
+  voiceMode: 'off' | 'gemini';
   databasePath: string;
   tripConfigPath: string;
   port: number;
@@ -50,6 +52,7 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const chatMode = choice(env.CHAT_MODE, ['mock', 'photon'] as const, 'mock', 'CHAT_MODE');
   const researchMode = choice(env.RESEARCH_MODE, ['mock', 'gemini', 'live'] as const, 'mock', 'RESEARCH_MODE');
   const calendarMode = choice(env.CALENDAR_MODE, ['manual', 'google'] as const, 'manual', 'CALENDAR_MODE');
+  const voiceMode = choice(env.VOICE, ['off', 'gemini'] as const, 'off', 'VOICE');
   const fundingMode = choice(env.FUNDING_MODE, ['disabled', 'mock', 'nessie'] as const, 'disabled', 'FUNDING_MODE');
   const port = env.PORT === undefined ? 3000 : Number(env.PORT);
   if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new AppConfigError('PORT must be an integer from 1 to 65535.');
@@ -58,7 +61,7 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     required(env.SPECTRUM_PROJECT_ID, 'SPECTRUM_PROJECT_ID');
     required(env.SPECTRUM_PROJECT_SECRET, 'SPECTRUM_PROJECT_SECRET');
   }
-  if (researchMode === 'gemini' || researchMode === 'live') {
+  if (researchMode === 'gemini' || researchMode === 'live' || voiceMode === 'gemini') {
     required(env.GEMINI_API_KEY, 'GEMINI_API_KEY');
   }
   if (calendarMode === 'google') {
@@ -76,7 +79,7 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   }
 
   return {
-    chatMode, researchMode, calendarMode, fundingMode,
+    chatMode, researchMode, calendarMode, fundingMode, voiceMode,
     databasePath: resolve(env.DATABASE_PATH ?? 'data/trips.sqlite'),
     tripConfigPath: resolve(env.TRIP_CONFIG_PATH ?? 'tests/fixtures/trip.json'),
     port,

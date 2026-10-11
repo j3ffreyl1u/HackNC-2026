@@ -7,6 +7,7 @@ import { createPlannerAdapter } from './planning-adapter.js';
 import { createApplicationRuntime } from './runtime.js';
 import { createResearchProvider } from '../research/provider.js';
 import { createGeminiProvider, geminiConfigFromEnv } from '../research/gemini.js';
+import { createGeminiVoice } from '../conversation/voice.js';
 import { demoResearchFixtures as defaultFixtures } from './research-fixtures.js';
 import { LiveResearchDisplay, createLivePlanner } from './live-research.js';
 import { loadAppConfig, loadEnvironmentFile } from './config.js';
@@ -38,7 +39,8 @@ export async function startApp(): Promise<() => Promise<void>> {
       : createPlannerAdapter(createResearchProvider({ mode: 'mock', fixtures: defaultFixtures }), enrollment.groupSpaceId);
     // Phones can only open the trip page if this is an address they can reach (set PUBLIC_BASE_URL to a tunnel or LAN address).
     const planUrl = `${(process.env.PUBLIC_BASE_URL?.trim() || `http://127.0.0.1:${config.port}`).replace(/\/+$/, '')}/?trip=${encodeURIComponent(enrollment.tripId)}`;
-    runtime = createApplicationRuntime({ repository, conversation: chat.conversation, planner, tripId: enrollment.tripId, planUrl });
+    runtime = createApplicationRuntime({ repository, conversation: chat.conversation, planner, tripId: enrollment.tripId, planUrl,
+      ...(config.voiceMode === 'gemini' ? { voice: createGeminiVoice({ apiKey: process.env.GEMINI_API_KEY!, model: process.env.GEMINI_VOICE_MODEL || process.env.GEMINI_INTENT_MODEL || process.env.GEMINI_MODEL || 'gemini-3.8-flash', onError: () => console.error('Voice rewrite failed; sent the original text.') }) } : {}) });
     await runtime.start();
     const port = await server.listen(config.port);
     console.log(`Local trip plan page: http://127.0.0.1:${port}`);

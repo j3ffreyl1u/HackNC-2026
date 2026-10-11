@@ -18,7 +18,7 @@ const dirs: string[] = [];
 afterEach(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true }); });
 
 /** The real pieces (A's parser + C's runtime + B's planner) over a mock phone line, in direct (one-on-one) mode. */
-async function live() {
+async function live(voice?: { polish(text: string): Promise<string> }) {
   const dir = mkdtempSync(join(tmpdir(), 'dm-flow-')); dirs.push(dir);
   const path = join(dir, 'trip.json');
   writeFileSync(path, JSON.stringify({ mode: 'direct', tripId: 'dm', groupSpaceId: 'direct:dm', participants: [
@@ -31,7 +31,7 @@ async function live() {
   const messenger = new MockMessenger();
   const chat = await createChatAdapter(trip.enrollment, trip.state.timeZone ?? 'America/New_York', 'mock', process.env, messenger);
   const planner = createPlannerAdapter(createResearchProvider({ mode: 'mock', fixtures: defaultFixtures }), trip.enrollment.groupSpaceId);
-  const runtime = createApplicationRuntime({ repository, conversation: chat.conversation, planner, tripId: 'dm' });
+  const runtime = createApplicationRuntime({ repository, conversation: chat.conversation, planner, tripId: 'dm', ...(voice ? { voice } : {}) });
   await runtime.start();
   let n = 0;
   /** Send one DM and return exactly what the bot texted back to each person because of it. */
@@ -258,5 +258,17 @@ describe('first live DM scenario, end to end (A parser + C runtime + B planner, 
     const r = await t.say(MASON, "I'm free Nov 14-17, my max is $500, I like food");
     for (const who of [r.jeff, r.mason]) expect(who.some((x) => /Jeffrey, since you've got more room, any chance you could do Nov 14-17\?/.test(x))).toBe(true);
     await t.stop();
+  });
+
+  it('the voice layer rewords plain chat, but never a message with money in it, and a failing voice changes nothing', async () => {
+    const t = await live({ polish: async (text) => (text.includes('$') ? `CORRUPTED ${text}` : `~ ${text}`) });   // would corrupt money if it were ever given it
+    const first = await t.say(JEFF, 'I want to plan a trip');
+    expect(first.jeff).toEqual(['~ Where are you all leaving from?']);
+    const budget = await t.say(JEFF, 'Chapel Hill, 2 nights, my max is $250');
+    expect(budget.jeff.some((x) => x.includes('$250') && !x.startsWith('~'))).toBe(true);    // the message carrying money is untouched
+    await t.stop();
+    const broken = await live({ polish: async () => { throw new Error('model down'); } });
+    expect((await broken.say(JEFF, 'I want to plan a trip')).jeff).toEqual(['Where are you all leaving from?']);   // falls back to the original
+    await broken.stop();
   });
 });

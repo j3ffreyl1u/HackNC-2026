@@ -34,6 +34,8 @@ export interface ApplicationRuntimeDependencies {
   conversation: ConversationService;
   planner: PlannerAdapter;
   tripId: string;
+  /** Rewords outgoing chat messages so they read like a friend texting. Optional; the original text is sent if it is missing or fails. */
+  voice?: { polish(text: string): Promise<string> };
   /** Address of the trip page, put into messages that point at the full plan. Defaults to the words "the trip page". */
   planUrl?: string;
 }
@@ -49,6 +51,12 @@ export interface ApplicationRuntime {
 /** App composition boundary: identity, revision control, dedupe, outbox, and stale-research protection. */
 export function createApplicationRuntime(dependencies: ApplicationRuntimeDependencies): ApplicationRuntime {
   const { repository, conversation, planner, tripId } = dependencies;
+  /** Reword plain conversational messages (never ones carrying a plan, a link or money) in parallel, falling back to the original. */
+  const polishAll = async (messages: OutboundMessage[]): Promise<OutboundMessage[]> => {
+    const voice = dependencies.voice;
+    if (!voice) return messages;
+    return Promise.all(messages.map(async (m) => (m.proposalRef ? m : { ...m, text: await voice.polish(m.text).catch(() => m.text) })));
+  };
   /** Messages from the planner point at the trip page with a token; this puts the real address in. */
   const withPlanLink = (text: string) => text.replaceAll('{{PLAN_LINK}}', dependencies.planUrl ?? 'the trip page');
   const queued: Promise<void>[] = [];
@@ -135,7 +143,7 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
         const confirmations = { ...state.pendingConfirmations };
         if (parsed.expects) confirmations[member.memberId] = parsed.expects;
         else delete confirmations[member.memberId];
-        const result = await repository.commitEvent({ eventId: message.eventId, state: { ...state, pendingConfirmations: confirmations }, expectedRevision: state.revision, messages: [parsed.message] });
+        const result = await repository.commitEvent({ eventId: message.eventId, state: { ...state, pendingConfirmations: confirmations }, expectedRevision: state.revision, messages: await polishAll([parsed.message]) });
         if (result === 'stale') continue;
         if (result === 'committed') await runtime.drainOutbox();
         return;
@@ -249,7 +257,7 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
         eventId: message.eventId,
         state: nextState,
         expectedRevision: state.revision,
-        messages: replies,
+        messages: await polishAll(replies),
       });
       if (result === 'stale') continue;
       if (result !== 'committed') return;
