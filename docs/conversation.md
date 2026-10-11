@@ -4,6 +4,8 @@ Owned paths: `src/conversation/**`, `src/availability/**`, `tests/conversation/*
 Product: group-chat road-trip planner (see the travel spec). The old roommate-bill parser is gone; `src/finance/**` is untouched and belongs to others.
 
 ## Chat modes (group or one-on-one)
+**Decision (2026-10-10): the product runs in `direct` mode.** Every participant texts the same assistant number from their own phone, in their own private thread; there is no group chat. `group` mode is still in the code and tested with mocks, but it is unused and unverified live. Anything C/B ship should assume `direct`: shared announcements go out as separate DMs, nobody sees anyone else's messages, and a budget must never appear in a message sent to more than one person.
+
 `TripConfig.mode` selects the topology; everything else (parsing, privacy, command shapes) is identical.
 
 | Mode | Inbound accepted | `group` audience outbound | Use when |
@@ -41,7 +43,7 @@ Pivoting is a config change (`mode: 'direct'`). In `direct`, `groupSpaceId` is o
 | Google free/busy adapter | Tested with a mocked `fetch` only. **Unverified live** (needs per-member OAuth token with free/busy scope) |
 | Spectrum payload mapping | Mapped to the 12.10.1 typings, tested with shaped objects. The adapter itself has **not run live** |
 | Spectrum DM, live | **Verified 2026-10-10 with this repo's adapter** (`spectrum.ts` + normalizer + parser, driven by a throwaway probe outside the repo): inbound DM parsed to a command, replies delivered, send returns a provider message id. One `ECONNRESET` on the stream recovered by itself |
-| Spectrum group chat, live | **Not working on the shared line** (no events reached the app). Photon docs list group creation/events as dedicated-line only. `direct` mode is the fallback |
+| Spectrum group chat, live | **Not pursuing (decision 2026-10-10).** Did not work on the shared line (no events reached the app). Photon docs list group creation/events as dedicated-line only. `direct` mode is the fallback |
 | Spectrum reactions, live (DM) | **Verified 2026-10-10**: a thumbs-up on a bot message arrived as a reaction bound to that message's provider id and parsed to `select_candidate`. Removed-tapback surfacing still unverified |
 | Gemini, live | **Verified 2026-10-10** with `gemini-3.8-flash` via `models/{model}:generateContent` (JSON-schema output): chatter -> none; dates, preferences, dietary, spelled-out budget, plan requests and guide questions extracted; prompt-injection text and "Alex said his budget is 50" produced nothing. The first guessed endpoint (Interactions) and `gemini-2.5-flash` (closed to new users) returned 404. Eight hand-written messages, not a benchmark |
 
