@@ -92,12 +92,12 @@ function fromState(b: B.TripState, previous: C.TripState): C.TripState {
     groupConstraints: b.groupConstraints.map(r => fromUpdate(r, timeZone) as C.GroupConstraintRecord),
     candidates: b.candidates.map(fromCandidate),
     acceptances: b.acceptances.map(a => ({ actorId: a.memberId, candidateId: a.candidateId, revision: a.revision, acceptedAt: previous.acceptances.find(x => x.actorId === a.memberId && x.revision === a.revision)?.acceptedAt ?? new Date().toISOString() })),
-    pendingQuestions: b.pendingQuestions.map(q => ({ questionId: `${q.key}|${q.questionId}`, audience: q.audience.kind, memberId: q.audience.kind === 'private' ? q.audience.memberId : undefined, field: (q as { field?: C.ConstraintField }).field, text: warmQuestion(q.text), askedAt: q.askedAt })),
+    pendingQuestions: b.pendingQuestions.map(q => ({ questionId: `${q.key}|${q.questionId}`, audience: q.audience.kind, memberId: q.audience.kind === 'private' ? q.audience.memberId : undefined, field: (q as { field?: C.ConstraintField }).field, text: q.text, askedAt: q.askedAt })),
   };
 }
 
 export function createPlannerAdapter(provider: ResearchProvider, spaceId: string): PlannerAdapter {
-  const replies = (items: B.TripReply[]): C.OutboundMessage[] => items.map((r, i) => ({ ...r, text: warmQuestion(r.text), deliveryId: `planner:${i}`, audience: r.audience.kind === 'group' ? { kind: 'group', spaceId } : r.audience }));
+  const replies = (items: B.TripReply[]): C.OutboundMessage[] => items.map((r, i) => ({ ...r, text: r.text, deliveryId: `planner:${i}`, audience: r.audience.kind === 'group' ? { kind: 'group', spaceId } : r.audience }));
   return {
     applyCommand(state, command, options) {
       const before = toPlanningState(state);
@@ -137,13 +137,9 @@ export function createPlannerAdapter(provider: ResearchProvider, spaceId: string
       const result = applyCommand(before, { ...command, action }, options);
       if (options?.deferQuestions) {
         const questions = result.state.pendingQuestions.filter(q => q.askedAt === options.now && !before.pendingQuestions.some(old => old.questionId === q.questionId));
-        result.replies = result.replies.filter(r => !questions.some(q => warmQuestion(q.text) === warmQuestion(r.text)));
+        result.replies = result.replies.filter(r => !questions.some(q => q.text === r.text));
         const open = openQuestionKeys(result.state);
         result.state = { ...result.state, pendingQuestions: before.pendingQuestions.filter(q => open.has(q.key)) };
-      }
-      if (command.action.kind === 'request_plans' && result.rejection?.code === 'NOT_READY') {
-        const readiness = checkReadiness(result.state, { now: options?.now });
-        result.replies = [{ audience: { kind: 'private', memberId: command.actorId }, text: missingSummary(result.state, readiness) }, ...result.replies.filter(r => !r.text.includes("I'm not ready to plan yet."))];
       }
       return { ...result, state: result.state === before ? state : fromState(result.state, state), replies: replies(result.replies) };
     },
@@ -167,27 +163,4 @@ export function createPlannerAdapter(provider: ResearchProvider, spaceId: string
       return `${answer.text}\n${answer.evidence.map(e => `${e.title}: ${e.url}`).join('\n')}`;
     },
   };
-}
-
-function warmQuestion(text: string): string {
-  const copy: Record<string, string> = {
-    'Where will you be leaving from?': 'Where are you all leaving from?',
-    'How many nights should the trip be?': 'How many nights are you thinking?',
-    'Does anyone have a car for the trip?': 'Does anyone have a car we can take?',
-    'Do you have a destination in mind, or how long are you willing to drive?': 'Got a place in mind, or how far are you up for driving?',
-    'Who is coming on the trip? I need at least two people to plan with.': 'I need at least two people to plan with. Ask the organizer to add whoever is missing to the enrolled trip.',
-  };
-  return copy[text] ?? text;
-}
-
-function missingSummary(state: B.TripState, readiness: B.ReadinessResult): string {
-  const labels: Record<string, string> = { origin: 'where you are all leaving from', duration: 'how many nights', region: 'where you want to go or how far you want to drive', transport: 'how you are getting there', vehicle: 'whether you have a car', roster: 'at least two enrolled participants', dates: 'dates that work for everyone', budget: 'budget', availability: 'dates', preferences: 'preferences', consent: 'agreement to plan', must_dos: 'requirements' };
-  const describe = (key: string) => {
-    const [field, member] = key.split(':');
-    const label = labels[field.replace(/_unconfirmed$/, '')] ?? 'a trip detail';
-    const name = member ? state.roster.find(m => m.memberId === member)?.displayName ?? 'a participant' : undefined;
-    return name ? `${name}'s ${label}` : label;
-  };
-  const gaps = [...new Set([...readiness.missing, ...readiness.conflicts].map(describe))];
-  return `I can help with options. I'm still waiting on ${gaps.join(', ')}. Once those are sorted, I can plan the trip.`;
 }
