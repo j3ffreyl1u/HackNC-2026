@@ -146,3 +146,14 @@ Read directly from https://ai.google.dev/gemini-api/terms, 2026-10-10 (the earli
 - Identical questions are reused for one hour (`cacheMs`, 0 turns it off); failures are never cached. Price lookups share what is left of a 45 second budget after the options search (never under 12 seconds). The runtime sends one "still looking" text after 45 seconds (`stillLookingMs`).
 - Option messages are three lines: what and when, where, and a rough cost per person (midpoint of low and high, rounded to $5, total equals the listed parts) with the drive. Found-but-not-proposed options are one line.
 - When nothing fits on budget, the group message names whoever's own limit the closest trip breaks, with no amounts; the exact overage goes only to them, privately.
+
+## Hotel prices through SerpApi (Google Hotels)
+
+`src/research/serpapi.ts`. When `SERPAPI_API_KEY` is set and `RESEARCH_MODE=live`, each priced option (at most 3 per search) makes **one** Google Hotels search for the group's real dates: check-in is the first night of the common window, check-out follows the trip length, place is the option's first stop location. SerpApi plans have a small monthly quota (Mason's is 250), so this is guarded: identical searches (same place, dates, group size) are answered from memory for 12 hours, concurrent duplicates share one request, and a process stops after `SERPAPI_MAX_SEARCHES` searches (default 30), falling back to the web-search lodging question. A restart clears the memory, so avoid restarting during a demo.
+
+- **Arithmetic is in code.** Rooms = people / 2 (rounded up) x nights x nightly rate. Low end = cheapest priced listing. High end = the upper quarter of listings plus 15% for taxes and fees, so it is deliberately generous. Listings under $20 or over $2,000 a night are dropped as ads or typos.
+- **Every figure is cited.** Up to three listings become evidence records (hotel link, or the Google Hotels search page) with the line "A listed rate at the time of the search, not a booking". Nothing is booked and availability is not checked.
+- **Order of fallbacks.** SerpApi hotels, then the Gemini web-search lodging question, then a labelled typical cost (`pricing.ts`). A failed or empty hotel search is noted in the result's limitations and never fails the search. Errors never include the API key.
+- **Not set up** means the old behavior, unchanged.
+
+**Verified live (one search, 2026-10-11, Boone, 2 adults, Nov 14-16):** HTTP 200, 18 properties, every one with `rate_per_night.extracted_lowest`, 17 with a `link`, plus `search_metadata.google_hotels_url`. The response also carries about 9 `ads` outside `properties`, which are ignored. A trimmed real capture is `tests/research/captured/serpapi-boone.json`. **Still not verified:** the whole flow inside a real research run with Gemini, other destinations, and that listed rates match what a hotel charges at checkout.

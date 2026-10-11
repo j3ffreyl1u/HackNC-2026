@@ -1,7 +1,7 @@
 import type { CostItem, SourceEvidence } from '../planning/types.js';
 import { sanitizeRetrievedText } from './evidence.js';
 import { EvidenceStore, citesOver, textBlocks } from './grounding.js';
-import { PRICED_OPTIONS, looksLikeRoute, priceOption } from './pricing.js';
+import { PRICED_OPTIONS, looksLikeRoute, priceOption, type PricingSettings } from './pricing.js';
 import { ResearchError, type PerPersonCostTemplate, type ResearchOption, type ResearchProvider, type ResearchRequest, type ResearchResult, type ResearchStop } from './types.js';
 
 // Live research through Gemini with Google Search grounding, using the Interactions API:
@@ -44,6 +44,8 @@ export interface GeminiConfig {
   typicalCosts?: boolean;
   /** Also ask for admission prices (default false: it fails most often, so a typical cost is used instead). */
   lookupAdmissions?: boolean;
+  /** A direct lodging price lookup tried before the web-search question (see serpapi.ts). */
+  lookupLodging?: PricingSettings['lookupLodging'];
   /** Time allowed for each price lookup. */
   priceTimeoutMs?: number;
   /** How long an answer is reused for an identical question (default 1 hour). 0 turns the cache off. */
@@ -371,7 +373,7 @@ export function createGeminiProvider(config: GeminiConfig): ResearchProvider {
       const left = TOTAL_BUDGET_MS - (clock() - startedAt);
       const priceTimeout = Math.min(config.priceTimeoutMs ?? DEFAULT_PRICE_TIMEOUT_MS, Math.max(MIN_PRICE_TIMEOUT_MS, left));
       const askPrice = (prompt: string) => limited(() => remember(prompt, priceTimeout));
-      const settings = { typicalCosts: config.typicalCosts !== false, lookupAdmissions: config.lookupAdmissions === true };
+      const settings: PricingSettings = { typicalCosts: config.typicalCosts !== false, lookupAdmissions: config.lookupAdmissions === true, ...(config.lookupLodging ? { lookupLodging: config.lookupLodging } : {}) };
       const count = Math.min(PRICED_OPTIONS, options.length);
       const priced = await Promise.all(options.slice(0, count).map((option) => priceOption(option, request, askPrice, store, settings)));
       priced.forEach((p, i) => { options[i] = p.option; limitations.push(...p.notes); });

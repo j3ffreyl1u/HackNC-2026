@@ -105,10 +105,12 @@ function evidenceFor(store: EvidenceStore, lines: readonly CitedLine[], claims: 
 const usd = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 const norm = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 
-interface Priced {
+export interface Priced {
   lowCents: number;
   highCents: number;
   evidenceIds: string[];
+  /** How this price was worked out, when it differs from the standard wording. */
+  assumption?: string;
 }
 
 // ---- the four lookups ------------------------------------------------------------------------------------
@@ -246,6 +248,8 @@ export function typicalAdmissions(option: ResearchOption): Priced {
 }
 
 export interface PricingSettings {
+  /** A direct lodging lookup (e.g. Google Hotels through SerpApi), tried before the web-search question. It may return nothing or throw; neither is fatal. */
+  lookupLodging?: (option: ResearchOption, request: ResearchRequest, store: EvidenceStore) => Promise<Priced | undefined>;
   /** Ask the admissions question too (default true). It fails most often, so live research turns it off. */
   lookupAdmissions?: boolean;
   /** Fill what could not be found with a labelled typical cost instead of leaving it unknown (default false). */
@@ -275,19 +279,30 @@ export async function priceOption(option: ResearchOption, request: ResearchReque
   if (nights === undefined || groupSize === undefined) return { option, notes: [] };
   const lookupAdmissions = settings.lookupAdmissions !== false;
 
-  const prompts = [lodgingPrompt(option), fuelPrompt(option, request), mealPrompt(option), ...(lookupAdmissions ? [admissionPrompt(option)] : [])];
-  const answers = await Promise.allSettled(prompts.map(ask));
   const notes: string[] = [];
+  // Fuel, food and admissions run while lodging is looked up. Hotels with real prices for the group's dates come first;
+  // only if that finds nothing (or fails) is the web-search lodging question asked.
+  const others = Promise.allSettled([fuelPrompt(option, request), mealPrompt(option), ...(lookupAdmissions ? [admissionPrompt(option)] : [])].map(ask));
+  let foundLodging: Priced | undefined;
+  if (settings.lookupLodging) {
+    try { foundLodging = await settings.lookupLodging(option, request, store); }
+    catch { notes.push(`The hotel price search for ${option.name} failed, so I used a web search for lodging instead.`); }
+  }
+  if (!foundLodging) {
+    const [lodgingAnswer] = await Promise.allSettled([ask(lodgingPrompt(option))]);
+    if (lodgingAnswer.status === 'fulfilled') foundLodging = priceLodging(lodgingAnswer.value, nights, groupSize, store);
+    else notes.push(`The lodging lookup for ${option.name} failed, so that price is unknown.`);
+  }
+  const answers = await others;
   const reading = (i: number, what: string): unknown => {
     const a = answers[i];
     if (a.status === 'fulfilled') return a.value;
     notes.push(`The ${what} lookup for ${option.name} failed, so that price is unknown.`);
     return undefined;
   };
-  const foundLodging = priceLodging(reading(0, 'lodging'), nights, groupSize, store);
-  const foundFuel = priceFuel(reading(1, 'fuel'), store);
-  const foundFood = priceMeals(reading(2, 'food'), nights, store);
-  const foundAdmissions = lookupAdmissions ? priceAdmissions(reading(3, 'admission'), option.stops.slice(0, 5).map((s) => s.label), store) : undefined;
+  const foundFuel = priceFuel(reading(0, 'fuel'), store);
+  const foundFood = priceMeals(reading(1, 'food'), nights, store);
+  const foundAdmissions = lookupAdmissions ? priceAdmissions(reading(2, 'admission'), option.stops.slice(0, 5).map((s) => s.label), store) : undefined;
 
   // What could not be found becomes a labelled typical cost, if asked for. It is never zero and never looks sourced.
   const typical = settings.typicalCosts === true;
@@ -314,7 +329,7 @@ export async function priceOption(option: ResearchOption, request: ResearchReque
   };
   const evidenceIds = [...new Set([...option.evidenceIds, ...[lodging, fuel, admissions, food].flatMap((p) => p?.evidenceIds ?? [])])];
   const tradeoffs = option.tradeoffs.filter((t) => !t.startsWith('Prices, where found'));
-  if (lodging) tradeoffs.push(ASSUMPTIONS.lodging);
+  if (lodging) tradeoffs.push(lodging.assumption ?? ASSUMPTIONS.lodging);
   if (fuel) tradeoffs.push(ASSUMPTIONS.fuel);
   if (admissions) tradeoffs.push(ASSUMPTIONS.admissions);
   if (food) tradeoffs.push(ASSUMPTIONS.food);

@@ -100,7 +100,7 @@ export class EvidenceStore {
   constructor(private readonly retrievedAt: string) {}
 
   /** Record a citation for a claim and return its evidence ID, or `undefined` if its link is unusable. */
-  add(cite: Annotation, claim: string): string | undefined {
+  add(cite: Annotation, claim: string, uncertainty = 'Found by web search and not checked against the provider; prices and availability may have changed.'): string | undefined {
     let url: URL;
     try {
       url = new URL(cite.url);
@@ -120,7 +120,7 @@ export class EvidenceStore {
       retrievedAt: this.retrievedAt,
       kind: kindOf(url.href, cite.title),
       claim: text,
-      uncertainty: 'Found by web search and not checked against the provider; prices and availability may have changed.',
+      uncertainty,
     });
     return id;
   }

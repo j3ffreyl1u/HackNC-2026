@@ -7,6 +7,7 @@ import { createPlannerAdapter } from './planning-adapter.js';
 import { createApplicationRuntime } from './runtime.js';
 import { createResearchProvider } from '../research/provider.js';
 import { createGeminiProvider, geminiConfigFromEnv } from '../research/gemini.js';
+import { createLodgingLookup, createSerpApiHotels, serpApiConfigFromEnv } from '../research/serpapi.js';
 import { createGeminiVoice } from '../conversation/voice.js';
 import { demoResearchFixtures as defaultFixtures } from './research-fixtures.js';
 import { LiveResearchDisplay, createLivePlanner } from './live-research.js';
@@ -17,6 +18,13 @@ import { createNessieReader } from '../funding/nessie-reader.js';
 import { depositTag } from '../planning/funding.js';
 import { createBoundFundService } from '../funding/bound-service.js';
 import { createFundService } from '../funding/service.js';
+
+/** Real hotel prices (Google Hotels via SerpApi) when SERPAPI_API_KEY is set; otherwise lodging is priced the old way. */
+function hotelLookup(timeZone: string | undefined) {
+  const serp = serpApiConfigFromEnv(process.env);
+  console.log(serp ? 'Hotel prices: Google Hotels via SerpApi (about one search per priced option).' : 'Hotel prices: SERPAPI_API_KEY not set, using web-search and typical lodging costs.');
+  return serp ? { lookupLodging: createLodgingLookup(createSerpApiHotels(serp), timeZone) } : {};
+}
 
 export async function startApp(): Promise<() => Promise<void>> {
   await loadEnvironmentFile();
@@ -53,7 +61,7 @@ export async function startApp(): Promise<() => Promise<void>> {
       return result.funding ? { remainingDollars: result.remainingDollars! } : undefined;
     } : undefined;
     const planner = display ? createLivePlanner(display, enrollment.groupSpaceId, { fundContext })
-      : config.researchMode === 'live' ? createPlannerAdapter(createResearchProvider({ mode: 'live', live: createGeminiProvider(geminiConfigFromEnv(process.env)!) }), enrollment.groupSpaceId, { fundContext })
+      : config.researchMode === 'live' ? createPlannerAdapter(createResearchProvider({ mode: 'live', live: createGeminiProvider({ ...geminiConfigFromEnv(process.env)!, ...hotelLookup(trip.state.timeZone) }) }), enrollment.groupSpaceId, { fundContext })
       : createPlannerAdapter(createResearchProvider({ mode: 'mock', fixtures: defaultFixtures }), enrollment.groupSpaceId, { fundContext });
     // Phones can only open the trip page if this is an address they can reach (set PUBLIC_BASE_URL to a tunnel or LAN address).
     const planUrl = `${(process.env.PUBLIC_BASE_URL?.trim() || `http://127.0.0.1:${config.port}`).replace(/\/+$/, '')}/?trip=${encodeURIComponent(enrollment.tripId)}`;
