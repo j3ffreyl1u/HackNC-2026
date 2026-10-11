@@ -17,6 +17,10 @@ import type { ConversationDependencies } from './types.js';
 
 const APPROVE_REACTIONS = new Set(['👍', '👍🏻', '👍🏼', '👍🏽', '👍🏾', '👍🏿', '❤️', '❤', '✅', '✔️', 'like', 'love', 'thumbsup', '+1']);
 const YES = /^(?:(?:yes|yep|yeah|yup|sure)(?:[ ,]+(?:it is|that is|that'?s right|that'?s it|correct|exactly|please|firm))?|ok|okay|accept|accepted|i accept|i'?m in|count me in|sounds good|works for me|let'?s do it|do it|confirm|confirmed|correct|that'?s right|exactly)[.!]*$/i;
+/** "yes that works", "sounds good to me", "all good": agreement, as long as nothing in it asks for a change. */
+const AGREES_START = /^(?:yes|yeah|yep|yup|yea|sure|ok|okay|absolutely|definitely|totally|sounds|that works|that'?ll work|works|all good|fine|good|perfect|great|i'?m (?:good|fine|down|in)|let'?s do it|love it|looks good)\b/i;
+const CHANGE_WORDS = /\b(?:but|actually|instead|rather|except|though|however|no|not|don'?t|doesn'?t|can'?t|wait|hold on|change)\b/i;
+const BASICS_OK = { test: (t: string) => AGREES_START.test(t) && !CHANGE_WORDS.test(t) };
 const NO = /^(no|nope|nah|decline|i decline|not for me|not now|no thanks|pass)[.!]*$/i;
 /** Explicitly says what we just recorded is wrong (as opposed to a bare "no", which is ambiguous after "tell me if I got anything wrong"). */
 const WRONG = /^(?:(?:no|nope|nah)[ ,]+)?(?:that'?s|that is|it'?s|it is|this is)?\s*(?:not right|not correct|wrong|incorrect|not what i (?:said|meant))[.!]*$/i;
@@ -248,6 +252,11 @@ export function createParser(deps: ConversationDependencies) {
       return msg.visibility === 'private' || trip.mode === 'direct'
         ? reply(msg, `Sorry about that! What should I fix? Tell me the right detail, like "my max is $300", "free Nov 21-23" or "leaving from Raleigh".`, 'sorry')
         : { kind: 'ignored', reason: 'nothing to correct' };
+    }
+    // "Does the plan so far work for you?": yes adopts it as their own answer, no asks what they would change.
+    if (ctx.confirmBasics?.length && ctx.actionable.length === 0 && !ctx.pendingConfirmation) {
+      if (YES.test(text) || YES.test(plain) || BASICS_OK.test(plain)) return fromConstraints(msg, ctx, text, ctx.confirmBasics.map((value) => ({ value, hedged: false })));
+      if (NO.test(text) || NO.test(plain)) return reply(msg, `No problem, what would you change? Something like "leaving from Raleigh", "3 nights" or "somewhere closer" works.`, 'basics-no', true);
     }
     // A bare yes/no to "does anyone have a car?" is the answer, not a confirmation of something else.
     const carYes = YES.test(text) || YES.test(plain), carNo = NO.test(text) || NO.test(plain);

@@ -9,6 +9,7 @@ export type {
   ConversationService as ChatConversationService,
   ChatMode as ChatTopology,
 } from './conversation.js';
+import type { ConstraintValue as SharedConstraintValue } from './conversation.js';
 export type ISODateTime = string;
 export type MemberId = string;
 export type TripId = string;
@@ -254,6 +255,8 @@ export interface ConversationContext {
   actionable: ActionablePlan[];
   targetProposal?: ProposalReference;
   pendingQuestion?: { questionId: string; field: ConstraintField };
+  /** The shared basics this actor was asked to sign off on; a bare "yes" records them as theirs. */
+  confirmBasics?: SharedConstraintValue[];
 }
 
 export interface ConversationService {

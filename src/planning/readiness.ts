@@ -17,6 +17,8 @@ const MIN_PARTICIPANTS = 2;
 export interface ReadinessOptions {
   /** The current time, used only to avoid repeating a recent unanswered question. */
   now?: string;
+  /** Count a missing sign-off on the shared basics as not ready. Off by default: an explicit request for options goes ahead. */
+  requireSignOff?: boolean;
 }
 
 function names(state: TripState, ids: readonly string[]): string {
@@ -39,6 +41,15 @@ function formatWindows(windows: readonly { startAt: string; endAt: string }[]): 
     const s = `${MONTHS[start.month - 1]} ${start.day}`;
     return start.month === end.month && start.day === end.day ? s : start.month === end.month ? `${s}-${end.day}` : `${s}-${MONTHS[end.month - 1]} ${end.day}`;
   }).join(', ') || 'never';
+}
+
+/** "leaving from Chapel Hill for 2 nights, going to Washington DC": the shared basics in one casual phrase. */
+function describeBasics(origin: ConstraintValues['origin'], duration: ConstraintValues['duration'], region: ConstraintValues['region']): string {
+  const place = region.destination !== undefined ? `going to ${region.destination}`
+    : region.maxTravelMinutes !== undefined && region.maxTravelMinutes >= 1440 ? 'open to any driving distance'
+    : region.searchRegion !== undefined ? `looking around ${region.searchRegion}`
+    : region.maxTravelMinutes !== undefined ? `staying within about ${Math.round(region.maxTravelMinutes / 60)} hours of driving` : 'a place to be decided';
+  return `leaving from ${origin.city} for ${nightsText(duration.nights)}, ${place}`;
 }
 
 const nightsText = (n: number) => `${n} night${n === 1 ? '' : 's'}`;
@@ -121,6 +132,15 @@ function evaluate(state: TripState): Evaluation {
     group('basics', 'vehicle', "I can only plan road trips for now, so I need a car. Could anyone drive or borrow one?");
   }
 
+  // -- everyone gets a say in the shared basics: anyone who has not weighed in is asked whether the plan so far works
+  if (origin.status === 'agreed' && duration.status === 'agreed' && region.status === 'agreed' && transport.status === 'agreed' && (transport.value as ConstraintValues['transport']).vehicleAvailable) {
+    const authors = new Set([...origin.authors, ...duration.authors, ...region.authors, ...transport.authors]);
+    for (const id of ids.filter((x) => !authors.has(x))) {
+      missing.push(`confirm_basics:${id}`);
+      privately('basics', id, `confirm_basics:${id}`, `${names(state, [...authors])} suggested ${describeBasics(origin.value, duration.value, region.value)}, and someone has a car. Does that work for you, or would you change anything?`);
+    }
+  }
+
   // -- dates: every participant's usable windows, and one window everybody shares that fits the trip
   const missingDates = ids.filter((id) => effectiveAvailability(state, id) === undefined);
   for (const id of missingDates) missing.push(`availability:${id}`);
@@ -187,7 +207,9 @@ function evaluate(state: TripState): Evaluation {
  * questions to ask now. Optional details are never confused with required ones.
  */
 export function checkReadiness(state: TripState, options: ReadinessOptions = {}): ReadinessResult {
-  const { missing, conflicts, candidates } = evaluate(state);
+  const evaluated = evaluate(state);
+  const { conflicts, candidates } = evaluated;
+  const missing = options.requireSignOff ? evaluated.missing : evaluated.missing.filter((m) => !m.startsWith('confirm_basics:'));
   const questions: ReadinessQuestion[] = selectQuestions(state, candidates, options.now);
   return { ready: missing.length === 0 && conflicts.length === 0, missing, conflicts, questions };
 }
@@ -217,6 +239,8 @@ export function describeGaps(state: TripState, result: Pick<ReadinessResult, 'mi
   if (result.missing.includes('duration')) items.push('how many nights');
   if (result.missing.includes('region')) items.push('where you want to go');
   if (result.missing.includes('transport') || result.missing.includes('vehicle')) items.push('whether someone has a car');
+  const unconfirmed = result.missing.filter((m) => m.startsWith('confirm_basics:')).map((m) => m.slice('confirm_basics:'.length));
+  if (unconfirmed.length > 0) items.push(`${names(state, unconfirmed)} to say whether the plan so far works`);
   items.push(...perPerson('availability', (n) => (n === 'your' ? 'your dates' : `${n}'s dates`)));
   items.push(...perPerson('budget', (n) => (n === 'your' ? 'your budget' : `${n}'s budget`)));
   items.push(...perPerson('preferences', (n) => (n === 'your' ? 'your preferences' : `${n}'s preferences`)));

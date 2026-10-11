@@ -100,7 +100,7 @@ describe('application runtime', () => {
       expect(saved.memberConstraints.filter(r => r.memberId === 'alex')).toHaveLength(3);
       expect(conversation.sent.filter(m => m.text.endsWith('?')).length).toBeLessThanOrEqual(2);
       expect(conversation.sent.map(m => m.text).join('\n')).not.toMatch(/Where are you all leaving|How many nights|car we can take|Got a place/);
-      expect(saved.pendingQuestions.every(q => q.field === 'availability')).toBe(true);
+      expect(saved.pendingQuestions.every(q => q.field === 'availability' || q.questionId.startsWith('confirm_basics:'))).toBe(true); // dates, or asking the others to sign off on the basics
     } finally { await runtime.stop(); repository.close(); }
   });
   it('asks one readiness question for a multi-command message and answers a cooldown-blocked request', async () => {

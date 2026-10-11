@@ -1,7 +1,9 @@
 import { createHash } from 'node:crypto';
 import type {
+  ConstraintValue,
   ConversationContext,
   ConversationService,
+  GroupConstraintRecord,
   InboundMessage,
   OutboundMessage,
   Repository,
@@ -12,7 +14,7 @@ import type {
 
 export interface PlannerAdapter {
   guidePrivate?: boolean;
-  applyCommand(state: TripState, command: TripCommand, options?: { now: string; deferQuestions?: boolean }): {
+  applyCommand(state: TripState, command: TripCommand, options?: { now: string; deferQuestions?: boolean; requireSignOff?: boolean }): {
     state: TripState;
     replies: OutboundMessage[];
     researchRequested: boolean;
@@ -194,7 +196,7 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
       if (!researchRequested && nextState.status === 'gathering' && commands.some((c) => c.action.kind === 'update_constraint') && !(parsed.kind === 'commands' && parsed.clarificationQuestion)) {
         const auto: TripCommand = { commandId: deterministicCommandId(tripId, message.eventId, 'auto_plan'), eventId: message.eventId, actorId: member.memberId, tripId, action: { kind: 'request_plans' } } as TripCommand;
         let probe: ReturnType<PlannerAdapter['applyCommand']> | undefined;
-        try { probe = planner.applyCommand(nextState, auto, { now: message.occurredAt }); } catch { probe = undefined; }
+        try { probe = planner.applyCommand(nextState, auto, { now: message.occurredAt, requireSignOff: true }); } catch { probe = undefined; }
         if (probe && !probe.rejection && probe.researchRequested) {
           nextState = probe.state;
           researchRequested = true;
@@ -327,15 +329,29 @@ async function conversationContext(repository: Repository, state: TripState, mes
       ...(state.status === 'awaiting_acceptance' && state.selectedCandidateId === candidateId && !state.acceptances.some(a => a.actorId === actorId && a.candidateId === candidateId && a.revision === revision) ? ['accept' as const] : []),
     ],
   })).filter((plan) => plan.actions.length > 0);
+  const confirmBasics = state.pendingQuestions.some((q) => q.questionId.startsWith('confirm_basics:') && q.memberId === actorId) ? sharedBasics(state) : [];
   return {
     tripId: state.tripId,
     revision: state.revision,
     status: state.status,
     actionable,
+    ...(confirmBasics.length > 0 ? { confirmBasics } : {}),
     pendingConfirmation: state.pendingConfirmations?.[actorId],
     ...(targetProposal ? { targetProposal } : {}),
     ...(pendingQuestion?.field ? { pendingQuestion: { questionId: pendingQuestion.questionId, field: pendingQuestion.field } } : {}),
   };
+}
+
+/** The group's current origin, length, place and car, as values a "yes" can record for the person answering. */
+function sharedBasics(state: TripState): ConstraintValue[] {
+  const latest = <F extends GroupConstraintRecord['field']>(field: F) => [...state.groupConstraints].reverse().find((c): c is Extract<GroupConstraintRecord, { field: F }> => c.field === field);
+  const out: ConstraintValue[] = [];
+  const origin = latest('origin'), duration = latest('duration'), region = latest('region'), transport = latest('transport');
+  if (origin) out.push({ field: 'origin', value: origin.value.city });
+  if (duration) out.push({ field: 'duration', value: duration.value.nights });
+  if (region) out.push({ field: 'region', value: region.value.label, ...(region.value.maxTravelMinutes !== undefined ? { maxTravelMinutes: region.value.maxTravelMinutes } : {}) });
+  if (transport) out.push({ field: 'transport', value: transport.value.hasVehicle ? 'own_vehicle' : 'no_vehicle', vehicleAvailable: transport.value.hasVehicle });
+  return out;
 }
 
 export function deterministicCommandId(tripId: string, eventId: string, action: string, index = 0): string {

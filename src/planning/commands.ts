@@ -18,6 +18,8 @@ import type {
 export interface ApplyOptions {
   /** The time of the command. Stored with the constraint and used for question cooldowns. Defaults to the clock. */
   now?: string;
+  /** Wait for everyone to sign off on the shared basics. Set for the automatic start; an explicit "show us options" does not wait. */
+  requireSignOff?: boolean;
 }
 
 const GROUP = { kind: 'group' } as const;
@@ -166,11 +168,11 @@ function updateConstraint(state: TripState, command: TripCommand, update: Constr
   return { state: asked.state, replies: [...replies, ...asked.replies], researchRequested };
 }
 
-function requestPlans(state: TripState, command: TripCommand, now: string): ApplyResult {
+function requestPlans(state: TripState, command: TripCommand, now: string, requireSignOff = false): ApplyResult {
   if (state.status === 'approved') {
     return reject(state, command.actorId, 'AMBIGUOUS_ACTION', 'This trip is already approved. Change a detail first if you want new options.');
   }
-  const readiness = checkReadiness(state, { now });
+  const readiness = checkReadiness(state, { now, requireSignOff });
   if (!readiness.ready) {
     const asked = askAboutGaps(state, now);
     // A question going out says what is missing by itself. Only when nothing new is asked (everything is waiting on
@@ -257,7 +259,7 @@ export function applyCommand(state: TripState, command: TripCommand, options: Ap
     case 'update_constraint':
       return updateConstraint(state, command, action.update, now);
     case 'request_plans':
-      return requestPlans(state, command, now);
+      return requestPlans(state, command, now, options.requireSignOff === true);
     case 'select_candidate':
       return selectCandidate(state, command, action.candidateId, action.revision);
     case 'accept_candidate':

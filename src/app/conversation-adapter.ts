@@ -58,6 +58,7 @@ export async function createChatAdapter(enrollment: C.TripEnrollment, timeZone: 
       const actionable: A.ActionableItem[] = context.actionable.flatMap(p => p.actions.map(action => ({ kind: action === 'pick' ? 'select' as const : 'accept' as const, candidateId: p.candidateId, revision: p.revision, description: p.title })));
       const parsed = await service.parseInbound(message, { tripId: context.tripId, revision: context.revision, actionable,
         pendingQuestion: context.pendingQuestion,
+        ...(context.confirmBasics ? { confirmBasics: context.confirmBasics } : {}),
         pendingConfirmation: context.pendingConfirmation,
         targetProposal: context.targetProposal?.kind ? { ...context.targetProposal, kind: context.targetProposal.kind } : undefined });
       if (parsed.kind === 'ignored') return parsed;
