@@ -232,3 +232,82 @@ export function spendVsPlan(plan: Extract<ContributionPlan, { ok: true }>, purch
     contingencyDollars: Math.floor(plan.contingencyCents / 100),
   };
 }
+
+// ---- what the bot says -------------------------------------------------------------------------------------
+
+const money = (dollars: number) => `$${dollars.toLocaleString('en-US')}`;
+const list = (items: readonly string[]) => (items.length <= 1 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`);
+
+/**
+ * The answer to "how's the fund?": what is in, who the fund is still waiting on, and, once spending is known,
+ * what has gone out and what is left. Names appear only for amounts owed to the shared fund, never for limits.
+ */
+export function describeFund(
+  state: TripState,
+  plan: Extract<ContributionPlan, { ok: true }>,
+  funding: FundingReport,
+  spend?: SpendReport,
+  options: { simulated?: boolean } = {},
+): string {
+  const name = (id: MemberId) => state.roster.find((m) => m.memberId === id)?.displayName ?? id;
+  const lines: string[] = [];
+  if (funding.status === 'funded') {
+    lines.push(`The trip fund is fully funded: ${money(funding.collectedDollars)} in, ${money(plan.neededDollars)} needed.`);
+  } else {
+    const waiting = funding.perMember.filter((m) => m.outstandingDollars > 0).map((m) => `${name(m.memberId)} (${money(m.outstandingDollars)})`);
+    lines.push(`The trip fund has ${money(funding.collectedDollars)} of ${money(plan.neededDollars)}. Still waiting on ${list(waiting)}.`);
+  }
+  if (spend !== undefined) {
+    lines.push(`${money(spend.totalSpentDollars)} spent so far, ${money(Math.max(0, funding.collectedDollars - spend.totalSpentDollars))} left.`);
+  }
+  if (options.simulated) lines.push('This is simulated money in a demo account.');
+  return lines.join(' ');
+}
+
+/** A private nudge for one person about their own share. Nothing about anyone else; undefined if they are covered. */
+export function reminderFor(memberId: MemberId, funding: FundingReport): string | undefined {
+  const mine = funding.perMember.find((m) => m.memberId === memberId);
+  if (!mine || mine.outstandingDollars === 0) return undefined;
+  return `Your share of the trip fund is ${money(mine.requestedDollars)} and I see ${money(mine.paidDollars)} so far, so ${money(mine.outstandingDollars)} to go.`;
+}
+
+export interface DriftNotice {
+  /** Stable, so the caller can remember which notices it has already sent. */
+  key: string;
+  text: string;
+}
+
+const CATEGORY_WORDS: Record<CostCategory, string> = {
+  accommodation: 'lodging',
+  fuel_parking_tolls: 'gas, parking and tolls',
+  food: 'food',
+  activities: 'activities',
+  taxes_fees: 'taxes and fees',
+  other: 'other costs',
+};
+
+/**
+ * Calm notices for spending that is nearly or fully used up, or that the plan never budgeted. Each notice is
+ * given once: pass the keys already sent and only new or worse ones come back. A notice only offers to look for
+ * cheaper options; changing the plan always takes everyone's agreement.
+ */
+export function driftNotices(report: SpendReport, announced: ReadonlySet<string>): DriftNotice[] {
+  const notices: DriftNotice[] = [];
+  for (const entry of report.byCategory) {
+    if (entry.state === 'within') continue;
+    const key = `${entry.category}:${entry.state}`;
+    if (announced.has(key)) continue;
+    const word = CATEGORY_WORDS[entry.category];
+    if (entry.plannedDollars === 0) {
+      notices.push({ key, text: `${money(entry.spentDollars)} went to ${word}, which the shared plan didn't budget. If that's a personal cost, ignore this; otherwise it comes out of the contingency.` });
+    } else if (entry.state === 'near') {
+      notices.push({ key, text: `Heads up: ${word} is at ${money(entry.spentDollars)} of the ${money(entry.plannedDollars)} planned. Nothing to do yet.` });
+    } else {
+      notices.push({ key, text: `${word[0]!.toUpperCase()}${word.slice(1)} is over its budget: ${money(entry.spentDollars)} spent against ${money(entry.plannedDollars)} planned. I can look for cheaper options for the rest of the trip. Changing the plan would be a new version that everyone would need to agree to.` });
+    }
+  }
+  if (report.unclassifiedDollars > 0 && !announced.has('unclassified')) {
+    notices.push({ key: 'unclassified', text: `${money(report.unclassifiedDollars)} of spending doesn't match any category in the plan, so I'm not counting it against a budget.` });
+  }
+  return notices;
+}

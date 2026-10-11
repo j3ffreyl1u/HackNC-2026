@@ -4,8 +4,11 @@ import {
   categoryForMerchant,
   checkFunding,
   depositTag,
+  describeFund,
+  driftNotices,
   parseDepositTag,
   planContributions,
+  reminderFor,
   spendVsPlan,
 } from '../../src/planning/funding.js';
 import type { TripState } from '../../src/planning/types.js';
@@ -194,5 +197,103 @@ describe('spendVsPlan', () => {
       { id: 'p2', amountDollars: 99, category: 'food', status: 'pending' },
     ]);
     expect(report.totalSpentDollars).toBe(10);
+  });
+});
+
+describe('describeFund', () => {
+  const setup = () => {
+    const state = approved();
+    const plan = planContributions(state);
+    if (!plan.ok) throw new Error(plan.reason);
+    return { state, plan };
+  };
+
+  it('says how much is in, who the fund is still waiting on, and that it is simulated money when asked to', () => {
+    const { state, plan } = setup();
+    const funding = checkFunding(plan, [
+      { id: 'a', amountDollars: 160, description: depositTag('mason', 1) },
+      { id: 'b', amountDollars: 100, description: depositTag('alex', 1) },
+    ]);
+    const text = describeFund(state, plan, funding, undefined, { simulated: true });
+    expect(text).toMatch(/\$260 of \$480/);
+    expect(text).toMatch(/Alex \(\$60\)/);
+    expect(text).toMatch(/Jordan \(\$160\)/);
+    expect(text).not.toMatch(/Mason \(/);
+    expect(text).toMatch(/simulated/i);
+  });
+
+  it('says the fund is fully funded when it is, and adds spending when it is given', () => {
+    const { state, plan } = setup();
+    const funding = checkFunding(plan, ids.map((id, i) => ({ id: `d${i}`, amountDollars: 160, description: depositTag(id, 1) })));
+    const spend = spendVsPlan(plan, [{ id: 'p', amountDollars: 120, category: 'accommodation' }]);
+    const text = describeFund(state, plan, funding, spend);
+    expect(text).toMatch(/fully funded/i);
+    expect(text).toMatch(/\$120 spent/);
+    expect(text).toMatch(/\$360 left/);
+  });
+});
+
+describe('reminderFor', () => {
+  it('tells one person what they still owe, and nothing about anyone else', () => {
+    const plan = planContributions(approved());
+    if (!plan.ok) throw new Error(plan.reason);
+    const funding = checkFunding(plan, [{ id: 'a', amountDollars: 100, description: depositTag('alex', 1) }]);
+    expect(reminderFor('alex', funding)).toMatch(/\$60/);
+    expect(reminderFor('alex', funding)).not.toMatch(/Jordan|Mason/);
+    expect(reminderFor('mason', funding)).toMatch(/\$160/);
+    const paid = checkFunding(plan, ids.map((id, i) => ({ id: `d${i}`, amountDollars: 160, description: depositTag(id, 1) })));
+    expect(reminderFor('alex', paid)).toBeUndefined();
+    expect(reminderFor('stranger', funding)).toBeUndefined();
+  });
+});
+
+describe('driftNotices', () => {
+  const plan = () => {
+    const p = planContributions(approved());
+    if (!p.ok) throw new Error(p.reason);
+    return p;
+  };
+
+  it('says nothing while spending is within the plan', () => {
+    const report = spendVsPlan(plan(), [{ id: 'p', amountDollars: 100, category: 'accommodation' }]);
+    expect(driftNotices(report, new Set())).toEqual([]);
+  });
+
+  it('gives a calm heads-up when a category is nearly used, with no one named', () => {
+    const report = spendVsPlan(plan(), [{ id: 'p', amountDollars: 400, category: 'accommodation' }]);
+    const [notice] = driftNotices(report, new Set());
+    expect(notice.key).toBe('accommodation:near');
+    expect(notice.text).toMatch(/lodging/i);
+    expect(notice.text).toMatch(/\$400 of the \$450/);
+    expect(notice.text).not.toMatch(/Mason|Alex|Jordan/);
+  });
+
+  it('offers to look for cheaper options when a category goes over, but changes nothing itself', () => {
+    const report = spendVsPlan(plan(), [{ id: 'p', amountDollars: 470, category: 'accommodation' }]);
+    const [notice] = driftNotices(report, new Set());
+    expect(notice.key).toBe('accommodation:over');
+    expect(notice.text).toMatch(/over/i);
+    expect(notice.text).toMatch(/cheaper options/i);
+    expect(notice.text).toMatch(/everyone would need to agree/i);
+  });
+
+  it('does not repeat a notice it has already given, but does say it again when things get worse', () => {
+    const near = spendVsPlan(plan(), [{ id: 'p', amountDollars: 400, category: 'accommodation' }]);
+    const announced = new Set(driftNotices(near, new Set()).map((n) => n.key));
+    expect(driftNotices(near, announced)).toEqual([]);
+    const over = spendVsPlan(plan(), [{ id: 'p', amountDollars: 470, category: 'accommodation' }]);
+    expect(driftNotices(over, announced).map((n) => n.key)).toEqual(['accommodation:over']);
+  });
+
+  it('explains spending in a category the plan never budgeted for, and mentions unclassified spending once', () => {
+    const report = spendVsPlan(plan(), [
+      { id: 'a', amountDollars: 25, category: 'gas' },
+      { id: 'b', amountDollars: 40, category: 'mystery shop' },
+    ]);
+    const notices = driftNotices(report, new Set());
+    expect(notices.map((n) => n.key)).toEqual(['fuel_parking_tolls:over', 'unclassified']);
+    expect(notices[0].text).toMatch(/didn't budget/i);
+    expect(notices[1].text).toMatch(/\$40/);
+    expect(driftNotices(report, new Set(notices.map((n) => n.key)))).toEqual([]);
   });
 });
