@@ -8,7 +8,8 @@ import type {
   TripCommand,
   TripConversationContext,
 } from './contracts-local.js';
-import { extractWithCoverage, HEDGE, TRIVIAL, type Extracted } from './constraints.js';
+import { localReference } from './dates.js';
+import { extractWithCoverage, GROUP_BUDGET, HEDGE, TRIVIAL, type Extracted } from './constraints.js';
 import { assertTimeZone, formatWindow, toIntervalWindows } from './dates.js';
 import { guestProviderUserId, isGuest, parseJoinCode } from './join.js';
 import { safeChatAnswer, validateIntent } from './intent.js';
@@ -22,6 +23,8 @@ const AGREES_START = /^(?:yes|yeah|yep|yup|yea|sure|ok|okay|absolutely|definitel
 const CHANGE_WORDS = /\b(?:but|actually|instead|rather|except|though|however|no|not|don'?t|doesn'?t|can'?t|wait|hold on|change)\b/i;
 const BASICS_OK = { test: (t: string) => AGREES_START.test(t) && !CHANGE_WORDS.test(t) };
 const BARE_PLACE = /^[A-Z][A-Za-z.'-]*(?:\s+[A-Z][A-Za-z.'-]*){0,3}[.!]*$/;
+/** Capitalized by the phone's keyboard but not a place: a command word, a day or month, a hedge, or a greeting plus a name for the bot. */
+const NOT_A_WORD_PLACE = /^(?:help|cancel|wait|maybe|stop|skip|menu|options?|later|sorry|huh|what|why|how|hmm|ok|okay|sure|yes|no|nope|saturday|sunday|monday|tuesday|wednesday|thursday|friday|today|tomorrow|tonight|weekend|january|february|march|april|may|june|july|august|september|october|november|december|(?:hi|hey|hello|yo)\s+(?:bot|there|everyone|all|guys|team)|happy\s+\w+|merry\s+\w+)[.!?]*$/i;
 const NO = /^(no|nope|nah|decline|i decline|not for me|not now|no thanks|pass)[.!]*$/i;
 /** Explicitly says what we just recorded is wrong (as opposed to a bare "no", which is ambiguous after "tell me if I got anything wrong"). */
 const WRONG = /^(?:(?:no|nope|nah)[ ,]+)?(?:that'?s|that is|it'?s|it is|this is)?\s*(?:not right|not correct|wrong|incorrect|not what i (?:said|meant))[.!]*$/i;
@@ -51,7 +54,7 @@ const CHOICE_NUMBER: Record<string, number> = { first: 1, '1st': 1, one: 1, seco
 const BARE_CHOICE = /^(?:[1-9]|one|two|three|four)$/i;
 /** iMessage on Android and SMS show a tapback as text: Liked "…". Only the positive ones count. */
 const TEXT_TAPBACK = /^(Liked|Loved|Disliked|Laughed at|Emphasized|Questioned)\s+["“](.*)["”]$/s;
-const THUMBS = /^(?:👍[\u{1F3FB}-\u{1F3FF}]?|❤️?|✅)$/u;
+const THUMBS = /^(?:👍[\u{1F3FB}-\u{1F3FF}]?|❤️?|✅|\+1)$/u;
 const ACCEPT = new RegExp(`^accept\\s+${ID}\\s+v(\\d+)$`, 'i');
 
 const UNAVAILABLE = "Sorry, my language helper isn't answering right now, so I couldn't read that one. Try again in a minute, or use plain phrases like \"my max is $200\" or \"free Oct 17-19\".";
@@ -143,7 +146,7 @@ export function createParser(deps: ConversationDependencies) {
     if (GROUP_WORDS.test(text)) return true;
     return trip.members
       .filter((m) => m.userId !== senderId)
-      .some((m) => new RegExp(`\\b${escapeRe(m.displayName)}(?:'s)?\\b`, 'i').test(text));
+      .some((m) => new RegExp(`(?<!\\b(?:my|your|our|the|a|his|her|their|no|any|new|top)\\s)\\b${escapeRe(m.displayName)}(?:'s)?\\b`, 'i').test(text));
   }
 
   function fromConstraints(msg: InboundMessage, ctx: TripConversationContext, text: string, items: Extracted[], extra: TripAction[] = []): ParseResult {
@@ -155,6 +158,11 @@ export function createParser(deps: ConversationDependencies) {
 
     for (const item of items) {
       const v = item.value;
+      if (v.field === 'budget' && GROUP_BUDGET.test(text)) {
+        asks.push('I keep each person\'s max separate, so I can\'t take one number for the whole group. Tell me yours with "my max is $X" and ask the others to do the same.');
+        private_ = true;
+        continue;
+      }
       if (v.field === 'budget' && mentionsOtherMember(text, msg.senderId)) {
         // Nobody can set another member's budget, and a message that names someone else is ambiguous.
         asks.push("I can only take a budget from the person it's for, so I haven't noted that one. Ask them to text me their own, or tell me yours with \"my max is $X\".");
@@ -172,7 +180,8 @@ export function createParser(deps: ConversationDependencies) {
           private_ = true;
           hedgedBudget = v.value;
         } else {
-          asks.push('I want to get the dates right. Which ones can you actually do? Something like "free Oct 17-19" works.');
+          const heard = v.field === 'availability' ? v.value.filter((w): w is { start: string; end: string } => 'start' in w).map(formatWindow).join(' or ') : '';
+          asks.push(`I want to get the dates right. ${heard ? `Can you actually do ${heard}? Say "free ${heard}" and I'll lock it in, or tell me which dates you can do.` : 'Which ones can you actually do? Something like "free Oct 17-19" works.'}`);
         }
         continue;
       }
@@ -306,7 +315,7 @@ export function createParser(deps: ConversationDependencies) {
     if (FUND_STATUS.test(plain)) return one(msg, ctx, { kind: 'request_funding', topic: 'status' });
     if (STATUS.test(plain)) {
       // Where things stand: while still gathering the planner recaps what is missing; after that, say what is happening.
-      if (ctx.status === 'researching') return reply(msg, "I'm still looking up options for you two. Give me a minute and I'll send them over.", 'status-researching', true);
+      if (ctx.status === 'researching') return reply(msg, "I'm still looking up options for everyone. Give me a minute and I'll send them over.", 'status-researching', true);
       if (ctx.status === 'proposed' || ctx.status === 'awaiting_acceptance') return reply(msg, ctx.actionable.length ? `The options are above. ${ctx.actionable.map((a, i) => `${i + 1}. ${a.description}`).join('; ')}. Reply "pick 1" or "pick 2" when you've decided.` : "The options are above. Take a look and tell me which one you like.", 'status-proposed', true);
       if (ctx.status === 'approved') return reply(msg, "The plan is approved, so you're all set!", 'status-approved', true);
       return one(msg, ctx, { kind: 'request_plans' });
@@ -315,7 +324,7 @@ export function createParser(deps: ConversationDependencies) {
     if (REQUEST_FUNDING.test(plain)) return one(msg, ctx, { kind: 'request_funding' });
     if ((m = GUIDE.exec(text.trim()))) return one(msg, ctx, { kind: 'ask_guide', question: m[1]!.trim() });
     if ((m = ACCEPT.exec(plain))) return bindPlan(msg, ctx, 'accept', m[1]!, Number(m[2]));
-    if ((m = SELECT.exec(plain))) return bindPlan(msg, ctx, 'select', m[1]!, m[2] ? Number(m[2]) : undefined);
+    if ((m = SELECT.exec(plain)) && !(m[1]!.toLowerCase() in CHOICE_NUMBER)) return bindPlan(msg, ctx, 'select', m[1]!, m[2] ? Number(m[2]) : undefined);
     if (actionable(ctx, 'select').length > 0 && (m = PICK_WORDS.exec(plain))) {
       // A bare "2" while we are waiting on an answer ("how many nights?") is that answer, not a pick.
       if (BARE_CHOICE.test(plain) && (ctx.pendingQuestion || ctx.pendingConfirmation)) return null;
@@ -339,6 +348,7 @@ export function createParser(deps: ConversationDependencies) {
   function smallTalk(msg: InboundMessage, ctx: TripConversationContext, text: string, talkative: boolean): ParseResult {
     if (!talkative) return { kind: 'ignored', reason: 'small talk' };
     if (/^(?:thanks?|thank you|thx|ty|appreciate)/i.test(text)) return reply(msg, 'Anytime! Tell me if you want to change anything, or say "show us some options" when you\'re ready.', 'welcome');
+    if (/^good ?night\b|^(?:night|nite|gn|bye|goodbye|see ya|later|ttyl|talk later)\b/i.test(text)) return reply(msg, 'Night! I\'ll be here whenever you want to pick this back up.', 'goodnight');
     if (/^(?:hi|hey|hello|yo|hiya|howdy|hola|sup|wassup|what'?s up|whats up|what up|good |gm)/i.test(text)) {
       // Partway through a question: put it back instead of inviting them to start over.
       const open = ctx.pendingQuestion ? REASK[ctx.pendingQuestion.field] : undefined;
@@ -371,9 +381,14 @@ export function createParser(deps: ConversationDependencies) {
       if (tap[1] !== 'Liked' && tap[1] !== 'Loved') return { kind: 'ignored', reason: 'only positive reactions are recorded' };
       const quote = tap[2]!.toLowerCase();
       const picks = actionable(ctx, 'select');
-      const byName = ctx.actionable.find((a) => a.description !== '' && quote.includes(a.description.toLowerCase()));
+      // The longest title wins, so "Asheville and Boone" is not mistaken for "Asheville".
+      const byName = [...ctx.actionable].sort((a, b) => b.description.length - a.description.length).find((a) => a.description !== '' && quote.includes(a.description.toLowerCase()));
       const numbered = /^option\s+(\d{1,2})\s*:/i.exec(tap[2]!.trim());
-      const target = byName ?? (numbered ? picks[Number(numbered[1]) - 1] : undefined);
+      const numberedTarget = numbered ? picks[Number(numbered[1]) - 1] : undefined;
+      // "Option 2: …" counts only when what follows is that option (or a cut-off start of it): a made-up title is not a reaction to our message.
+      const rest = tap[2]!.trim().replace(/^option\s+\d{1,2}\s*:\s*/i, '').replace(/[….\s]+$/, '').toLowerCase();
+      const numberedFits = numberedTarget !== undefined && (rest === '' || numberedTarget.description.toLowerCase().startsWith(rest));
+      const target = byName ?? (numberedFits ? numberedTarget : undefined);
       if (!target) return { kind: 'ignored', reason: 'reaction target is not a proposal' };
       return one(msg, ctx, target.kind === 'accept'
         ? { kind: 'accept_candidate', candidateId: target.candidateId, revision: target.revision }
@@ -407,19 +422,23 @@ export function createParser(deps: ConversationDependencies) {
     if (carNo) return resolveAnswer(msg, ctx, false);
 
     // A hello, thanks or filler word is never an answer to "where are you leaving from?": it must not reach the place readers.
-    if (TRIVIAL.test(text) || isNamedGreeting(text)) return smallTalk(msg, ctx, text, msg.visibility === 'private' || trip.mode === 'direct');
+    if (TRIVIAL.test(text) || isNamedGreeting(text) || !/[\p{L}\p{N}]/u.test(text)) return smallTalk(msg, ctx, text, msg.visibility === 'private' || trip.mode === 'direct');
 
     // Rules first (fast, exact). Anything the rules did not recognize is handed to the language model automatically,
     // and its (validated) answer is merged with what the rules found.
-    let { items: extracted, unmatched } = extractWithCoverage(text, msg.occurredAt, ctx.pendingQuestion?.field);
+    let { items: extracted, unmatched } = extractWithCoverage(text, localReference(msg.occurredAt, trip.timezone), ctx.pendingQuestion?.field);
     // Nothing fit the question that was asked? Maybe they answered another open one, or just volunteered something.
     if (!extracted.length) {
       for (const field of ctx.openFields ?? []) {
         if (field === ctx.pendingQuestion?.field) continue;
-        const again = extractWithCoverage(text, msg.occurredAt, field);
+        const again = extractWithCoverage(text, localReference(msg.occurredAt, trip.timezone), field);
         if (again.items.length) { ({ items: extracted, unmatched } = again); break; }
       }
     }
+    if (!extracted.length && (msg.visibility === 'private' || trip.mode === 'direct') && /^(?:where (?:i|we) (?:want|wanna|would like|'d like) to go|where (?:i|we)(?:'m| am|'re| are) (?:leaving|going)(?: from)?|the (?:destination|origin)|(?:to|from) (?:go|there)|going there|leaving from|that'?s (?:where|the place))[.!?]*$/i.test(text)) {
+      return reply(msg, 'Which place do you mean? Say it with the city, like "going to Boone" or "leaving from Raleigh".', 'place-which-missing', true);
+    }
+    if (!extracted.length && (msg.visibility === 'private' || trip.mode === 'direct') && NOT_A_WORD_PLACE.test(text)) return reply(msg, HELP, 'help-word', true);
     if (!extracted.length && (msg.visibility === 'private' || trip.mode === 'direct') && BARE_PLACE.test(text) && !/\b(?:i|we|my|you|yes|no)\b/i.test(text)) {
       const place = text.replace(/[.!]+$/, '').trim();
       return reply(msg, `Is ${place} where you're leaving from, or where you want to go? You can say "leaving from ${place}" or "going to ${place}".`, 'place-which', true);

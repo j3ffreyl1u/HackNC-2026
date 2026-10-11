@@ -52,7 +52,13 @@ const MONTH = '(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?
 const SEP = '(?:to|-|–|—|through|thru|until|till)';
 const ISO_RANGE = new RegExp(`(\\d{4}-\\d{2}-\\d{2})(?:\\s*${SEP}\\s*(\\d{4}-\\d{2}-\\d{2}))?`, 'gi');
 const MD_RANGE = new RegExp(`\\b${MONTH}\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:\\s*${SEP}\\s*(?:the\\s+)?(?:${MONTH}\\.?\\s+)?(\\d{1,2})(?:st|nd|rd|th)?)?\\b`, 'gi');
-const SLASH_RANGE = new RegExp(`\\b(\\d{1,2})/(\\d{1,2})(?:\\s*${SEP}\\s*(\\d{1,2})/(\\d{1,2}))?\\b`, 'gi');
+const SLASH_RANGE = new RegExp(`\\b(\\d{1,2})/(\\d{1,2})(?:\\s*${SEP}\\s*(?:(\\d{1,2})/)?(\\d{1,2}))?\\b`, 'gi');
+// "14-16 Nov", "14th Nov", "14 to 16 November": day first. "may" is left out because "20 may" is far more often a verb.
+const DAY_FIRST_MONTH = '(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
+const DM_RANGE = new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?(?:\\s*${SEP}\\s*(\\d{1,2})(?:st|nd|rd|th)?)?\\s+(?:of\\s+)?${DAY_FIRST_MONTH}\\b`, 'gi');
+// "Nov 14 and 15", "Nov 14, 15 and 16": several days of one month, said as a list.
+const MD_LIST = new RegExp(`\\b${MONTH}\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?((?:\\s*(?:,|and|&)\\s*\\d{1,2}(?:st|nd|rd|th)?(?!\\d|\\s*(?:/|:|nights?|people|hours?|hrs?|bucks|dollars|%|\\$|am|pm)\\b))+)`, 'gi');
+const WEEKDAY = /\b(?:mon|tue|tues|wed|thu|thur|thurs|fri|sat|sun)(?:day|sday|nesday|rsday|urday)?\b\.?,?/gi;
 
 export interface ParsedWindow { start: string; end: string }
 
@@ -67,7 +73,7 @@ const iso = (y: number, m: number, d: number) => `${y}-${String(m).padStart(2, '
 export function parseDateWindows(input: string, reference: string): ParsedWindow[] {
   const ref = new Date(reference);
   if (Number.isNaN(ref.getTime())) return [];
-  const today = ref.toISOString().slice(0, 10);
+  const today = ref.toISOString().slice(0, 10);   // the caller passes a reference whose UTC date is the trip's local date (see localReference)
   const refYear = ref.getUTCFullYear();
   const out: ParsedWindow[] = [];
 
@@ -87,10 +93,28 @@ export function parseDateWindows(input: string, reference: string): ParsedWindow
     out.push({ start, end });
   };
 
-  let rest = input;
+  let rest = input.replace(WEEKDAY, ' ');   // "Fri Nov 14 - Sun Nov 16" is Nov 14 - Nov 16
   rest = rest.replace(ISO_RANGE, (_m, a: string, b?: string) => {
     const end = b ?? a;
     if (isValidIsoDate(a) && isValidIsoDate(end) && end >= a) out.push({ start: a, end });
+    return ' ';
+  });
+  rest = rest.replace(MD_LIST, (_m, mo: string, d: string, more: string) => {
+    const sm = monthIndex(mo.toLowerCase());
+    if (sm === undefined) return ' ';
+    const days = [Number(d), ...[...more.matchAll(/\d{1,2}/g)].map((x) => Number(x[0]))].sort((a, b) => a - b);
+    let runStart = days[0]!; let prev = days[0]!;
+    for (const day of [...days.slice(1), Infinity]) {
+      if (day === prev + 1) { prev = day; continue; }
+      resolve(sm + 1, runStart, sm + 1, prev);
+      runStart = day; prev = day;
+    }
+    return ' ';
+  });
+  rest = rest.replace(DM_RANGE, (_m, d: string, d2: string | undefined, mo: string) => {
+    const sm = monthIndex(mo.toLowerCase());
+    if (sm === undefined) return ' ';
+    resolve(sm + 1, Number(d), d2 === undefined ? undefined : sm + 1, d2 === undefined ? undefined : Number(d2));
     return ' ';
   });
   rest = rest.replace(MD_RANGE, (_m, mo: string, d: string, mo2?: string, d2?: string) => {
@@ -102,7 +126,8 @@ export function parseDateWindows(input: string, reference: string): ParsedWindow
     return ' ';
   });
   rest.replace(SLASH_RANGE, (_m, m1: string, d1: string, m2?: string, d2?: string) => {
-    resolve(Number(m1), Number(d1), m2 === undefined ? undefined : Number(m2), d2 === undefined ? undefined : Number(d2));
+    const endMonth = d2 === undefined ? undefined : m2 === undefined ? Number(m1) : Number(m2);   // "11/14-16" stays in November
+    resolve(Number(m1), Number(d1), endMonth, d2 === undefined ? undefined : Number(d2));
     return ' ';
   });
 
@@ -155,4 +180,19 @@ export function formatWindow(w: ParsedWindow): string {
   const [, em, ed] = w.end.split('-').map(Number) as [number, number, number];
   if (w.start === w.end) return `${MON[sm - 1]} ${sd}`;
   return sm === em ? `${MON[sm - 1]} ${sd}-${ed}` : `${MON[sm - 1]} ${sd} - ${MON[em - 1]} ${ed}`;
+}
+
+/**
+ * An instant whose UTC date is the date it currently is in the trip's timezone, so "free Oct 11" typed at
+ * 9:30pm Eastern on Oct 11 means today, not a year from now. Only the date matters to the date parser.
+ */
+export function localReference(occurredAt: string, timeZone: string): string {
+  const at = new Date(occurredAt);
+  if (Number.isNaN(at.getTime())) return occurredAt;
+  try {
+    const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(at).map((x) => [x.type, x.value]));
+    return `${p.year}-${p.month}-${p.day}T12:00:00.000Z`;
+  } catch {
+    return occurredAt;
+  }
 }

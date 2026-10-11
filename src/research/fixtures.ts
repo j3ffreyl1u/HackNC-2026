@@ -130,7 +130,7 @@ export function searchFixtures(data: FixtureData, request: ResearchRequest, retr
   const destination = request.destination?.toLowerCase();
   const region = request.searchRegion?.toLowerCase();
   const questionWords = new Set(request.purpose === 'guide' && request.question ? words(request.question) : []);
-  const rainy = ['rain', 'raining', 'rainy', 'wet', 'storm'].some((w) => questionWords.has(w));
+  const rainy = ['rain', 'rains', 'rained', 'raining', 'rainy', 'rainstorm', 'drizzle', 'shower', 'showers', 'wet', 'storm', 'storms', 'stormy', 'thunderstorm'].some((w) => questionWords.has(w));
 
   const matches = data.options.filter((o) => {
     const isGuideOnly = o.tags.includes('rain');

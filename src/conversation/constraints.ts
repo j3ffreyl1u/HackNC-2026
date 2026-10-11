@@ -20,7 +20,7 @@ const BUDGET_BEFORE = new RegExp(`(?:${MONEY})\\s*(?:(?:is|'s)\\s+(?:my|the|our)
 const BUDGET_BARE = /\b(?:budget|max(?:imum)?|cap|limit)\b\s*(?:(?:is|of|:|=)\s*)?(?:(?:around|about|roughly|approximately|like|at)\s*)?\$?([\d,]+(?:\.\d{1,2})?)\b(?!\s*[a-z])|\b(?:spend|afford|pay|swing)\s+(?:about\s+|around\s+|up to\s+)?\$?([\d,]+(?:\.\d{1,2})?)\b(?!\s*[a-z])|\b(?:have|got)\s+\$?([\d,]+(?:\.\d{1,2})?)\s+(?:dollars\s+|bucks\s+)?(?:to|for)\s+(?:spend|the trip|this trip)\b|(?:^|[\s,])\$?([\d,]+(?:\.\d{1,2})?)\s*(?:is|'s)\s+(?:my|the|our)\s+(?:(?:firm|hard|absolute|final)\s+)?(?:max|maximum|budget|cap|limit)\b/i;
 const BARE_AMOUNT = /^\$?\s*([\d,]+(?:\.\d{1,2})?)\s*(?:dollars|bucks|usd)?[.!]*$/i;
 const AVAIL_WORDS = /\b(free|available|availability|open|works?|can (?:do|go|make(?: it)?|leave)|good|window|off|maybe|perhaps|how about|what about|could (?:do|go|make it))\b/i;
-const NEGATIVE = /\b(not|n't|busy|can'?t|cannot|unavailable|booked|out of town)\b/i;
+const NEGATIVE = /\b(not|n't|busy|can'?t|cannot|unavailable|booked|out of town|bad|no good|conflict|have plans|taken)\b/i;
 
 /** One-way drive limit in minutes from text like "within 3 hours", "1.5 hour drive", "within 90 minutes". */
 export function parseMaxTravelMinutes(text: string): number | undefined {
@@ -36,8 +36,18 @@ const NOT_A_PLACE_ANSWER = /^(?:cancel|never ?mind|nvm|stop|quit|skip|idk|not su
 /** "I like the second one better" is about the options, not something the person likes doing. */
 const PICK_TALK = /\b(?:the\s+)?(?:first|second|third|1st|2nd|3rd|last|other)\s+(?:one|option|plan)\b|\b(?:option|plan)\s+\d\b|\bone\s+better\b/i;
 const NOT_A_PLACE = /\b(i|we|you|he|she|they|has|have|had|is|are|was|am|can|will|would|want|like|need|car|trip|my|our|it|not|but|with|for|please|thanks|yes|no|help|huh|menu|options?|wait|sorry|skip|later|stop|cancel|idk|dunno|what|why|how|nothing|never ?mind)\b/i;
-const THIRD_PERSON_VEHICLE = /\b(?:[Ww]e|[Ss]omeone|[Ss]omebody|[Aa]nyone|[Ee]veryone|[A-Z][a-z]+)\s+(?:has|have|got)\s+(?:a\s+|an\s+|the\s+|two\s+|2\s+|both\s+)?(?:cars?|vehicles?|trucks?|suvs?)\b/;
+/** "my car is in the shop": the car exists but cannot make the trip. */
+const CAR_BROKEN = /\b(?:my|our) (?:car|truck|suv|van)\b[^.!?]{0,30}\b(?:shop|broken|broke|dead|died|mechanic|repair(?:s|ed)?|totaled|totalled|won'?t start|not working|isn'?t working)\b/i;
+const THIRD_PERSON_VEHICLE = /\b(?:[Ww]e|[Ss]omeone|[Ss]omebody|[Aa]nyone|[Ee]veryone|(?!(?:Who|Whoever|What|Which|Where|When|Why|How|Does|Do|Did|Has|Have|Is|Are|Can|Could|Would|Should|Will|Nobody|None)\b)[A-Z][a-z]+)\s+(?:has|have|got)\s+(?:a\s+|an\s+|the\s+|two\s+|2\s+|both\s+)?(?:cars?|vehicles?|trucks?|suvs?)\b/;
 
+/** "I don't want to go to Charlotte", "the drive to Asheville is too long": the place is named, but not as where to go. */
+const NOT_DESTINATION = /\b(?:don'?t|do not|doesn'?t|not|never|won'?t|no way)\b[^.!?]{0,25}\b(?:go|going|want|wanna|head|travel|drive|driving|like|care|do)\b|\btoo (?:long|far)\b|\b(?:is|are|was|seems?) (?:really |way |so |pretty )?(?:far|long|boring|expensive|crowded|overrated)\b/i;
+/** Lower-case words after "let's go to" that are an activity or a thing, not a place. */
+const LOWER_NOT_PLACE = /^(?:the\s+)?(?:bed|sleep|work|school|class|town|be|get|see|do|have|try|make|take|visit|say|ask|check|stay|eat|drink|hike|find|look|plan|my|our|your|his|her|that|this|it|them|us|you|one|some|any|every|all|more|just|really|somewhere|anywhere|something|there|here|home|a|an|the)\b/i;
+/** "boone" -> "Boone", "washington dc" -> "Washington DC": only text typed in lower case; two-letter words are abbreviations. */
+export const properCase = (text: string): string => (text === text.toLowerCase()
+  ? text.replace(/\b([a-z])([a-z.'-]*)/g, (w, f: string, r: string) => (['of', 'the', 'and', 'in', 'on', 'by'].includes(w) ? w : r.length === 1 ? w.toUpperCase() : f.toUpperCase() + r))
+  : text);
 const NOT_ORIGIN = /^(?:there|here|home|it|that|this|them|where|somewhere|anywhere)$/i;
 /** A sentence that is a question ("how long is the drive to Asheville") is not a statement of where we are going. */
 const QUESTION_START = /^(?:how|what|what's|whats|where|when|which|who|why|is|are|does|do|can|could|will|would|should)\b/i;
@@ -53,7 +63,17 @@ function splitItems(raw: string): string[] {
   return [...new Set(items)].slice(0, 10);
 }
 
+/** "$1.5k" is $1,500. Only applied where it can only mean money. */
+const expandK = (s: string) => s.replace(/(\$\s*)?(\d+(?:\.\d+)?)\s*k\b/gi, (all, dollar: string | undefined, n: string) => (dollar || /\b(?:budget|max|cap|limit|spend|afford)\b/i.test(s) ? `${dollar ?? ''}${Math.round(Number(n) * 1000)}` : all));
+/** An amount per night, per day or per meal is not the whole trip's limit. */
+const PER_UNIT = /\$?\s*[\d,]+(?:\.\d{1,2})?\s*(?:dollars|bucks)?\s*(?:\/|a |an |per |each |every )\s*(?:night|day|nite|meal|hour|mile|week)\b|\b(?:per|each|every)\s+(?:night|day)\s+(?:is\s+)?\$?\d/i;
+/** "I can't afford $300" means under $300, not $300; "can't spend more than $300" is a real cap. */
+const CANT_AFFORD = /\b(?:can'?t|cannot|can not|won'?t|don'?t|do not|couldn'?t)\b[^.!?$\d]{0,20}\b(?:afford|spend|pay|do|swing|manage)\b(?![^.!?$\d]{0,12}\b(?:more than|over|above|past|beyond|than)\b)/i;
+/** "our budget is $900", "$900 combined": a group amount, not one person's limit. */
+export const GROUP_BUDGET = /\bour\s+(?:total\s+|combined\s+|group\s+|whole\s+|trip\s+|shared\s+)?(?:budget|max|maximum|cap|limit|spend)\b|\b(?:combined|altogether|as a group|group total|group budget|between (?:all of )?us)\b/i;
+
 function budgetFrom(sentence: string): number | null {
+  sentence = expandK(sentence);
   const m = BUDGET_AFTER.exec(sentence) ?? BUDGET_BEFORE.exec(sentence);
   const bare = m ? null : BUDGET_BARE.exec(sentence);
   const raw = m ? (m[1] ?? m[2] ?? m[3] ?? m[4]) : (bare?.[1] ?? bare?.[2] ?? bare?.[3] ?? bare?.[4]);
@@ -66,6 +86,7 @@ const TRAILING_REQUEST = /[,;]\s*(?:and\s+|so\s+)?(?:(?:can|could|would|will)\s+
 function extractSentence(s: string, reference: string, pending: ConstraintField | undefined, out: Extracted[]): void {
   s = s.replace(/\s*\([^()]*\?\s*\)/g, '');   // a question tucked in brackets is not part of the facts
   const hedged = HEDGE.test(s.replace(TRAILING_REQUEST, ''));
+  const budgetUnsure = PER_UNIT.test(s) || CANT_AFFORD.test(s);   // an amount we cannot take as the person's whole limit
   const push = (value: ConstraintValue, extra: Partial<Extracted> = {}) => out.push({ value, hedged, ...extra });
   let m: RegExpExecArray | null;
   let visited: string | undefined;   // a place named as "I'd like to visit Boone": that is where to go, not something they like
@@ -75,14 +96,23 @@ function extractSentence(s: string, reference: string, pending: ConstraintField 
   if (split.length >= 2 && split.every((c): c is number => c !== null)) push({ field: 'budget', value: split.reduce((a, b) => a + b, 0) }, { hedged: true });
   else {
     const cents = budgetFrom(s);
-    if (cents !== null) push({ field: 'budget', value: cents });
+    if (cents !== null) push({ field: 'budget', value: cents }, budgetUnsure ? { hedged: true } : {});
   }
 
-  const windows = parseDateWindows(s, reference);
+  let windows = parseDateWindows(s, reference);
+  // "I can't do Nov 14 but I'm free Nov 21": only the clause that says free gives a window.
+  let mixedNegative = false;
+  if (windows.length > 1 && NEGATIVE.test(s) && /\b(free|available|can (?:do|go|make))\b/i.test(s.replace(/\b(?:not|n't|never) (?:free|available)/gi, ''))) {
+    const clauses = s.split(/\bbut\b|\bhowever\b|\bthough\b|;/i);
+    if (clauses.length > 1) {
+      const keep = clauses.filter((c) => !NEGATIVE.test(c));
+      if (keep.length && keep.length < clauses.length) { windows = parseDateWindows(keep.join(' '), reference); mixedNegative = true; }
+    }
+  }
   // A message that is only a date range ("11/14-11/16", "Nov 14th - 16th") answers "when are you free?" even without a cue word.
-  const dateOnly = s.replace(/(?<=\d)(?:st|nd|rd|th)\b/gi, '').replace(/\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|to|through|thru|until|till|and|the|from|st|nd|rd|th)\b/gi, '').replace(/[\d/\-–—.,\s]+/g, '') === '';
+  const dateOnly = s.replace(/(?<=\d)(?:st|nd|rd|th)\b/gi, '').replace(/\b(?:also|plus|or|mon(?:day)?|tue(?:s|sday)?|wed(?:nesday)?|thu(?:r|rs|rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?|jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|to|through|thru|until|till|and|the|from|st|nd|rd|th)\b/gi, '').replace(/[\d/\-–—.,\s]+/g, '') === '';
   if (windows.length && (AVAIL_WORDS.test(s) || pending === 'availability' || NEGATIVE.test(s) || dateOnly)) {
-    if (NEGATIVE.test(s) && !/\b(free|available)\b/i.test(s.replace(/\b(not|n't) (free|available)/gi, ''))) push({ field: 'availability', value: windows }, { negative: true });
+    if (!mixedNegative && NEGATIVE.test(s) && !/\b(free|available)\b/i.test(s.replace(/\b(not|n't) (free|available)/gi, ''))) push({ field: 'availability', value: windows }, { negative: true });
     else push({ field: 'availability', value: windows });
   }
 
@@ -92,14 +122,16 @@ function extractSentence(s: string, reference: string, pending: ConstraintField 
   }
   else if (!s.includes('?') && /\blong weekend\b/i.test(s)) push({ field: 'duration', value: 3 });
   else if (!s.includes('?') && /\b(?:a|quick|short|just a|over a)\s+weekend(?!\s+of\b)|\bweekend\s+(?:trip|getaway)\b/i.test(s) && !windows.length) push({ field: 'duration', value: 2 });
-  if ((m = /\b(?:leav(?:e|ing)|depart(?:ing)?|start(?:ing)?|driv(?:e|ing)|coming|going)\s+from\s+([A-Za-z][A-Za-z .'-]{1,40}?)(?=[,.;!?]|\s+(?:and|but|on|at|around|with|to|for|in|if)\b|$)/i.exec(s)) ?? (m = /\b(?:origin|departing city)\s*(?:is|:)\s*([A-Za-z][A-Za-z .'-]{1,40})/i.exec(s))) {
+  if ((m = /\b(?:leav(?:e|ing)|depart(?:ing)?|start(?:ing)?|driv(?:e|ing)|coming|going)\s+from\s+([A-Za-z][A-Za-z .'-]{1,40}?)(?=[,.;!?]|\s+(?:and|but|on|at|around|with|to|for|in|if|tomorrow|today|tonight|next|this|after|before|early|late|by|when|then|so|since|because|until|till|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b|$)/i.exec(s)) ?? (m = /\b(?:origin|departing city)\s*(?:is|:)\s*([A-Za-z][A-Za-z .'-]{1,40})/i.exec(s))) {
     const place = m![1]!.trim();
     if (!NOT_ORIGIN.test(place)) push({ field: 'origin', value: place });
   }
   if ((m = /\b(?:within|no more than|at most|up to|under|max(?:imum)? of)\s+(?:about\s+|around\s+)?(\d{1,2}(?:\.\d)?)\s*(?:hours?|hrs?|h)\b(?!\s*of\s+(?:sleep|work))/i.exec(s)) ?? (m = /\b(\d{1,2}(?:\.\d)?)\s*[- ]?(?:hours?|hrs?)\s+(?:drive|away|radius)\b/i.exec(s))) {
     push({ field: 'region', value: `within ${m![1]} hours by car`, maxTravelMinutes: Math.round(Number(m![1]) * 60) });
-  } else if ((m = /\b(?:[Gg]o|[Tt]ravel|[Dd]rive|[Hh]ead|going|headed|heading|trip)\s+to\s+(?:the\s+)?((?:[A-Z][A-Za-z.'-]*)(?:\s+[A-Z][A-Za-z.'-]*){0,3})/.exec(s)) && !QUESTION_START.test(s)) {
+  } else if ((m = /\b(?:[Gg]o|[Tt]ravel|[Dd]rive|[Hh]ead|going|headed|heading|trip)\s+to\s+(?:the\s+)?((?:[A-Z][A-Za-z.'-]*)(?:\s+[A-Z][A-Za-z.'-]*){0,3})/.exec(s)) && !QUESTION_START.test(s) && !NOT_DESTINATION.test(s)) {
     push({ field: 'region', value: clean(m[1]!) });
+  } else if ((m = /\b(?:let'?s|lets|let us|we should|we could|i want to|we want to|i wanna|we wanna|how about|what about|i'?d like to|we'?d like to)\s+(?:go|head|drive|travel)\s+to\s+(?:the\s+)?([a-z][a-z.'-]{2,}(?:\s+[a-z][a-z.'-]{2,}){0,2})(?=[\s,.;!?]|$)/.exec(s)) && !QUESTION_START.test(s) && !NOT_DESTINATION.test(s) && !LOWER_NOT_PLACE.test(m[1]!)) {
+    push({ field: 'region', value: properCase(m[1]!) });
   } else if ((m = /\b(?:want|wanna|'d like|would like)\s+to\s+(?:visit|see)\s+((?:[A-Z][A-Za-z.'-]*)(?:\s+[A-Z][A-Za-z.'-]*){0,3})(?=[\s,.;!?]|$)/.exec(s)) && !QUESTION_START.test(s)) {
     visited = clean(m[1]!);
     push({ field: 'region', value: visited });
@@ -111,12 +143,13 @@ function extractSentence(s: string, reference: string, pending: ConstraintField 
     push({ field: 'region', value, ...(maxTravelMinutes !== undefined ? { maxTravelMinutes } : {}) });
   }
   if (/\bi(?:'ve|\s+have|\s+got)\s+(?:got\s+)?(?:a\s+|my\s+)?(?:own\s+)?(?:car|vehicle|truck|suv)\b|\bi\s+can\s+drive\b|\bi(?:'ll| will)\s+drive\b|\b(?:we|i)(?:'ll| will| can| could)?\s+(?:take|use|bring|drive)\s+(?:my|our|the)\s+(?:own\s+)?(?:car|truck|suv|van|vehicle)\b/i.test(s)) push({ field: 'transport', value: 'own_vehicle', vehicleAvailable: true });
-  else if (pending === 'transport' && !s.includes('?') && /\b(?:has|have|got|owns?|can (?:drive|bring))\s+(?:one|it|a ride|a vehicle|a car|a truck|an suv)\b|\b(?:do|does)\b|\bmy (?:car|truck)\b/i.test(s) && !/\b(?:no|nobody|none|don'?t|doesn'?t|not)\b/i.test(s)) push({ field: 'transport', value: 'own_vehicle', vehicleAvailable: true });
+  else if (pending === 'transport' && !s.includes('?') && CAR_BROKEN.test(s)) push({ field: 'transport', value: 'no_vehicle', vehicleAvailable: false });
+  else if (pending === 'transport' && !s.includes('?') && !QUESTION_START.test(s) && /\b(?:has|have|got|owns?|can (?:drive|bring))\s+(?:one|it|a ride|a vehicle|a car|a truck|an suv)\b|\b(?:do|does)\b|\bmy (?:car|truck)\b/i.test(s) && !/\b(?:no|nobody|none|don'?t|doesn'?t|not)\b/i.test(s)) push({ field: 'transport', value: 'own_vehicle', vehicleAvailable: true });
   else if (pending === 'transport' && !s.includes('?') && /\b(?:nobody|no ?one|none of us|neither of us|no)\b|\b(?:don'?t|doesn'?t|do not|does not)\s+(?:have|got|own)\b/i.test(s)) push({ field: 'transport', value: 'no_vehicle', vehicleAvailable: false });
   else if (!s.includes('?') && THIRD_PERSON_VEHICLE.test(s)) push({ field: 'transport', value: 'own_vehicle', vehicleAvailable: true });
   else if (/\bi\s+(?:don'?t|do not)\s+have\s+(?:a\s+)?(?:car|vehicle)\b|\bno car\b|\bi\s+(?:can'?t|cannot)\s+drive\b/i.test(s)) push({ field: 'transport', value: 'no_vehicle', vehicleAvailable: false });
 
-  if (/\b(?:no (?:real )?preferences?|don'?t (?:really )?care|i'?m (?:easy|flexible|open to anything))\b/i.test(s)) {
+  if (/\b(?:no (?:real )?preferences?|don'?t (?:really )?care(?!\s+(?:about|for)\b)|i'?m (?:easy|flexible|open to anything))\b/i.test(s)) {
     push({ field: 'preferences', value: ['no preference'] });
   } else if (!PICK_TALK.test(s) && (m = /\b(?:i|we)(?:\s+really)?(?:\s+|(?='))(?:prefer|like|love|enjoy|(?:am|are|'m|'re)\s+into|(?:want|'d like|would like) to (?:be able to )?(?:do|try|see|visit|explore|check out))\s+(.+)$/i.exec(s))) {
     // Stop at the next clause ("..., my max is $400", "... and I'm free Nov 14") so money and dates never end up as a liking.
@@ -127,7 +160,7 @@ function extractSentence(s: string, reference: string, pending: ConstraintField 
   const musts: string[] = [];
   if ((m = /\b(?:must(?:[- ]do| see| have| include)|have to (?:do|see)|need to (?:do|see)|can'?t miss|dealbreaker)\s*:?\s+(.+)$/i.exec(s))) musts.push(...splitItems(m[1]!));
   if ((m = /\bi(?:'m| am)\s+(vegetarian|vegan|gluten[- ]free|lactose intolerant|pescatarian)\b/i.exec(s))) musts.push(m[1]!.toLowerCase());
-  if ((m = /\b(halal|kosher|wheelchair|step[- ]free)\b/i.exec(s))) musts.push(m[1]!.toLowerCase());
+  if ((m = /\b(halal|kosher|wheelchair|step[- ]free)\b/i.exec(s)) && !/\b(?:don'?t|do not|doesn'?t|no|not|without|n't)\b[^.!?]{0,25}\b(?:halal|kosher|wheelchair|step[- ]free)\b/i.test(s)) musts.push(m[1]!.toLowerCase());
   if (musts.length) push({ field: 'must_dos', value: [...new Set(musts)].slice(0, 10) });
 }
 
@@ -149,7 +182,7 @@ function pendingAnswer(text: string, reference: string, pending: ConstraintField
       // Only something that looks like a place: a few words, no pronouns/verbs ("Mason has a car for the trip" is not a destination).
       const place = t.replace(/[.!]+$/, '').replace(/^(?:(?:i'?m\s+)?(?:leaving\s+|coming\s+)?from\s+)+/i, '');   // "from Raleigh" is Raleigh
       const looksLikePlace = /^[A-Za-z][A-Za-z ,.'-]{1,40}$/.test(place) && place.split(/\s+/).length <= 4 && !NOT_A_PLACE.test(place) && !NOT_A_PLACE_ANSWER.test(place) && parseDateWindows(place, reference).length === 0;
-      return looksLikePlace && !hedged ? { value: { field: pending, value: place }, hedged } : null;
+      return looksLikePlace && !hedged ? { value: { field: pending, value: properCase(place) }, hedged } : null;
     }
     case 'preferences':
     case 'must_dos': {
@@ -219,6 +252,14 @@ export function extractWithCoverage(text: string, reference: string, pending?: C
     const [first, ...rest] = regions as Array<Extracted & { value: { field: 'region'; value: string; maxTravelMinutes?: number } }>;
     const limit = rest.map((r) => r.value.maxTravelMinutes).find((n) => n !== undefined);
     if (first!.value.maxTravelMinutes === undefined && limit !== undefined) first!.value.maxTravelMinutes = limit;
+  }
+  // Dates said in separate sentences ("free Nov 14-16. Also Nov 21-23") are all kept.
+  const avail = out.filter((e) => e.value.field === 'availability' && !e.negative && !e.hedged);   // a tentative window never joins a firm one
+  if (avail.length > 1) {
+    const first = avail[0]! as Extracted & { value: { field: 'availability'; value: Array<{ start: string; end: string }> } };
+    for (const more of avail.slice(1) as Array<typeof first>) {
+      first.value.value = [...first.value.value, ...more.value.value].filter((w, i, all) => all.findIndex((x) => x.start === w.start && x.end === w.end) === i).sort((a, b) => a.start.localeCompare(b.start)).slice(0, 6);
+    }
   }
   // One value per field per message: keep the first.
   const seen = new Set<string>();

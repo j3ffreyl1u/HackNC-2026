@@ -204,7 +204,7 @@ function conflictReplies(state: TripState, excluded: readonly TripCandidate[], p
     );
   }
   if (provisional.length > 0) reasons.push("a couple others looked good, but I couldn't find all their prices, so I can't tell if they fit");
-  if (kinds.has('availability')) { reasons.push('some fell outside the days you\'re both free'); ideas.push('open up a few more dates'); }
+  if (kinds.has('availability')) { reasons.push(`some fell outside the days ${participantIds(state).length > 2 ? 'everyone is' : 'you\'re both'} free`); ideas.push('open up a few more dates'); }
   if (kinds.has('must_do')) { reasons.push("some missed a must-have"); ideas.push('relax a must-have'); }
   if (unpricedCount > 0 && excluded.length === 0 && provisional.length === 0) {
     reasons.push("I found some places, but not enough prices to tell if they fit");
@@ -213,7 +213,7 @@ function conflictReplies(state: TripState, excluded: readonly TripCandidate[], p
     reasons.push(excluded.length === 0 && provisional.length === 0 ? `I couldn't find anything${place ? ` around ${place}` : ''} that matched` : 'some were a longer drive than you wanted');
     ideas.push('look somewhere different or a bit farther');
   }
-  const head = `Hmm, I couldn't find ${nights ? `a ${nights}-night trip` : 'a trip'}${place ? ` to ${place}` : ''} that works for both of you yet.`;
+  const head = `Hmm, I couldn't find ${nights ? `a ${nights}-night trip` : 'a trip'}${place ? ` to ${place}` : ''} that works for ${participantIds(state).length > 2 ? 'everyone' : 'both of you'} yet.`;
   replies.push({
     audience: { kind: 'group' },
     text: [

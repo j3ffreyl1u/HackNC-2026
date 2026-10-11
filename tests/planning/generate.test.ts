@@ -127,7 +127,7 @@ describe('planTrip: hard limits filter', () => {
     const outcome = await planTrip(readyState({ mason: 5_000, alex: 5_000, jordan: 5_000 }), provider);
     expect(outcome.candidates.every((c) => !c.feasibility.feasible)).toBe(true);
     const text = groupText(outcome);
-    expect(text).toMatch(/couldn't find a 2-night trip .*that works for both of you/);
+    expect(text).toMatch(/couldn't find a 2-night trip .*that works for everyone/);
     expect(text).toMatch(/A few ways to fix it/);
     expect(text).toMatch(/never change anyone's limit unless they say so/);
     expect(text).not.toMatch(/\$\d|5,?000/);

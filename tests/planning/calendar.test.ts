@@ -34,7 +34,7 @@ describe('planToIcs', () => {
 
   it('escapes commas, semicolons, backslashes and newlines in text', () => {
     const ics = unfold(planToIcs(plan({ itinerary: [{ itemId: 'x', label: 'Lunch, then; a walk\\nice', location: 'Line one\nLine two', startAt: '2026-11-14T12:00:00Z', endAt: '2026-11-14T13:00:00Z' }] }), { now: NOW })!);
-    expect(ics).toContain('SUMMARY:Lunch\\, then\; a walk\\\\nice');
+    expect(ics).toContain('SUMMARY:Lunch\\, then\\; a walk\\\\nice');
     expect(ics).toContain('LOCATION:Line one\\nLine two');
   });
 
