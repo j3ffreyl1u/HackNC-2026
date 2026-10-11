@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { FundService } from '../funding/service.js';
 import { describeFund, describeSettlement, driftNotices, reminderFor, settleTrip } from '../planning/funding.js';
+import { accumulatePreferences } from '../planning/constraints.js';
 import { toPlanningState } from './planning-adapter.js';
 import type {
   ConstraintValue,
@@ -46,6 +47,8 @@ export interface ApplicationRuntimeDependencies {
   fundService?: FundService;
   /** If a search is still running after this long, the group gets one short "still looking" text (default 45 s, 0 turns it off). */
   stillLookingMs?: number;
+  /** How long `stop()` waits for work in flight (a search) before giving up on it. A search cut off here is resumed on the next start. Default 5 seconds. */
+  stopWaitMs?: number;
 }
 
 export interface ApplicationRuntime {
@@ -96,7 +99,10 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
       stopped = true;
       clearInterval(retryTimer);
       await conversation.stop();
-      await Promise.allSettled(queued.splice(0));
+      // A hung search must not make a clean shutdown hang too: wait a little, then leave it (it resumes on the next start).
+      let timer: NodeJS.Timeout | undefined;
+      await Promise.race([Promise.allSettled(queued.splice(0)), new Promise<void>((resolve) => { timer = setTimeout(resolve, dependencies.stopWaitMs ?? 5_000); })]);
+      clearTimeout(timer);
       await runtime.drainOutbox();
     },
 
@@ -322,14 +328,23 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
               if (fundTopic === 'wrap_up') {
                 replies.push(makeMessage(tripId, `fund-wrap:${message.eventId}`, { audience: { kind: 'group', spaceId: enrollment.groupSpaceId }, text: describeSettlement(planning, settleTrip(report.plan, report.funding, report.spending), { simulated: true }) }));
               } else if (fundTopic === 'remind') {
+                // Nobody is reminded more than once a day, however often someone asks: pressure on the least-funded person helps no one.
+                const day = message.occurredAt.slice(0, 10);
+                const tag = (id: string) => `reminded:${id}:${day}`;
                 const others = report.funding.missingMemberIds.filter((id) => id !== member.memberId);
-                for (const id of others) {
+                const due = others.filter((id) => !keys.has(tag(id)));
+                for (const id of due) {
                   const text = reminderFor(id, report.funding);
-                  if (text) replies.push(privately(id, text, `fund-remind:${message.eventId}:${id}`));
+                  if (text) { replies.push(privately(id, text, `fund-remind:${message.eventId}:${id}`)); keys.add(tag(id)); }
                 }
-                const nudged = others.map((id) => planning.roster.find((m) => m.memberId === id)?.displayName ?? id);
+                nextState = { ...nextState, fundingNoticeKeys: { ...nextState.fundingNoticeKeys, [String(nextState.revision)]: [...keys] } };
+                const nameOf = (id: string) => planning.roster.find((m) => m.memberId === id)?.displayName ?? id;
+                const nameList = (ids: string[]) => (ids.length > 1 ? `${ids.slice(0, -1).map(nameOf).join(', ')} and ${nameOf(ids.at(-1)!)}` : nameOf(ids[0]!));
+                const already = others.filter((id) => !due.includes(id));
                 const own = reminderFor(member.memberId, report.funding);
-                const told = nudged.length > 0 ? `Reminded ${nudged.length > 1 ? `${nudged.slice(0, -1).join(', ')} and ${nudged.at(-1)}` : nudged[0]}.` : "Everyone else is covered, so there's nobody to remind.";
+                const told = due.length > 0
+                  ? `Reminded ${nameList(due)}.${already.length > 0 ? ` ${nameList(already)} already got one today.` : ''}`
+                  : already.length > 0 ? `I already reminded ${nameList(already)} today, so I'll leave them alone until tomorrow.` : "Everyone else is covered, so there's nobody to remind.";
                 replies.push(privately(member.memberId, own ? `${told}\n${own}` : told, `fund:${message.eventId}`));
               } else {
                 replies.push(privately(member.memberId, describeFund(planning, report.plan, report.funding, report.spending, { simulated: true }), `fund:${message.eventId}`));
@@ -450,7 +465,8 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
     });
     const result = await repository.commitEvent({
       eventId: `research-failed:${tripId}:${revision}:${attempt}`,
-      state: current,
+      // Nothing is being looked up any more, so the trip must not keep saying "still looking".
+      state: current.status === 'researching' ? { ...current, status: 'gathering' } : current,
       expectedRevision: revision,
       messages: [message],
     });
@@ -520,9 +536,10 @@ function othersShared(state: TripState, actorId: string): Array<{ memberId: stri
     const missing: string[] = [];
     const dates = latest('availability');
     if (dates && dates.field === 'availability') shared.push(`is free ${dates.value.map((w) => dayRange(w.startAt, w.endAt, w.timeZone)).join(' and ')}`); else missing.push('dates');
-    const prefs = latest('preferences');
-    const likes = prefs && prefs.field === 'preferences' ? prefs.value.filter((v) => !/\$|\d|\b(?:budget|max(?:imum)?)\b/i.test(v)) : [];   // never repeat anything that mentions money
-    if (prefs && prefs.field === 'preferences' && likes.length > 0) shared.push(likes.includes('no preference') ? 'has no strong preferences' : `is into ${likes.join(' and ')}`); else missing.push('preferences');
+    const prefRecords = state.memberConstraints.filter((c) => c.memberId === m.memberId && c.field === 'preferences' && c.certainty === 'confirmed');
+    const prefs = prefRecords.length > 0 ? prefRecords : undefined;
+    const likes = prefs ? accumulatePreferences(prefRecords.map((c) => (c.field === 'preferences' ? c.value : []))).filter((v) => !/\$|\d|\b(?:budget|max(?:imum)?)\b/i.test(v)) : [];   // never repeat anything that mentions money
+    if (prefs && likes.length > 0) shared.push(likes.includes('no preference') ? 'has no strong preferences' : `is into ${likes.join(' and ')}`); else missing.push('preferences');
     const must = latest('must_dos');
     if (must && must.field === 'must_dos' && must.value.length > 0) shared.push(`has must-haves: ${must.value.join(', ')}`);
     // What they said about the shared basics counts too ("I'd rather do 3 nights"), so "what did Mason say?" is not empty after they weighed in.

@@ -72,7 +72,8 @@ function ackPart(v: ConstraintValue, tentative: boolean): string {
     case 'origin': return `leaving from ${titleCase(v.value)}`;
     case 'region': return /^(?:within|any)\b/.test(v.value) ? v.value : /\b(?:beach(?:es)?|coast|mountains?|lakes?|shore|countryside)\b/i.test(v.value) ? (/^the\b/i.test(v.value) ? v.value : `the ${v.value}`) : titleCase(v.value);
     case 'transport': return v.vehicleAvailable === true ? "there's a car" : v.vehicleAvailable === false ? 'no car for you' : `transport: ${v.value}`;
-    case 'preferences': return v.value.includes('no preference') ? 'no strong preferences' : `you ${tentative ? 'might be' : "'re"} into ${list(v.value)}`.replace("you 're", "you're");
+    case 'preferences': if (v.value.length > 0 && v.value.every((x) => x.startsWith('not:'))) return `I'll drop ${list(v.value.map((x) => x.slice(4)))} from what you're into`;
+      return v.value.includes('no preference') ? 'no strong preferences' : `you ${tentative ? 'might be' : "'re"} into ${list(v.value)}`.replace("you 're", "you're");
     case 'must_dos': return v.value.length ? `must-haves: ${list(v.value)}` : 'no must-haves';
   }
 }
@@ -328,7 +329,7 @@ export function createParser(deps: ConversationDependencies) {
     if (STATUS.test(plain)) {
       // Where things stand: while still gathering the planner recaps what is missing; after that, say what is happening.
       if (ctx.status === 'researching') return reply(msg, "I'm still looking up options for everyone. Give me a minute and I'll send them over.", 'status-researching', true);
-      if (ctx.status === 'proposed' || ctx.status === 'awaiting_acceptance') return reply(msg, ctx.actionable.length ? `The options are above. ${ctx.actionable.map((a, i) => `${i + 1}. ${a.description}`).join('; ')}. Reply "pick 1" or "pick 2" when you've decided.` : "The options are above. Take a look and tell me which one you like.", 'status-proposed', true);
+      if (ctx.status === 'proposed' || ctx.status === 'awaiting_acceptance') return reply(msg, ctx.actionable.length ? `The options are above. ${ctx.actionable.map((a, i) => `${i + 1}. ${a.description}`).join('; ')}. ${ctx.actionable[0]!.kind === 'accept' ? 'Say "I\'m in" to lock it in.' : ctx.actionable.length === 1 ? 'Reply "pick 1" when you\'ve decided.' : 'Reply "pick 1" or "pick 2" when you\'ve decided.'}` : "The options are above. Take a look and tell me which one you like.", 'status-proposed', true);
       if (ctx.status === 'approved') return reply(msg, "The plan is approved, so you're all set!", 'status-approved', true);
       // Still gathering: say who is missing, privately. Asking where things stand must not message anyone else.
       const waiting = (ctx.others ?? []).filter((o) => o.missing.length > 0).map((o) => `${o.name}'s ${list(o.missing)}`);
@@ -510,7 +511,13 @@ export function createParser(deps: ConversationDependencies) {
       } else if (intent.intent === 'request_plans') extra.push({ kind: 'request_plans' });
       else if (intent.intent === 'ask_guide') extra.push({ kind: 'ask_guide', question: intent.question });
       else if (intent.intent === 'request_funding' && !hedged) extra.push({ kind: 'request_funding' });
-      return fromConstraints(msg, ctx, text, items, extra);
+      const result = fromConstraints(msg, ctx, text, items, extra);
+      // The rules saved part of the message and the model could not read the rest: say so, instead of dropping that part in silence.
+      if (intent.intent === 'unavailable' && talkative && result.kind === 'commands' && result.acknowledgement) {
+        const rest = unmatched.join(' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+        return { ...result, acknowledgement: { ...result.acknowledgement, text: `${result.acknowledgement.text.replace(/ Tell me if I got anything wrong\.$/, '')} My language helper isn't answering, so I couldn't read "${rest}". Say that part again in a minute, or in plain words like "my max is $200".` } };
+      }
+      return result;
     }
     switch (intent.intent) {
       case 'none':

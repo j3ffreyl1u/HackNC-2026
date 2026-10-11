@@ -119,6 +119,19 @@ export const FIXTURE_OPTIONS: ResearchOption[] = [
 
 export const defaultFixtures: FixtureData = { evidence: FIXTURE_EVIDENCE, options: FIXTURE_OPTIONS };
 
+/** The offline lodging is priced for two nights. For another length, relabel it and scale it, so a 3-night trip is not shown as "two nights" at a 2-night price. */
+function forNights(option: ResearchOption, nights: number | undefined): ResearchOption {
+  if (nights === undefined || nights === 2) return option;
+  const word = nights === 1 ? '1 night' : `${nights} nights`;
+  for (const c of option.costs) {
+    if (!/two nights/i.test(c.label)) continue;
+    c.label = c.label.replace(/two nights/i, word);
+    c.lowCents = Math.round((c.lowCents * nights) / 2);
+    c.highCents = Math.round((c.highCents * nights) / 2);
+  }
+  return option;
+}
+
 const words = (text: string) => sanitizeRetrievedText(text, 300).toLowerCase().match(/[a-z]+/g) ?? [];
 
 /**
@@ -154,7 +167,7 @@ export function searchFixtures(data: FixtureData, request: ResearchRequest, retr
     mode: 'fixture',
     revision: request.revision,
     retrievedAt,
-    options: options.map((o) => structuredClone(o)),
+    options: options.map((o) => forNights(structuredClone(o), request.nights)),
     evidence: data.evidence.filter((e) => cited.has(e.evidenceId)).map((e) => ({ ...e })),
     limitations,
   };

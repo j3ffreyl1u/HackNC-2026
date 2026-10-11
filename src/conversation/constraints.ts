@@ -7,6 +7,8 @@ export const HEDGE = /\b(maybe|might|perhaps|possibly|probably|not sure|i guess|
 
 export interface Extracted {
   value: ConstraintValue;
+  /** The sentence opened with "wait no", "actually" or similar: it replaces an earlier value for the same field in this message. */
+  correction?: boolean;
   /** The sentence it came from used tentative or question wording. */
   hedged: boolean;
   /** Availability sentence was negative ("can't do Oct 17"): not a window. Reported so the bot can ask. */
@@ -48,6 +50,10 @@ const LOWER_NOT_PLACE = /^(?:the\s+)?(?:bed|sleep|work|school|class|town|be|get|
 export const properCase = (text: string): string => (text === text.toLowerCase()
   ? text.replace(/\b([a-z])([a-z.'-]*)/g, (w, f: string, r: string) => (['of', 'the', 'and', 'in', 'on', 'by'].includes(w) ? w : r.length === 1 ? w.toUpperCase() : f.toUpperCase() + r))
   : text);
+/** A sentence that opens by correcting the one before: "wait no, 2 nights", "actually $300", "I mean Durham". */
+const CORRECTION = /^(?:oh\s+|um+\s+|hmm+\s+)?(?:wait\b|actually\b|scratch that|i mean\b|sorry\b|oops\b|correction\b|make that\b|no,?\s+(?:wait|make|i mean|actually))/i;
+/** "not into breweries anymore", "drop the museums", "take hiking off": the person is taking a liking back, not adding one. */
+const TAKE_BACK_PHRASE = /^(?:(?:actually|wait|oh|um|hmm|ok(?:ay)?|so)[,\s]+)*(?:(?:i(?:'m| am)\s+)?(?:not into|don'?t (?:like|want)|do not (?:like|want))\s+(.+?)\s+(?:anymore|any more|now)|(?:i(?:'m| am)\s+)?no longer (?:into|like|want|interested in)\s+(.+)|(?:drop|remove|forget|scratch|skip)\s+(?:the\s+)?(.+?)(?:\s+from (?:my|the) (?:list|likes))?|take\s+(.+?)\s+off(?:\s+(?:my|the) list)?|changed my mind about\s+(.+))[.!]*$/i;
 const NOT_ORIGIN = /^(?:there|here|home|it|that|this|them|where|somewhere|anywhere)$/i;
 /** A sentence that is a question ("how long is the drive to Asheville") is not a statement of where we are going. */
 const QUESTION_START = /^(?:how|what|what's|whats|where|when|which|who|why|is|are|does|do|can|could|will|would|should)\b/i;
@@ -89,7 +95,8 @@ function extractSentence(s: string, reference: string, pending: ConstraintField 
   s = s.replace(/\s*\([^()]*\?\s*\)/g, '');   // a question tucked in brackets is not part of the facts
   const hedged = HEDGE.test(s.replace(TRAILING_REQUEST, ''));
   const budgetUnsure = PER_UNIT.test(s) || CANT_AFFORD.test(s);   // an amount we cannot take as the person's whole limit
-  const push = (value: ConstraintValue, extra: Partial<Extracted> = {}) => out.push({ value, hedged, ...extra });
+  const correction = CORRECTION.test(s);
+  const push = (value: ConstraintValue, extra: Partial<Extracted> = {}) => out.push({ value, hedged, ...(correction ? { correction } : {}), ...extra });
   let m: RegExpExecArray | null;
   let visited: string | undefined;   // a place named as "I'd like to visit Boone": that is where to go, not something they like
 
@@ -154,7 +161,11 @@ function extractSentence(s: string, reference: string, pending: ConstraintField 
   else if (!s.includes('?') && THIRD_PERSON_VEHICLE.test(s)) push({ field: 'transport', value: 'own_vehicle', vehicleAvailable: true });
   else if (/\bi\s+(?:don'?t|do not)\s+have\s+(?:a\s+)?(?:car|vehicle)\b|\bno car\b|\bi\s+(?:can'?t|cannot)\s+drive\b/i.test(s)) push({ field: 'transport', value: 'no_vehicle', vehicleAvailable: false });
 
-  if (/\b(?:no (?:real )?preferences?|don'?t (?:really )?care(?!\s+(?:about|for)\b)|i'?m (?:easy|flexible|open to anything))\b/i.test(s)) {
+  const takeBack = TAKE_BACK_PHRASE.exec(s.trim());
+  if (takeBack) {
+    const gone = splitItems((takeBack[1] ?? takeBack[2] ?? takeBack[3] ?? takeBack[4] ?? takeBack[5] ?? '').replace(/\s+(?:anymore|any more|now)$/i, '')).map((item) => `not:${item.toLowerCase()}`);
+    if (gone.length) push({ field: 'preferences', value: gone });
+  } else if (/\b(?:no (?:real )?preferences?|don'?t (?:really )?care(?!\s+(?:about|for)\b)|i'?m (?:easy|flexible|open to anything))\b/i.test(s)) {
     push({ field: 'preferences', value: ['no preference'] });
   } else if (!PICK_TALK.test(s) && (m = /\b(?:i|we)(?:\s+really)?(?:\s+|(?='))(?:prefer|like|love|enjoy|(?:am|are|'m|'re)\s+into|(?:want|'d like|would like) to (?:be able to )?(?:do|try|see|visit|explore|check out))\s+(.+)$/i.exec(s))) {
     // Stop at the next clause ("..., my max is $400", "... and I'm free Nov 14") so money and dates never end up as a liking.
@@ -231,7 +242,8 @@ export interface Coverage {
 export function extractWithCoverage(text: string, reference: string, pending?: ConstraintField): Coverage {
   const out: Extracted[] = [];
   const unmatched: string[] = [];
-  const sentences = text.split(/(?<=[!?\n;])\s+|(?<=[a-z0-9)])\.\s+(?=[A-Z])/).map((s) => s.trim()).filter(Boolean);
+  // A correction ("..., wait no, 2 nights" / "... actually $300") starts a new sentence even in lower case.
+  const sentences = text.split(/(?<=[!?\n;])\s+|(?<=[a-z0-9)])\.\s+(?=[A-Z]|(?:wait|actually|scratch that|i mean|oops|correction|make that|no wait)\b)|,\s+(?=(?:wait|actually|scratch that|i mean|oops|correction|no wait)\b)/).map((s) => s.trim()).filter(Boolean);
   for (const s of sentences) {
     const before = out.length;
     extractSentence(s, reference, pending, out);
@@ -277,7 +289,12 @@ export function extractWithCoverage(text: string, reference: string, pending?: C
       first.value.value = [...first.value.value, ...more.value.value].filter((w, i, all) => all.findIndex((x) => x.start === w.start && x.end === w.end) === i).sort((a, b) => a.start.localeCompare(b.start)).slice(0, 6);
     }
   }
-  // One value per field per message: keep the first.
-  const seen = new Set<string>();
-  return { items: out.filter((e) => !seen.has(e.value.field) && !!seen.add(e.value.field)), unmatched };
+  // One value per field per message: keep the first, unless a later sentence opens by correcting it ("wait no, 2 nights").
+  const kept: Extracted[] = [];
+  for (const e of out) {
+    const at = kept.findIndex((k) => k.value.field === e.value.field);
+    if (at < 0) kept.push(e);
+    else if (e.correction) kept[at] = e;
+  }
+  return { items: kept, unmatched };
 }

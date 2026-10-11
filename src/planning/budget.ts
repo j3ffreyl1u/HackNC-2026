@@ -79,7 +79,11 @@ function norm(text: string): string {
 }
 
 /** A must-do is met when some itinerary stop is tagged with it or names it. */
+/** Food needs belong to a meal, not an itinerary stop: no plan can "cover" them, so they are passed on as a heads-up instead of filtering every option out. */
+export const DIETARY = /\b(?:vegetarian|vegan|pescatarian|gluten[- ]free|dairy[- ]free|lactose|halal|kosher|nut allergy|peanut|shellfish|allerg\w*)\b/i;
+
 function mustDoMet(candidate: TripCandidate, mustDo: string): boolean {
+  if (DIETARY.test(mustDo)) return true;
   const wanted = norm(mustDo);
   return candidate.itinerary.some((item) => item.tags.some((t) => norm(t) === wanted) || norm(item.label).includes(wanted));
 }

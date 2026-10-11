@@ -259,15 +259,26 @@ export function effectiveAvailability(state: TripState, memberId: MemberId): Int
 export function statedPreferences(state: TripState, memberId: MemberId): string[] | undefined {
   const records = recordsFor(state, memberId, 'preferences');
   if (records.length === 0) return undefined;
-  // Preferences are soft and people add to them ("also historical places"), so they accumulate. Saying
-  // "no preference" starts over, and so does the first preference after it.
+  return accumulatePreferences(records.map((r) => r.value.items));
+}
+
+/** A take-back ("not into breweries anymore") is stored as `not:breweries` among the items of a preferences update. */
+export const TAKE_BACK = 'not:';
+
+/**
+ * Preferences are soft and people add to them ("also historical places"), so they accumulate. Saying "no preference"
+ * starts over, and so does the first preference after it. An item `not:X` takes back any earlier liking that matches X.
+ */
+export function accumulatePreferences(lists: ReadonlyArray<readonly string[]>): string[] {
   let stated = new Set<string>();
-  for (const record of records) {
-    const items = record.value.items;
-    if (items.includes(NO_PREFERENCE)) stated = new Set(items);
-    else {
-      if (stated.has(NO_PREFERENCE)) stated = new Set();
-      for (const item of items) stated.add(item);
+  for (const items of lists) {
+    if (items.includes(NO_PREFERENCE)) { stated = new Set(items); continue; }
+    if (stated.has(NO_PREFERENCE)) stated = new Set();
+    for (const item of items) {
+      if (item.startsWith(TAKE_BACK)) {
+        const gone = item.slice(TAKE_BACK.length).trim().toLowerCase();
+        for (const have of [...stated]) if (gone !== '' && (have.toLowerCase().includes(gone) || gone.includes(have.toLowerCase()))) stated.delete(have);
+      } else stated.add(item);
     }
   }
   return [...stated].sort();

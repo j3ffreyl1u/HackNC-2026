@@ -13,7 +13,7 @@ afterEach(async () => { for (const d of dirs.splice(0)) await rm(d, { recursive:
 type Research = (state: TripState) => Promise<{ revision: number; candidates: TripCandidate[]; replies: OutboundMessage[] }>;
 
 /** The real runtime and storage with a scripted phone line and a scripted planner, so failures can be made on purpose. */
-async function setup(options: { research?: Research; sendFails?: (m: OutboundMessage, attempt: number) => boolean; status?: TripState['status']; dir?: string; stillLookingMs?: number } = {}) {
+async function setup(options: { research?: Research; sendFails?: (m: OutboundMessage, attempt: number) => boolean; status?: TripState['status']; dir?: string; stillLookingMs?: number; stopWaitMs?: number } = {}) {
   const dir = options.dir ?? await mkdtemp(join(tmpdir(), 'reliability-'));
   if (!options.dir) dirs.push(dir);
   const repository = SqliteTripRepository.open(join(dir, 'trip.sqlite'));
@@ -37,7 +37,7 @@ async function setup(options: { research?: Research; sendFails?: (m: OutboundMes
     generateCandidates: async () => [],
     ...(options.research ? { research: options.research } : {}),
   };
-  const runtime = createApplicationRuntime({ repository, conversation, planner, tripId: state.tripId, ...(options.stillLookingMs !== undefined ? { stillLookingMs: options.stillLookingMs } : {}) });
+  const runtime = createApplicationRuntime({ repository, conversation, planner, tripId: state.tripId, ...(options.stillLookingMs !== undefined ? { stillLookingMs: options.stillLookingMs } : {}), ...(options.stopWaitMs !== undefined ? { stopWaitMs: options.stopWaitMs } : {}) });
   if (!options.dir) await repository.bootstrapTrip(enrollment, state);
   const sender = enrollment.participants[0]!.memberId;
   const event = (id: string): InboundMessage => ({ eventId: id, messageId: id, senderId: sender, spaceId: enrollment.groupSpaceId, visibility: 'group', occurredAt: '2026-10-10T12:00:00Z', text: 'show us some options' });
@@ -65,6 +65,21 @@ describe('research that fails', () => {
     expect(t.sent.some((m) => m.text === 'Here are the options.')).toBe(true);
     expect((await t.repository.loadTrip(t.state.tripId))?.status).toBe('proposed');
     await t.runtime.stop(); t.repository.close();
+  });
+});
+
+describe('shutdown while a search is hung', () => {
+  it('stops cleanly after the wait instead of hanging forever, and the search resumes on the next start', async () => {
+    const first = await setup({ status: 'researching', research: () => new Promise(() => {}), stopWaitMs: 100 });
+    await first.runtime.start();
+    const began = Date.now();
+    await first.runtime.stop();
+    expect(Date.now() - began).toBeLessThan(2_000);
+    first.repository.close();
+    const second = await setup({ dir: first.dir, research: async (s) => found(s.revision) });
+    await second.runtime.start(); await second.runtime.waitForIdle();
+    expect(second.sent.some((m) => m.text === 'Here are the options.')).toBe(true);
+    await second.runtime.stop(); second.repository.close();
   });
 });
 
