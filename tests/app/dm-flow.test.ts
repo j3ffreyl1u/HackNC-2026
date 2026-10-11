@@ -291,4 +291,17 @@ describe('first live DM scenario, end to end (A parser + C runtime + B planner, 
     for (const who of [r.jeff, r.mason]) expect(who.some((x) => /Jeffrey is thinking 3 nights and Mason is thinking 2 nights\. Which should we go with\?/.test(x))).toBe(true);
     await t.stop();
   });
+
+  it('when only the other person\'s OK is missing, they are asked for it once, the asker is told, and the search starts when they say yes', async () => {
+    const t = await live();
+    await t.say(MASON, "hey lets plan");
+    await t.say(MASON, "I'm free Nov 14-17, my max is $500, I like food");
+    const last = await t.say(JEFF, "I'm leaving from Chapel Hill, 2 nights, I want to go to Asheville, I have a car, I'm free Nov 14-17, my max is $500, I like hiking");
+    expect(last.mason.some((x) => /^Hey Mason! Jeffrey is ready to see trip options and is just waiting on your OK on the plan so far\./.test(x))).toBe(true);
+    expect(last.jeff.some((x) => /I just need Mason's OK on the plan so far, so I've asked/.test(x))).toBe(true);
+    const done = await t.say(MASON, 'sounds good');
+    expect(done.jeff.some((x) => /looking up options now/i.test(x))).toBe(true);
+    expect(done.mason.some((x) => /looking up options now/i.test(x))).toBe(true);
+    await t.stop();
+  });
 });

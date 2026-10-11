@@ -246,6 +246,21 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
           researchRequested = true;
           replies.push(makeMessage(tripId, `auto-plan:${message.eventId}`, { audience: { kind: 'group', spaceId: enrollment.groupSpaceId }, text: "I have what I need from everyone, so I'm looking up options now. Give me a minute." }));
         }
+        // Everything is in except someone's OK on the plan so far? Then that person is what is holding things up, so ask them
+        // (once), and tell whoever just finished that this is what the search is waiting on.
+        else if (probe?.rejection?.code === 'NOT_READY' && planner.nudgeMissing) {
+          let soft: ReturnType<PlannerAdapter['applyCommand']> | undefined;
+          try { soft = planner.applyCommand(nextState, auto, { now: message.occurredAt }); } catch { soft = undefined; }
+          if (soft && !soft.rejection && soft.researchRequested) {
+            const nudged = planner.nudgeMissing(nextState, member.memberId, message.occurredAt);
+            if (nudged.replies.length > 0) {
+              nextState = nudged.state;
+              replies.push(...nudged.replies.map((reply, nudgeIndex) => makeMessage(tripId, `signoff-nudge:${message.eventId}:${nudgeIndex}`, reply)));
+              const names = nudged.replies.map((r) => (r.audience.kind === 'private' ? state.roster?.find((m) => m.memberId === (r.audience as { memberId: string }).memberId)?.displayName : undefined)).filter(Boolean).join(' and ');
+              replies.push(makeMessage(tripId, `signoff-told:${message.eventId}`, { audience: { kind: 'private', memberId: member.memberId }, text: `That's everything from you. I just need ${names}'s OK on the plan so far, so I've asked, and I'll start looking as soon as they say yes.` }));
+            }
+          }
+        }
       }
       // Someone changed a shared detail the others already had? Tell them, so nobody plans around the old one.
       for (const text of basicsChangeNotes(state, nextState, member.memberId)) {
