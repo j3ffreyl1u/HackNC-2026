@@ -351,7 +351,7 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
         const confirmations = { ...state.pendingConfirmations };
         if (parsed.expects) confirmations[member.memberId] = parsed.expects;
         else delete confirmations[member.memberId];
-        const result = await repository.commitEvent({ eventId: message.eventId, state: { ...state, pendingConfirmations: confirmations }, expectedRevision: state.revision, messages: [...await polishAll([parsed.message]), ...relayBack(member, message, state, state)] });
+        const result = await repository.commitEvent({ eventId: message.eventId, state: { ...state, pendingConfirmations: confirmations }, expectedRevision: state.revision, messages: [...(await polishAll([parsed.message])).map((m) => ({ ...m, text: withPlanLink(m.text).trim() || "Calendar links aren't turned on for this run, but the dates are on the trip page." })), ...relayBack(member, message, state, state)] });
         if (result === 'stale') continue;
         if (result === 'committed') await runtime.drainOutbox();
         return;

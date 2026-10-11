@@ -94,7 +94,7 @@ export function parseDateWindows(input: string, reference: string): ParsedWindow
     if (em !== undefined && ed !== undefined) {
       if (em < 1 || em > 12) return;
       end = iso(y, em, ed);
-      if (isValidIsoDate(end) && end < start) end = iso(y + 1, em, ed);
+      if (isValidIsoDate(end) && end < start) { if (em === sm) return; end = iso(y + 1, em, ed); }   // "Nov 17-14" is a typo, not a year
       if (!isValidIsoDate(end)) return;
     }
     out.push({ start, end });
@@ -157,8 +157,10 @@ export function parseDateWindows(input: string, reference: string): ParsedWindow
     const dow = ref.getUTCDay();   // 0 Sunday .. 6 Saturday
     const toFriday = dow === 6 ? -1 : dow === 0 ? -2 : 5 - dow;
     const thisFriday = base + toFriday * 86_400_000;
-    const start = weekend[1]!.toLowerCase() === 'this' ? Math.max(thisFriday, base) : thisFriday + 7 * 86_400_000;
-    out.push({ start: day(start), end: day(thisFriday + (weekend[1]!.toLowerCase() === 'this' ? 0 : 7 * 86_400_000) + 2 * 86_400_000) });
+    // On a Sunday only the last day of "this weekend" is left, which is no trip: mean the coming one.
+    const isThis = weekend[1]!.toLowerCase() === 'this' && dow !== 0;
+    const friday = isThis ? thisFriday : thisFriday + 7 * 86_400_000;
+    out.push({ start: day(isThis ? Math.max(friday, base) : friday), end: day(friday + 2 * 86_400_000) });
   }
 
   // "the weekend of Nov 21": the Friday to Sunday that holds that day, not just the one day.

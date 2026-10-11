@@ -32,7 +32,7 @@ const NO = /^(no|nope|nah|decline|i decline|not for me|not now|no thanks|pass)[.
 const WRONG = /^(?:(?:no|nope|nah)[ ,]+)?(?:that'?s|that is|it'?s|it is|this is)?\s*(?:not right|not correct|wrong|incorrect|not what i (?:said|meant))[.!]*$/i;
 const ID = '([A-Za-z0-9][\\w:.\\-]*)';
 const REQUEST_PLANS = /^(?:(?:please|pls|ok|okay|alright|so)[,\s]+)?(?:(?:can|could) you\s+)?(?:(?:show|give|get|send)\s+(?:me\s+|us\s+)?(?:the\s+|some\s+|a few\s+|a couple of\s+|a couple\s+)?(?:trip\s+)?(?:options|plans|proposals|itineraries|ideas)|(?:pull|put) together\s+(?:a\s+|some\s+)?(?:(?:few|couple of|couple)\s+)?(?:trip\s+)?(?:options|plans|ideas)(?:\s+for us)?|(?:plan|research)\s+(?:it|this|the trip|our trip)|find\s+(?:us\s+)?(?:trip\s+)?options|what are (?:our|the) options|(?:(?:let'?s|lets|can we|could we|we should|i want to|we want to|i'?d like to)\s+)?(?:start|begin|get started)(?:\s+(?:on\s+)?(?:planning|plan))?(?:\s+(?:a|the|our|this))?(?:\s+(?:road\s+)?trip)?|(?:let'?s|lets|can we|could we|we should|i want to|we want to|i'?d like to)\s+plan(?:\s+(?:a|the|our|this))?(?:\s+(?:road\s+)?trip)?(?:\s+together)?)$/i;
-const STATUS = /^(?:(?:so\s+)?(?:what'?s|whats|what is)\s+(?:happening|going on|up with (?:the |our )?(?:trip|plan))(?:\s+(?:right now|now|so far|with (?:the |our )?(?:trip|plan)))?|(?:so\s+)?(?:what'?s|whats|how'?s|hows)\s+(?:the\s+)?(?:status|progress|plan|it going)(?:\s+(?:so far|looking|going))?|where (?:are we|do we stand)(?:\s+(?:at|on this))?|what do you have(?:\s+so far)?|any (?:updates?|news|progress)|status(?: update)?)$/i;
+const STATUS = /^(?:(?:so\s+)?(?:what'?s|whats|what is)\s+(?:happening|going on|up with (?:the |our )?(?:trip|plan))(?:\s+(?:right now|now|so far|with (?:the |our )?(?:trip|plan)))?|(?:so\s+)?(?:what'?s|whats|how'?s|hows)\s+(?:the\s+)?(?:status|progress|plan|it going)(?:\s+(?:so far|looking|going))?|where (?:are we|do we stand)(?:\s+(?:at|on this))?|what do you have(?:\s+so far)?|any (?:updates?|news|progress)|what'?s next|whats next|what now|now what|what happened|status(?: update)?)$/i;
 const ABOUT_SOMEONE = /^(?:so\s+)?(?:what(?:'s|s| did| has| does| is)\s+(\w+)\s+(?:say|said|tell you|told you|put|give you|gave you|send|sent|want|think|thinking|saying)|(?:did|has)\s+(\w+)\s+(?:answer|reply|respond|text|say anything|send anything|tell you anything)|(?:any word from|have you heard from|heard from|anything from)\s+(\w+)|how(?:'s| is)\s+(\w+)\s+doing|how(?:'s| is)\s+(\w+?)(?:'s|s)?\s+(?:planning|progress)(?:\s+going)?|(?:is|has|did)\s+(\w+)\s+(?:still\s+)?(?:planning|done|finished|finish|ready|all set|set|in|on board|there|responded|replied)(?:\s+(?:planning|yet|so far))?)(?:\s+(?:yet|so far))?$/i;
 const GREETING = /^(?:hi|hey|hello|yo|hiya|good (?:morning|afternoon|evening))\b[,!.\s]*/i;
 const REQUEST_FUNDING = /^(?:request|start|set up|send)\s+(?:the\s+)?(?:contributions?|funding|contribution requests)$/i;
@@ -209,7 +209,10 @@ export function createParser(deps: ConversationDependencies) {
       // Money and dates commit people, so a hedge there stays tentative. "Probably leaving from Durham" about the basics is fine as said.
       const firm = item.hedged && (v.field === 'budget' || v.field === 'availability' || v.field === 'preferences' || v.field === 'must_dos');
       commands.push(updateCommand(msg, ctx, v, firm));
-      acks.push(ackPart(v, firm));
+      // A date that already passed this year means next year. Say so, so "Oct 1-3" typed on Oct 11 is not quietly a year away.
+      const refYear = Number(localReference(msg.occurredAt, trip.timezone).slice(0, 4));
+      const later = v.field === 'availability' ? [...new Set(v.value.filter((w): w is { start: string; end: string } => 'start' in w).map((w) => Number(w.start.slice(0, 4))).filter((y) => y > refYear))] : [];
+      acks.push(ackPart(v, firm) + (later.length ? ` in ${later.join(' and ')}, since that has already passed this year` : ''));
     }
     for (const action of extra) commands.push(command(msg, ctx, action));
     // In a one-on-one chat, silence feels like being ignored: say what we noted. Groups stay quiet.
@@ -240,9 +243,11 @@ export function createParser(deps: ConversationDependencies) {
     let match = pool.find((a) => a.candidateId.toLowerCase() === lower);
     if (!match && /^\d{1,2}$/.test(token)) match = pool[Number(token) - 1];
     const verb = kind === 'accept' ? 'accept' : 'pick';
-    if (!match && kind === 'select' && pool.length === 0 && ctx.status === 'awaiting_acceptance') return alreadyPicked(msg, ctx);
+    if (!match && kind === 'select' && pool.length === 0 && ctx.status === 'awaiting_acceptance') return alreadyPicked(msg, ctx, /^\d{1,2}$/.test(token) ? Number(token) : undefined);
     if (!match) {
-      return reply(msg, `Hmm, I don't see "${token}" waiting on you to ${verb}. ${pool.length ? `Here's what's open: ${pool.map((a, i) => `${i + 1}. ${a.description}`).join('; ')}.` : "Nothing's waiting on you right now."}`, 'noplan');
+      if (pool.length === 0) return reply(msg, ctx.status === 'approved' ? 'The plan is already approved, so there is nothing left to pick.' : `There's nothing to ${verb} yet. Say "show us some options" when you're ready.`, 'noplan');
+      const open = pool.map((a, i) => `${i + 1}. ${a.description}`).join('; ');
+      return reply(msg, /^\d{1,2}$/.test(token) ? `There ${pool.length === 1 ? 'is only 1 option' : `are only ${pool.length} options`}, so there's no number ${token}. Here's what's open: ${open}.` : `Hmm, I don't see "${token}" waiting on you to ${verb}. Here's what's open: ${open}.`, 'noplan');
     }
     if (revision !== undefined && revision !== match.revision) {
       return reply(msg, `That's an older version (v${revision}), sorry! The latest is v${match.revision}. Take a look and reply "${kind === 'accept' ? 'accept' : 'pick'} ${match.candidateId} v${match.revision}" when you're ready.`, 'stale');
@@ -278,6 +283,9 @@ export function createParser(deps: ConversationDependencies) {
       if (msg.visibility !== 'private' && trip.mode !== 'direct') return { kind: 'ignored', reason: 'nothing to answer' };
       if (yes && ctx.approval?.youIn) return reply(msg, ctx.approval.waitingNames.length ? `You're already in on ${ctx.approval.title}. Still waiting on ${ctx.approval.waitingNames.join(" and ")}.` : `You're in, and so is everyone else. ${ctx.approval.title} is approved.`, 'already-in', true);
       if (ctx.status === 'approved') return reply(msg, yes ? 'Sounds good! The trip is all set. Ask me anything about it, or tell me if a detail changes.' : 'No worries. The trip is locked in. Tell me if a detail changes and I will look again.', yes ? 'approved-ok' : 'approved-no', true);
+      // Still waiting on an answer from this person: a bare "yes" is not the answer, so put the question back.
+      const openQ = ctx.pendingQuestion && ctx.status === 'gathering' ? REASK[ctx.pendingQuestion.field] : undefined;
+      if (yes && openQ) return reply(msg, `Thanks! I still need one thing: ${openQ}`, 'thanks-open', true);
       return yes
         ? reply(msg, `Great! Anything else to add? When you're ready, say "show us some options".`, 'thanks')
         : reply(msg, `No worries! If anything's off, just tell me the right detail, like "my max is $300" or "free Nov 21-23". Otherwise say "show us some options" when you're ready.`, 'neutral-no');
@@ -549,7 +557,10 @@ export function createParser(deps: ConversationDependencies) {
     }
     // Money talk that is not a question about the log: nothing is paid or recorded here.
     if (talkativeChat && /\b(?:venmo|zelle|paypal|cash\s*app|apple\s*pay)\b/i.test(lean) && /^(?:(?:can|could|should|let)\b.*|(?:venmo|zelle|paypal|cash\s*app)\b.*)$/i.test(lean)) return reply(msg, READ_ONLY_MONEY, 'read-only-money', true);
-    if (talkativeChat && /\b(?:add|put|send|save|sync)\b.*\b(?:calendar|cal|invite|ics|reminder)\b/i.test(lean) && !/^(?:how|what|when|where|why|who|which|do|does|did|is|are)\b/i.test(lean)) return reply(msg, "I can't add things to a calendar yet. Ask me for the plan and I'll list the dates so you can add them yourself.", 'no-calendar', true);
+    const wantsCalendar = /\b(?:calendar|cal|invite|ics)\b/i.test(lean) && /\b(?:add|put|send|save|sync|get|give|need|want)\b/i.test(lean) && !/^(?:how|what|when|where|why|who|which|do|does|did|is|are)\b/i.test(lean);
+    if (talkativeChat && wantsCalendar) return reply(msg, ctx.status === 'approved' ? 'Here is a calendar file for the trip, tap it to add the dates: {{CALENDAR_LINK}}' : "I can send a calendar file once everyone has agreed on a plan. Until then the dates aren't final.", 'calendar-link', true);
+    // "link", "where's the page", "send me the plan": the trip page holds the day-by-day, costs and sources.
+    if (talkativeChat && /^(?:(?:send|give|text|share)\s+(?:me\s+)?)?(?:(?:the|a|that|our|my)\s+)?(?:link|url|page|website|site|trip page|plan link|itinerary)(?:\s+(?:please|pls))?[?!.\s]*$|^(?:where(?:'s| is)|wheres|what(?:'s| is)|whats)\s+(?:the\s+)?(?:link|page|url|website|itinerary)\b|^(?:send|give|show)\s+(?:me\s+)?(?:the\s+)?(?:plan|itinerary)\b/i.test(lean)) return reply(msg, ctx.status === 'gathering' ? "There isn't a plan page yet. Once I have everyone's dates, budget and preferences I'll look up options and send the link." : ctx.status === 'researching' ? "I'm still looking up options. I'll send the link as soon as they're ready." : 'The full plan with the day-by-day, costs and sources is here: {{PLAN_LINK}}', 'plan-link', true);
     // "can we fly there?" is a question about the plan: both are fine, and saying which is how it gets saved.
     if (talkativeChat && /^(?:(?:can|could|should|shall|would)\s+(?:we|i)|what about|how about|do we|are we)\b.*\b(?:fly|flying|flight|flights|plane)\b/i.test(lean) && !/\bfly[- ]?fishing\b/i.test(lean)) {
       return reply(msg, 'We can plan it either way. Say "flying" or "driving" and I\'ll plan around it.', 'fly-or-drive', true);
@@ -621,7 +632,7 @@ export function createParser(deps: ConversationDependencies) {
         ? `Still waiting on ${list(waiting)}. Say "show us some options" and I'll nudge them and check what else is open.`
         : `I have what I need from the others. Say "show us some options" when you're ready, and I'll check what's still open.`, 'status-gathering', true);
     }
-    if (/^(?:help(?:\s+me)?|menu|commands|what can i say|how does this work)[?!.\s]*$/i.test(plain) && (msg.visibility === 'private' || trip.mode === 'direct')) {
+    if (/^(?:help(?:\s+me)?|menu|commands|what can i say|how does this work|what (?:can|do) (?:you|u) (?:do|know)|what are you|who are you|what is this|what'?s this|how do i (?:use|start)(?: this)?)[?!.\s]*$/i.test(plain) && (msg.visibility === 'private' || trip.mode === 'direct')) {
       return reply(msg, 'Happy to help. Tell me your budget, free dates and what you\'re into, say "show us some options" when you\'re ready, or ask me about the trip. You can also say things like "ask Mason if he has a car".', 'help-menu', true);
     }
     if (REQUEST_PLANS.test(plain)) return one(msg, ctx, { kind: 'request_plans' });
@@ -656,6 +667,10 @@ export function createParser(deps: ConversationDependencies) {
     if (mine && named && !mine.description.toLowerCase().startsWith(named.toLowerCase()) && !named.toLowerCase().startsWith(mine.description.toLowerCase())) {
       return reply(msg, `${mine.description} is already the pick, so I can't switch to ${named}. To go a different way, change a detail like the dates or your max and I'll bring fresh options. Otherwise say "I'm in" to lock it in.`, 'already-picked-other', true);
     }
+    const optionCount = (ctx.optionFacts ?? []).filter((f) => /^Option \d+ is /.test(f)).length;
+    if (mine && choice !== undefined && optionCount > 0 && choice > optionCount) {
+      return reply(msg, `There ${optionCount === 1 ? 'is only 1 option' : `are only ${optionCount} options`}, and ${mine.description} is the pick. Say "I'm in" to lock it in.`, 'already-picked-range', true);
+    }
     return reply(msg, mine
       ? `${mine.description} is already the pick. Say "I'm in" to lock it in.`
       : "A plan is already picked and you've said you're in. I'm waiting on the others.", 'already-picked', true);
@@ -669,6 +684,14 @@ export function createParser(deps: ConversationDependencies) {
     budget: "What's your maximum total for this trip, including food and travel?",
     availability: 'Which dates could you do for the trip?',
     preferences: 'What would you like out of this trip? "No preference" is a fine answer.',
+  };
+
+  /** Not understood: when a question is open, put that question back (with an example) instead of the generic menu. */
+  const EXAMPLE: Partial<Record<string, string>> = { budget: ' A number is fine, like "$200".', availability: ' Dates like "Nov 14-16" work.', duration: ' Like "2 nights".', origin: ' A city, like "Raleigh".' };
+  const helpFor = (ctx: TripConversationContext): string => {
+    const field = ctx.pendingQuestion?.field;
+    const open = field ? REASK[field] : undefined;
+    return open ? `Hmm, I didn't quite catch that. ${open}${EXAMPLE[field!] ?? ''}` : HELP;
   };
 
   /** Hellos, thanks and filler. Needs no model: warm in a one-on-one chat, silent in a group. Never a place, a date or a number. */
@@ -785,7 +808,7 @@ export function createParser(deps: ConversationDependencies) {
     if (!extracted.length && (msg.visibility === 'private' || trip.mode === 'direct') && /^(?:where (?:i|we) (?:want|wanna|would like|'d like) to go|where (?:i|we)(?:'m| am|'re| are) (?:leaving|going)(?: from)?|the (?:destination|origin)|(?:to|from) (?:go|there)|going there|leaving from|that'?s (?:where|the place))[.!?]*$/i.test(text)) {
       return reply(msg, 'Which place do you mean? Say it with the city, like "going to Boone" or "leaving from Raleigh".', 'place-which-missing', true);
     }
-    if (!extracted.length && (msg.visibility === 'private' || trip.mode === 'direct') && NOT_A_WORD_PLACE.test(text)) return reply(msg, HELP, 'help-word', true);
+    if (!extracted.length && (msg.visibility === 'private' || trip.mode === 'direct') && NOT_A_WORD_PLACE.test(text)) return reply(msg, helpFor(ctx), 'help-word', true);
     if (!extracted.length && (msg.visibility === 'private' || trip.mode === 'direct') && BARE_PLACE.test(text) && !/\b(?:i|we|my|you|yes|no)\b/i.test(text)) {
       const place = text.replace(/[.!]+$/, '').trim();
       return reply(msg, `Is ${place} where you're leaving from, or where you want to go? You can say "leaving from ${place}" or "going to ${place}".`, 'place-which', true);
@@ -840,13 +863,13 @@ export function createParser(deps: ConversationDependencies) {
         // is addressed to us, so staying silent just looks broken.
         if (msg.visibility === 'private' || trip.mode === 'direct') noteMiss('help', msg, ctx);
         return msg.visibility === 'private' || trip.mode === 'direct'
-          ? reply(msg, HELP, 'help')
+          ? reply(msg, helpFor(ctx), 'help')
           : { kind: 'ignored', reason: 'not addressed to the assistant' };
       case 'chat': {
         if (!(msg.visibility === 'private' || trip.mode === 'direct')) return { kind: 'ignored', reason: 'casual chat in a group' };
         const answer = safeChatAnswer(intent.answer, `${facts.join(' ')} ${handoffText}`);
         if (!answer) noteMiss('unclear', msg, ctx);
-        return reply(msg, answer ?? HELP, answer ? 'chat' : 'help', true);
+        return reply(msg, answer ?? helpFor(ctx), answer ? 'chat' : 'help', true);
       }
       case 'unavailable':
         // Same rule as an unclear message: in a group, friends talking are none of our business even when the service is down.
@@ -858,7 +881,7 @@ export function createParser(deps: ConversationDependencies) {
         // In a group, an unclear message is usually just friends talking: stay quiet there.
         if (msg.visibility === 'private' || trip.mode === 'direct') noteMiss('help', msg, ctx);
         return msg.visibility === 'private' || trip.mode === 'direct'
-          ? reply(msg, HELP, 'help')
+          ? reply(msg, helpFor(ctx), 'help')
           : { kind: 'ignored', reason: 'unclear group message' };
       case 'constraints':
         return fromConstraints(msg, ctx, text, intent.items.map((value) => ({ value, hedged })));
