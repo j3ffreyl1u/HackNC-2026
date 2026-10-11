@@ -424,6 +424,13 @@ describe('logging a purchase from chat', () => {
     expect(logged.map((l) => l[2])).toEqual([150, 40, 20]);
     await t.stop();
   });
+  it('flights are a travel cost, like gas', async () => {
+    const { t, logged } = await approvedWithLogger();
+    expect((await t.say(JEFF, 'I paid $400 for flights')).jeff.join(' ')).toMatch(/Log \$400 for flights/);
+    await t.say(JEFF, 'yes');
+    expect(logged).toEqual([['jeffrey', 'fuel_parking_tolls', 400, 'flights']]);
+    await t.stop();
+  });
   it('before a plan is approved it says to wait', async () => {
     const { t } = await approvedWithLogger();
     const fresh = await live({ purchaseLogger: { log: async () => 'p1' } });

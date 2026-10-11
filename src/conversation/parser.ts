@@ -553,7 +553,7 @@ export function createParser(deps: ConversationDependencies) {
     const spendCategory = (thing: string): string | undefined => {
       const w = thing.toLowerCase();
       if (/\b(?:hotel|motel|lodging|cabin|airbnb|room|rental|stay|accommodation|inn|lodge|campsite|camping)\b/.test(w)) return 'accommodation';
-      if (/\b(?:gas|gasoline|fuel|parking|toll|tolls|charging|uber|lyft|taxi)\b/.test(w)) return 'fuel_parking_tolls';
+      if (/\b(?:gas|gasoline|fuel|parking|toll|tolls|charging|uber|lyft|taxi|flights?|airfare|airline|plane tickets?|airport)\b/.test(w)) return 'fuel_parking_tolls';
       if (/\b(?:food|dinner|lunch|breakfast|brunch|groceries|grocery|restaurant|meal|meals|snacks?|coffee|drinks?|pizza|burgers?|eats|bbq|takeout)\b/.test(w)) return 'food';
       if (/\b(?:tickets?|admission|entry|activities|activity|museum|tour|tours|park|hike|hiking|rental|zoo|show|concert|passes?)\b/.test(w)) return 'activities';
       if (/\b(?:fees?|taxes|tax|tips?|resort fee)\b/.test(w)) return 'taxes_fees';
