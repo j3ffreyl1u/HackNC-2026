@@ -49,6 +49,19 @@ describe('local HTTP server', () => {
     }
   });
 
+  it('answers HEAD for the page and its files, so link previews and uptime checks do not see a 404', async () => {
+    const { repository, enrollment, state } = setup();
+    await repository.bootstrapTrip(enrollment, state);
+    const server = createHttpServer({ repository });
+    const port = await server.listen(0);
+    try {
+      for (const path of ['/', '/app.js', '/styles.css']) {
+        const response = await fetch(`http://127.0.0.1:${port}${path}`, { method: 'HEAD' });
+        expect(response.status, path).toBe(200);
+        expect(await response.text()).toBe('');
+      }
+    } finally { await server.close(); repository.close(); }
+  });
   it('serves the approved plan as a calendar file, and nothing before it is approved', async () => {
     const { repository, enrollment, state } = setup();
     const candidate = {
