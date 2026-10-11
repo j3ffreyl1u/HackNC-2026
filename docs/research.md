@@ -87,7 +87,13 @@ Cost: a first unconstrained call ran 16 searches and about 173k prompt tokens (4
 
 ### Live price pass
 
-After finding options, the Gemini provider prices the first 3 with four narrow lookups each (`src/research/pricing.ts`), because one broad question returns mostly `unknown`. It runs only for plan requests that carry `nights` and `groupSize` (`planTrip` sets both) and can be switched off with `priceLookups: false`.
+After finding options, the Gemini provider prices the first 3 (`src/research/pricing.ts`), because one broad question returns mostly `unknown`. It runs only for plan requests that carry `nights` and `groupSize` (`planTrip` sets both) and can be switched off with `priceLookups: false`. Options that were found but not priced are not offered.
+
+**Speed (measured live 2026-10-11, one run, Chapel Hill to Boone, 2 nights, 2 people):** 10 requests in 24.9 seconds, against 60 to 100 seconds before. Three things changed: the options are priced at the same time (never more than 6 requests in flight), each price lookup gets its own 40 second limit instead of the search's 60, and the admissions lookup is off by default (`lookupAdmissions: true` turns it back on; it failed most often). The three lookups per option are lodging, fuel and food.
+
+**Typical costs (`typicalCosts`, on by default for live research).** A price that was not found is filled with a typical cost for a mid-range road trip, so an option is not left blank: lodging $80 to $200 a room a night (rooms = group/2, +15% on top), fuel from the option's drive time (0.7 to 1 mile a minute, 30 to 20 mpg, $3.00 to $4.50 a gallon, +25% on top; unknown if there is no drive time, because distance cannot be guessed), food $8 to $25 a meal for two meals a day (+25% on top), admissions $0 to $15 per stop worth visiting. These are never zero, carry no source, are labelled "(typical cost, not a found price)" on the cost itself, are listed in the option's tradeoffs, and the chat heads-up names them ("I couldn't find a price for lodging, fuel, so I used a typical cost there"). The upper figures are what the budget check uses, so they err toward "it might not fit". A found, cited price always wins over a typical one. Turn this off with `typicalCosts: false` to get the strict behaviour (a missing price stays unknown and blocks approval).
+
+**Named destination.** When the group named a destination, the prompt says every option must be in or right next to it.
 
 | Cost | Lookup | Computed in code |
 | --- | --- | --- |
@@ -132,3 +138,11 @@ Read directly from https://ai.google.dev/gemini-api/terms, 2026-10-10 (the earli
 - **Nature and sustainability research** for aligned tracks is not built.
 - **Availability** is not checked for any option, live or fixture. All outputs say so.
 - Nothing here claims a booking, a guaranteed price or real inventory.
+
+## Places, estimates, cache and messages (2026-10-11)
+
+- The search asks for places to visit and things to do at the named destination that match the group's interests. Options and stops that are roads (`US-29`, `I-81`, "Byway", "Detour", a name ending in "Route") are dropped and counted in the limitations. If fewer than two usable options come back, one follow-up search asks for different ones.
+- With typical costs on (the live default), every essential cost has a number: lodging, fuel, parking, food and admissions. A missing drive time uses the group's longest allowed drive, then 4 hours. Typical costs are labelled "typical cost, not a found price" and carry no source. Found prices keep the citing site's name as their source.
+- Identical questions are reused for one hour (`cacheMs`, 0 turns it off); failures are never cached. Price lookups share what is left of a 45 second budget after the options search (never under 12 seconds). The runtime sends one "still looking" text after 45 seconds (`stillLookingMs`).
+- Option messages are three lines: what and when, where, and a rough cost per person (midpoint of low and high, rounded to $5, total equals the listed parts) with the drive. Found-but-not-proposed options are one line.
+- When nothing fits on budget, the group message names whoever's own limit the closest trip breaks, with no amounts; the exact overage goes only to them, privately.

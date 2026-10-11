@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createGeminiProvider } from '../../src/research/gemini.js';
+import { buildPrompt, createGeminiProvider } from '../../src/research/gemini.js';
 import { EvidenceStore } from '../../src/research/grounding.js';
 import { priceAdmissions, priceFuel, priceLodging, priceMeals, priceOption, toCents } from '../../src/research/pricing.js';
 import { createResearchProvider } from '../../src/research/provider.js';
@@ -205,9 +205,9 @@ describe('the Gemini provider with the price pass', () => {
 
   it('finds options, then prices them with separate lookups, sharing one evidence list', async () => {
     const calls: string[] = [];
-    const provider = createResearchProvider({ mode: 'live', live: createGeminiProvider({ apiKey: 'k', fetch: fetchFor(calls) as never, now: () => NOW }) });
+    const provider = createResearchProvider({ mode: 'live', live: createGeminiProvider({ apiKey: 'k', fetch: fetchFor(calls) as never, now: () => NOW, lookupAdmissions: true, typicalCosts: false }) });
     const result = await provider.search(request);
-    expect(calls).toHaveLength(5); // 1 search + 4 price lookups for the one option
+    expect(calls).toHaveLength(6); // 1 search, 1 follow-up search (only one option came back), 4 price lookups for the one option
     const [option] = result.options;
     expect([...option.costs, ...option.perPersonCosts].every((c) => c.priceStatus === 'estimate')).toBe(true);
     const ids = new Set(result.evidence.map((e) => e.evidenceId));
@@ -225,7 +225,7 @@ describe('the Gemini provider with the price pass', () => {
       const calls: string[] = [];
       const provider = createGeminiProvider({ apiKey: 'k', fetch: fetchFor(calls) as never, now: () => NOW, ...config });
       await provider.search(req);
-      expect(calls).toHaveLength(1);
+      expect(calls.filter((c) => /LODGING \||FUEL \||MEAL \||ADMISSION \|/.test(c))).toHaveLength(0);
     }
   });
 
@@ -236,11 +236,128 @@ describe('the Gemini provider with the price pass', () => {
       if (n > 1) return new Response('no', { status: 429 });
       return new Response(JSON.stringify(answer([mainLine])), { status: 200 });
     });
-    const provider = createGeminiProvider({ apiKey: 'k', fetch: flaky as never, now: () => NOW });
+    const provider = createGeminiProvider({ apiKey: 'k', fetch: flaky as never, now: () => NOW, lookupAdmissions: true, typicalCosts: false });
     const result = await provider.search(request);
     expect(result.options).toHaveLength(1);
     expect([...result.options[0].costs, ...result.options[0].perPersonCosts].every((c) => c.priceStatus === 'unknown')).toBe(true);
     expect(result.limitations.join(' ')).toMatch(/lookup for Boone getaway failed/);
     expect(result.limitations.join(' ')).toMatch(/Some prices were not found/);
+  });
+});
+
+describe('typical costs when nothing could be found', () => {
+  const stop = { label: 'Grandfather Mountain', location: 'Linville, NC', tags: ['hiking'], hours: 4, evidenceIds: [] as string[] };
+  const driveStop = { label: 'Drive to the mountains', location: 'Boone, NC', tags: [] as string[], hours: 3, evidenceIds: [] as string[] };
+  const option = (drive: number | null = 150): ResearchOption => ({
+    optionId: 'gem-opt-1', name: 'Boone getaway', region: 'NC mountains', tags: ['hiking'],
+    ...(drive !== null ? { driveMinutesFromOrigin: drive } : {}),
+    stops: [driveStop, stop], costs: [], perPersonCosts: [], evidenceIds: ['gem-0'], tradeoffs: ['A tradeoff.'],
+  });
+  const request: ResearchRequest = { purpose: 'plan', revision: 1, origin: 'Chapel Hill', interests: [], nights: 2, groupSize: 3 };
+  const nothing = async () => answer(['no usable lines here'], 0);
+  const typical = { typicalCosts: true, lookupAdmissions: false };
+
+  it('fills every missing price with a labelled estimate: never zero, never presented as a found price', async () => {
+    const { option: priced, notes } = await priceOption(option(), request, nothing, store(), typical);
+    const byId = Object.fromEntries([...priced.costs, ...priced.perPersonCosts].map((c) => [c.costId, c]));
+    // 2 rooms x 2 nights at $80 to $200 a room, plus 15% on the top.
+    expect([byId.lodging.lowCents, byId.lodging.highCents]).toEqual([32_000, 92_000]);
+    // 150 minutes at 0.7 to 1 mile a minute, round trip, 30 to 20 mpg, $3.00 to $4.50 a gallon, 25% extra on top.
+    expect([byId.fuel.lowCents, byId.fuel.highCents]).toEqual([2_100, 8_438]);
+    // 6 meals at $8 to $25, 25% extra on top.
+    expect([byId.food.lowCents, byId.food.highCents]).toEqual([4_800, 18_750]);
+    // One stop worth paying for at $0 to $15; the drive itself is not an attraction.
+    expect([byId.admissions.lowCents, byId.admissions.highCents]).toEqual([0, 1_500]);
+    for (const c of Object.values(byId)) {
+      expect(c.priceStatus).toBe('estimate');
+      expect(c.evidenceIds).toEqual([]);
+      expect(c.label).toMatch(/typical cost, not a found price/i);
+    }
+    expect(priced.tradeoffs.join(' ')).toMatch(/typical costs/i);
+    expect(notes.join(' ')).toMatch(/typical cost/i);
+  });
+
+  it('estimates fuel from a default drive when there is no drive time, and says so', async () => {
+    const { option: priced } = await priceOption(option(null), request, nothing, store(), typical);
+    const fuel = priced.costs.find((c) => c.costId === 'fuel')!;
+    expect(fuel.priceStatus).toBe('estimate');
+    expect(priced.tradeoffs.join(' ')).toMatch(/didn't find the drive time/);
+    expect(priced.costs.find((c) => c.costId === 'lodging')!.priceStatus).toBe('estimate');
+  });
+
+  it('prefers a sourced price over the typical one, with its own label', async () => {
+    const mixed = async (prompt: string) => (prompt.includes('LODGING |') ? answer(['LODGING | Inn | 100 | 2']) : answer(['nothing'], 0));
+    const { option: priced } = await priceOption(option(), request, mixed, store(), typical);
+    const lodging = priced.costs.find((c) => c.costId === 'lodging')!;
+    expect(lodging.label).toBe('Lodging');
+    expect(lodging.evidenceIds.length).toBeGreaterThan(0);
+    expect(priced.costs.find((c) => c.costId === 'fuel')!.label).toMatch(/typical cost/i);
+  });
+
+  it('can skip the admissions lookup, which fails most often', async () => {
+    const prompts: string[] = [];
+    await priceOption(option(), request, async (p) => { prompts.push(p); return answer(['x'], 0); }, store(), typical);
+    expect(prompts).toHaveLength(3);
+    expect(prompts.join(' ')).not.toMatch(/ADMISSION \|/);
+  });
+
+  it('without the setting, a missing price stays unknown exactly as before', async () => {
+    const { option: priced } = await priceOption(option(), request, nothing, store());
+    expect([...priced.costs, ...priced.perPersonCosts].every((c) => c.priceStatus === 'unknown')).toBe(true);
+  });
+});
+
+describe('research speed', () => {
+  const lines = ['A', 'B', 'C', 'D'].map((n) => `OPTION | Option ${n} | NC mountains | 150 | hiking | unknown | unknown | unknown | unknown | Hike~Linville ${n}, NC~4~hiking | A tradeoff.`);
+  const request: ResearchRequest = { purpose: 'plan', revision: 2, origin: 'Chapel Hill', searchRegion: 'NC mountains', interests: ['hiking'], nights: 2, groupSize: 3 };
+
+  it('prices the options at the same time, but never more than six requests at once', async () => {
+    let inFlight = 0;
+    let peak = 0;
+    let calls = 0;
+    const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+      calls += 1;
+      const prompt = JSON.parse(init.body as string).input as string;
+      inFlight += 1; peak = Math.max(peak, inFlight);
+      await new Promise((r) => setTimeout(r, 15));
+      inFlight -= 1;
+      const body = prompt.includes('LODGING |') ? answer(['LODGING | Inn | 100 | 2'])
+        : prompt.includes('FUEL |') ? answer(['FUEL | 160 | 4.07'])
+        : prompt.includes('MEAL |') ? answer(['MEAL | Diner | 20'])
+        : answer(lines);
+      return new Response(JSON.stringify(body), { status: 200 });
+    });
+    const result = await createGeminiProvider({ apiKey: 'k', fetch: fetchImpl as never, now: () => NOW }).search(request);
+    // A fourth option was found but never priced, so it is not offered: "no prices found" would be untrue, we never looked.
+    expect(result.options.map((o) => o.name)).toEqual(['Option A', 'Option B', 'Option C']);
+    expect(calls).toBe(1 + 3 * 3);            // one search, then lodging, fuel and food for each of three options
+    expect(peak).toBeGreaterThan(3);          // the options really were priced together
+    expect(peak).toBeLessThanOrEqual(6);      // ... without flooding the service
+  });
+
+  it('cuts off a price lookup that hangs and uses a typical cost, so one slow answer cannot stall the whole search', async () => {
+    const fetchImpl = vi.fn((_url: string, init: RequestInit) => {
+      const prompt = JSON.parse(init.body as string).input as string;
+      if (prompt.includes('LODGING |')) {
+        return new Promise<Response>((_resolve, reject) => init.signal!.addEventListener('abort', () => reject(new Error('aborted'))));
+      }
+      const body = prompt.includes('FUEL |') ? answer(['FUEL | 160 | 4.07']) : prompt.includes('MEAL |') ? answer(['MEAL | Diner | 20']) : answer([lines[0]]);
+      return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
+    });
+    const started = Date.now();
+    const result = await createGeminiProvider({ apiKey: 'k', fetch: fetchImpl as never, now: () => NOW, priceTimeoutMs: 60 }).search(request);
+    expect(Date.now() - started).toBeLessThan(2_000);
+    const lodging = result.options[0].costs.find((c) => c.costId === 'lodging')!;
+    expect(lodging.priceStatus).toBe('estimate');
+    expect(lodging.label).toMatch(/typical cost/i);
+    expect(result.limitations.join(' ')).toMatch(/typical cost/i);
+  });
+});
+
+describe('a named destination wins', () => {
+  it('tells the model every option must be at the destination, and says nothing like that without one', () => {
+    const base: ResearchRequest = { purpose: 'plan', revision: 1, interests: [] };
+    expect(buildPrompt({ ...base, destination: 'Boone' })).toMatch(/every option must be in or right next to Boone/i);
+    expect(buildPrompt({ ...base, searchRegion: 'NC mountains' })).not.toMatch(/every option must be in or right next to/i);
   });
 });

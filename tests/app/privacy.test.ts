@@ -91,3 +91,44 @@ describe('private budgets never reach the other person\'s phone', () => {
     await t.stop();
   });
 });
+
+describe('naming whose limit is in the way, without saying how much', () => {
+  async function conflict() {
+    const t = await live();
+    await t.say(JEFF, `I'm leaving from Chapel Hill, 2 nights, I have a car, I'm free Nov 14-16, my max is $${JEFF_CAP}, I like hiking`);
+    await t.say(MASON, `my max is $${MASON_CAP}, free Nov 14-16, I like food`);
+    await t.say(JEFF, "let's go to Boone");
+    await t.say(JEFF, 'show us some options');
+    await t.say(MASON, 'show us some options');
+    return t;
+  }
+
+  it('the shared message names the person who would have to flex, and no amount reaches the other phone', async () => {
+    const t = await conflict();
+    const shared = t.heard[MASON]!.filter((x) => t.heard[JEFF]!.includes(x));
+    expect(shared.some((x) => /Jeffrey, I'm sending you a private note/.test(x)), 'the lower limit is named in the shared message').toBe(true);
+    expect(shared.some((x) => /Mason/.test(x) && /private note/.test(x)), 'the higher limit is not blamed').toBe(false);
+    expect(shared.filter((x) => /\$\s?\d/.test(x) && /max|limit|budget|afford|spend/i.test(x)), 'a shared message with a dollar amount about a limit').toEqual([]);
+    expect(t.heard[JEFF]!.some((x) => /over your max/.test(x)), 'Jeffrey got the exact amount privately').toBe(true);
+    expect(t.heard[MASON]!.some((x) => /over your max/.test(x)), 'Mason did not').toBe(false);
+    expect(mentions(t.heard[MASON]!, JEFF_CAP)).toEqual([]);
+    await t.stop();
+  });
+
+  it('a change to one limit sends each phone one note about it, not two', async () => {
+    const t = await live();
+    await t.say(JEFF, `I'm leaving from Chapel Hill, 2 nights, I have a car, I'm free Nov 14-16, my max is $900, I like hiking`);
+    await t.say(MASON, 'my max is $950, free Nov 14-16, I like food');
+    await t.say(JEFF, "let's go to Boone");
+    await t.say(JEFF, 'show us some options');
+    await t.say(MASON, 'show us some options');
+    const before: Record<string, number> = { [JEFF]: t.heard[JEFF]!.length, [MASON]: t.heard[MASON]!.length };
+    await t.say(JEFF, 'my max is $1000');
+    for (const phone of [JEFF, MASON]) {
+      const notes = t.heard[phone]!.slice(before[phone]!).filter((x) => /budget limit/i.test(x));
+      expect(notes, `notes on ${phone}`).toHaveLength(1);
+    }
+    await t.stop();
+  });
+});
+

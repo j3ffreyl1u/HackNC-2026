@@ -13,7 +13,7 @@ afterEach(async () => { for (const d of dirs.splice(0)) await rm(d, { recursive:
 type Research = (state: TripState) => Promise<{ revision: number; candidates: TripCandidate[]; replies: OutboundMessage[] }>;
 
 /** The real runtime and storage with a scripted phone line and a scripted planner, so failures can be made on purpose. */
-async function setup(options: { research?: Research; sendFails?: (m: OutboundMessage, attempt: number) => boolean; status?: TripState['status']; dir?: string } = {}) {
+async function setup(options: { research?: Research; sendFails?: (m: OutboundMessage, attempt: number) => boolean; status?: TripState['status']; dir?: string; stillLookingMs?: number } = {}) {
   const dir = options.dir ?? await mkdtemp(join(tmpdir(), 'reliability-'));
   if (!options.dir) dirs.push(dir);
   const repository = SqliteTripRepository.open(join(dir, 'trip.sqlite'));
@@ -37,7 +37,7 @@ async function setup(options: { research?: Research; sendFails?: (m: OutboundMes
     generateCandidates: async () => [],
     ...(options.research ? { research: options.research } : {}),
   };
-  const runtime = createApplicationRuntime({ repository, conversation, planner, tripId: state.tripId });
+  const runtime = createApplicationRuntime({ repository, conversation, planner, tripId: state.tripId, ...(options.stillLookingMs !== undefined ? { stillLookingMs: options.stillLookingMs } : {}) });
   if (!options.dir) await repository.bootstrapTrip(enrollment, state);
   const sender = enrollment.participants[0]!.memberId;
   const event = (id: string): InboundMessage => ({ eventId: id, messageId: id, senderId: sender, spaceId: enrollment.groupSpaceId, visibility: 'group', occurredAt: '2026-10-10T12:00:00Z', text: 'show us some options' });
@@ -134,6 +134,37 @@ describe('the outbox', () => {
     await t.runtime.handleInbound(t.event('e1')); await t.runtime.waitForIdle();
     expect(t.sent.some((m) => m.text === 'For Alex')).toBe(true);
     expect(t.sent.some((m) => m.text === 'For Mason')).toBe(false);
+    await t.runtime.stop(); t.repository.close();
+  });
+});
+
+describe('a search that takes a while', () => {
+  it('sends one short "still looking" text to the group, then the options when they arrive', async () => {
+    let finish: (() => void) | undefined;
+    const t = await setup({
+      stillLookingMs: 30,
+      research: (s) => new Promise((resolve) => { finish = () => resolve(found(s.revision)); }),
+    });
+    await t.runtime.start();
+    await t.runtime.handleInbound(t.event('slow-1'));
+    await new Promise((r) => setTimeout(r, 120));
+    await t.runtime.drainOutbox();
+    expect(t.sent.filter((m) => /Still looking/.test(m.text))).toHaveLength(1);
+    expect(t.sent.some((m) => m.text === 'Here are the options.')).toBe(false);
+    finish?.();
+    await t.runtime.waitForIdle();
+    expect(t.sent.some((m) => m.text === 'Here are the options.')).toBe(true);
+    expect(t.sent.filter((m) => /Still looking/.test(m.text))).toHaveLength(1);
+    await t.runtime.stop(); t.repository.close();
+  });
+
+  it('says nothing when the search is quick', async () => {
+    const t = await setup({ stillLookingMs: 200, research: async (s) => found(s.revision) });
+    await t.runtime.start();
+    await t.runtime.handleInbound(t.event('quick-1'));
+    await t.runtime.waitForIdle();
+    await new Promise((r) => setTimeout(r, 300));
+    expect(t.sent.some((m) => /Still looking/.test(m.text))).toBe(false);
     await t.runtime.stop(); t.repository.close();
   });
 });
