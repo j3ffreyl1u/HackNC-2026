@@ -16,7 +16,6 @@ try {
   } else {
     const result = await runMockDemo(repository, trip.enrollment, trip.state, { realistic });
     for (const message of result.transcript) console.log(`[${message.audience.kind}] ${message.text}`);
-    console.log(result.guide);
     console.log(`Demo completed: revision ${result.state.revision}, ${result.state.status}. Saved to ${path}`);
   }
 } finally { repository.close(); }
