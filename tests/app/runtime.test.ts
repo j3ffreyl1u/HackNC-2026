@@ -122,7 +122,7 @@ describe('application runtime', () => {
       expect((await repository.loadTrip(state.tripId))?.pendingQuestions).toHaveLength(2);
       const count = conversation.sent.length;
       await conversation.emit(inbound('again'));
-      expect(conversation.sent.slice(count).some(m => m.text.includes("Mason's budget"))).toBe(true);
+      expect(conversation.sent.slice(count).some(m => m.text.includes("everyone's budget"))).toBe(true);
       expect(conversation.sent.slice(count).some(m => m.text.includes('where you want to go'))).toBe(true);
       expect(conversation.sent.slice(count).filter(m => m.text.endsWith('?')).length).toBeLessThanOrEqual(2);
     } finally { await runtime.stop(); repository.close(); }
