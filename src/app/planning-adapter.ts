@@ -148,9 +148,9 @@ export function createPlannerAdapter(provider: ResearchProvider, spaceId: string
       }
       return { ...result, state: result.state === before ? state : fromState(result.state, state), replies: replies(result.replies) };
     },
-    finalizeTurn(state, now) {
+    finalizeTurn(state, now, actorId) {
       const before = toPlanningState(state);
-      const { questions } = checkReadiness(before, { now });
+      const { questions } = checkReadiness(before, { now, ...(actorId !== undefined ? { actorId } : {}) });
       return { state: questions.length ? fromState(recordQuestions(before, questions, now), state) : state, replies: replies(questions.map(q => ({ audience: q.audience, text: q.text }))) };
     },
     generateCandidates: async state => (await planTrip(toPlanningState(state), provider, { timeZone: state.timeZone })).candidates.map(fromCandidate),

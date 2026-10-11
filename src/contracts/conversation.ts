@@ -139,6 +139,8 @@ export interface TripConversationContext {
   targetProposal?: { kind: 'select' | 'accept'; candidateId: string; revision: number };
   /** The field this actor was last asked about, so a bare "200" or "Oct 17-19" has meaning. */
   pendingQuestion?: { field: ConstraintField };
+  /** Every field there is an open question about for this actor (their own and the shared one), most relevant first, so a volunteered answer to any of them is understood. */
+  openFields?: ConstraintField[];
   /** The shared basics (origin, length, place, car) this actor was asked to sign off on; a bare "yes" records them as theirs. */
   confirmBasics?: ConstraintValue[];
   /** Set from the `expects` of the last reply to this member, e.g. "Is $250 your firm maximum?". */

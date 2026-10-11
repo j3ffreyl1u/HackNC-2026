@@ -37,7 +37,7 @@ async function live() {
   /** Send one DM and return exactly what the bot texted back to each person because of it. */
   const say = async (from: string, text: string) => {
     const before = messenger.sent.length;
-    await messenger.emit(dmEvent(from, `m${++n}`, text));
+    await messenger.emit(dmEvent(from, `m${++n}`, text, { occurredAt: new Date(Date.parse('2026-10-01T12:00:00Z') + n * 20_000).toISOString() }));   // people take a few seconds between texts
     await runtime.drainOutbox();
     const out = messenger.sent.slice(before);
     const to = (who: string) => out.filter((s) => s.audience.kind === 'private' && s.audience.providerUserId === who).map((s) => s.text);
@@ -93,8 +93,8 @@ describe('first live DM scenario, end to end (A parser + C runtime + B planner, 
     // Jeffrey: exactly one question, and it is not copied to Mason's phone.
     expect(jeff.jeff).toEqual(['Where are you all leaving from?']);
     expect(jeff.mason).toEqual([]);
-    // Mason's own request: he is asked that same open question himself, once. Nothing goes to Jeffrey.
-    expect(mason.mason).toEqual(['Where are you all leaving from?']);
+    // Mason's own request: the work is split. Jeffrey already has the shared question, so Mason is asked his own side (his dates).
+    expect(mason.mason).toEqual(['Which dates could you do for the trip?']);
     expect(mason.jeff).toEqual([]);
     await t.stop();
   });
@@ -157,11 +157,13 @@ describe('first live DM scenario, end to end (A parser + C runtime + B planner, 
   it('the missing-details summary says "your" to the person it is about and names them to everyone else', async () => {
     const t = await live();
     await t.say(JEFF, "I'm leaving from Chapel Hill, 2 nights, I have a car, I'm free Nov 14-16, my max is $250");
-    const toJeff = await t.say(JEFF, 'Can you show us some options?');
+    await t.say(JEFF, 'Can you show us some options?');                    // first he is asked the next open question
+    const toJeff = await t.say(JEFF, 'Can you show us some options?');     // asking again gets the recap
     const jeffSummary = toJeff.jeff.find((x) => /still waiting on/i.test(x))!;
     expect(jeffSummary).toMatch(/Mason's dates/);                // about Mason, so it names him
     expect(jeffSummary).not.toMatch(/your (dates|budget)/);      // Jeffrey has given both
-    const toMason = await t.say(MASON, 'Can you show us some options?');
+    await t.say(MASON, 'Can you show us some options?');                   // first he is asked his own dates question
+    const toMason = await t.say(MASON, 'Can you show us some options?');   // asking again gets the recap
     const masonSummary = toMason.mason.find((x) => /still waiting on/i.test(x))!;
     expect(masonSummary).toMatch(/your dates/);                  // about Mason, so it says "your"
     expect(masonSummary).not.toMatch(/Mason's/);

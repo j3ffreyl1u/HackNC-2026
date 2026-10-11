@@ -64,8 +64,8 @@ describe('request_plans', () => {
     expect(later.rejection?.code).toBe('NOT_READY');
     expect(later.replies.length).toBeGreaterThan(0);
     const text = later.replies.map((r) => r.text).join(' ');
-    expect(text).toBe('Where are you all leaving from?');   // nothing said yet: no checklist, just the open question
-    expect(text).not.toMatch(/budget|dates|Mason's/);
+    expect(['Where are you all leaving from?', 'Which dates could you do for the trip?']).toContain(text);   // nothing said yet: no checklist, just one open question
+    expect(text).not.toMatch(/budget|Mason's/);
     expect(later.replies.every((r) => r.audience.kind === 'group' || r.audience.kind === 'private')).toBe(true);
   });
 
@@ -406,7 +406,11 @@ describe('one turn asks at most two questions', () => {
     const first = run(createTrip('trip-1', roster), 'mason', { kind: 'update_constraint', update: update('mason', 'preferences', { items: ['hiking'] }) });
     expect(first.replies.filter((r) => r.text.endsWith('?')).length).toBe(1);
     const second = applyCommand(first.state, command('alex', { kind: 'update_constraint', update: update('alex', 'preferences', { items: ['food'] }) }), { now: '2026-10-10T12:05:00.000Z' });
-    expect(second.replies.filter((r) => r.text.endsWith('?'))).toEqual([]);
+    // The shared question is not asked again, but the second person is given their OWN next question (the work is split).
+    const asked = second.replies.filter((r) => r.text.endsWith('?'));
+    expect(asked.some((r) => r.audience.kind === 'group')).toBe(false);
+    const perPerson = asked.map((r) => (r.audience.kind === 'private' ? r.audience.memberId : 'group'));
+    expect(new Set(perPerson).size).toBe(perPerson.length);   // nobody is handed two questions at once
   });
 
   it('asks the next question as soon as the open one is answered', () => {

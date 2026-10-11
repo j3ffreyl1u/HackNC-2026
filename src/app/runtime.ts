@@ -21,7 +21,7 @@ export interface PlannerAdapter {
     rejection?: { code: string; userMessage: string };
   };
   generateCandidates(state: TripState): Promise<TripCandidate[]>;
-  finalizeTurn?(state: TripState, now: string): { state: TripState; replies: OutboundMessage[] };
+  finalizeTurn?(state: TripState, now: string, actorId?: string): { state: TripState; replies: OutboundMessage[] };
   research?(state: TripState): Promise<{ revision: number; candidates: TripCandidate[]; replies: OutboundMessage[] }>;
   install?(state: TripState, revision: number, candidates: TripCandidate[]): { state: TripState; rejection?: { code: string }; replies: OutboundMessage[] };
   guide?(state: TripState, question: string, now?: string): Promise<string>;
@@ -188,13 +188,18 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
         researchRequested = applied.researchRequested;
       }
       if (planner.finalizeTurn && !(parsed.kind === 'commands' && parsed.clarificationQuestion) && commands.some(c => c.action.kind === 'update_constraint' || c.action.kind === 'request_plans')) {
-        const final = planner.finalizeTurn(nextState, message.occurredAt);
+        const final = planner.finalizeTurn(nextState, message.occurredAt, member.memberId);
         nextState = final.state;
         // In a one-on-one chat a shared question is asked of the person talking, not copied to everyone else's phone.
         // A conflict (like dates that don't overlap) is different: everyone has to hear it to fix it, so it goes to all.
         const conflicts = new Set(final.state.pendingQuestions.filter((q) => q.questionId.startsWith('conflict:')).map((q) => q.text));
-        replies.push(...final.replies.map((reply, index) => makeMessage(tripId, `questions:${message.eventId}:${index}`,
-          message.visibility === 'private' && reply.audience.kind === 'group' && !conflicts.has(reply.text) ? { ...reply, audience: { kind: 'private', memberId: member.memberId } } : reply)));
+        const asked = final.replies.map((reply, index) => makeMessage(tripId, `questions:${message.eventId}:${index}`,
+          message.visibility === 'private' && reply.audience.kind === 'group' && !conflicts.has(reply.text) ? { ...reply, audience: { kind: 'private', memberId: member.memberId } } : reply));
+        // A person is never handed two questions in one turn: a fresh question replaces an earlier re-ask of an old one.
+        const isQuestion = (r: OutboundMessage) => r.audience.kind === 'private' && r.text.trim().endsWith('?');
+        const askedFor = new Set(asked.filter(isQuestion).map((r) => (r.audience as { memberId: string }).memberId));
+        for (let i = replies.length - 1; i >= 0; i -= 1) if (isQuestion(replies[i]!) && askedFor.has((replies[i]!.audience as { memberId: string }).memberId)) replies.splice(i, 1);
+        replies.push(...asked);
       }
       // Once the last missing detail is in, start looking for options without waiting to be asked.
       if (!researchRequested && nextState.status === 'gathering' && commands.some((c) => c.action.kind === 'update_constraint') && !(parsed.kind === 'commands' && parsed.clarificationQuestion)) {
@@ -318,9 +323,12 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
 
 async function conversationContext(repository: Repository, state: TripState, message: InboundMessage): Promise<ConversationContext> {
   const actorId = message.senderId;
-  const pendingQuestion = state.pendingQuestions
+  // What was asked of this person comes first (a private question is theirs alone), then the shared one that anyone may answer.
+  const relevant = state.pendingQuestions
     .filter((question) => question.audience === 'group' || question.memberId === actorId)
-    .sort((left, right) => right.askedAt.localeCompare(left.askedAt))[0];
+    .sort((left, right) => Number(right.memberId === actorId) - Number(left.memberId === actorId) || right.askedAt.localeCompare(left.askedAt));
+  const pendingQuestion = relevant[0];
+  const openFields = [...new Set(relevant.flatMap((q) => (q.field ? [q.field] : [])))];
   const targetProposal = message.reaction
     ? await repository.lookupProposal(message.reaction.targetMessageId)
     : null;
@@ -340,6 +348,7 @@ async function conversationContext(repository: Repository, state: TripState, mes
     status: state.status,
     actionable,
     ...(confirmBasics.length > 0 ? { confirmBasics } : {}),
+    ...(openFields.length > 1 ? { openFields } : {}),
     pendingConfirmation: state.pendingConfirmations?.[actorId],
     ...(targetProposal ? { targetProposal } : {}),
     ...(pendingQuestion?.field ? { pendingQuestion: { questionId: pendingQuestion.questionId, field: pendingQuestion.field } } : {}),

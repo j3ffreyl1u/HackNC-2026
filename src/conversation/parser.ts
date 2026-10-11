@@ -21,6 +21,7 @@ const YES = /^(?:(?:yes|yep|yeah|yup|sure)(?:[ ,]+(?:it is|that is|that'?s right
 const AGREES_START = /^(?:yes|yeah|yep|yup|yea|sure|ok|okay|absolutely|definitely|totally|sounds|that works|that'?ll work|works|all good|fine|good|perfect|great|i'?m (?:good|fine|down|in)|let'?s do it|love it|looks good)\b/i;
 const CHANGE_WORDS = /\b(?:but|actually|instead|rather|except|though|however|no|not|don'?t|doesn'?t|can'?t|wait|hold on|change)\b/i;
 const BASICS_OK = { test: (t: string) => AGREES_START.test(t) && !CHANGE_WORDS.test(t) };
+const BARE_PLACE = /^[A-Z][A-Za-z.'-]*(?:\s+[A-Z][A-Za-z.'-]*){0,3}[.!]*$/;
 const NO = /^(no|nope|nah|decline|i decline|not for me|not now|no thanks|pass)[.!]*$/i;
 /** Explicitly says what we just recorded is wrong (as opposed to a bare "no", which is ambiguous after "tell me if I got anything wrong"). */
 const WRONG = /^(?:(?:no|nope|nah)[ ,]+)?(?:that'?s|that is|it'?s|it is|this is)?\s*(?:not right|not correct|wrong|incorrect|not what i (?:said|meant))[.!]*$/i;
@@ -32,7 +33,7 @@ const GUIDE = /^(?:guide|ask guide|\/guide)\s*[:\-]?\s+(.{3,500})$/is;
 const SELECT = new RegExp(`^(?:pick|choose|select|go with|vote(?: for)?|i vote(?: for)?)\\s+(?:option\\s+|plan\\s+)?${ID}(?:\\s+v(\\d+))?$`, 'i');
 const ACCEPT = new RegExp(`^accept\\s+${ID}\\s+v(\\d+)$`, 'i');
 
-const HELP = "Sorry, I didn't catch that one. I can note your budget, free dates and what you're into, show trip options, or answer trip questions. Try \"my max is $200\" or \"free Oct 17-19\", or say \"let's plan a trip\" to get started.";
+const HELP = "Hmm, I didn't quite catch that. Could you say it another way? I can take your budget, free dates and what you're into, show trip options, or answer trip questions, like \"my max is $200\" or \"free Oct 17-19\".";
 
 const money = (cents: number) => `$${(cents / 100).toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
 const list = (items: string[]) => (items.length <= 1 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`);
@@ -268,7 +269,19 @@ export function createParser(deps: ConversationDependencies) {
 
     // Rules first (fast, exact). Anything the rules did not recognize is handed to the language model automatically,
     // and its (validated) answer is merged with what the rules found.
-    const { items: extracted, unmatched } = extractWithCoverage(text, msg.occurredAt, ctx.pendingQuestion?.field);
+    let { items: extracted, unmatched } = extractWithCoverage(text, msg.occurredAt, ctx.pendingQuestion?.field);
+    // Nothing fit the question that was asked? Maybe they answered another open one, or just volunteered something.
+    if (!extracted.length) {
+      for (const field of ctx.openFields ?? []) {
+        if (field === ctx.pendingQuestion?.field) continue;
+        const again = extractWithCoverage(text, msg.occurredAt, field);
+        if (again.items.length) { ({ items: extracted, unmatched } = again); break; }
+      }
+    }
+    if (!extracted.length && (msg.visibility === 'private' || trip.mode === 'direct') && BARE_PLACE.test(text) && !/\b(?:i|we|my|you|yes|no)\b/i.test(text)) {
+      const place = text.replace(/[.!]+$/, '').trim();
+      return reply(msg, `Is ${place} where you're leaving from, or where you want to go? You can say "leaving from ${place}" or "going to ${place}".`, 'place-which', true);
+    }
     const talkative = msg.visibility === 'private' || trip.mode === 'direct';
     if (!extracted.length && TRIVIAL.test(text)) {
       // Small talk needs no model. In a one-on-one chat answer it warmly; in a group stay out of it.

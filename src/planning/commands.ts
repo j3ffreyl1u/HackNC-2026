@@ -37,12 +37,12 @@ const toReplies = (questions: readonly ReadinessQuestion[]): TripReply[] =>
   questions.map((q) => ({ audience: q.audience.kind === 'group' ? GROUP : q.audience, text: q.text }));
 
 /** Ask what is still missing, remembering the questions so they are not repeated too soon. */
-function askAboutGaps(state: TripState, now: string): { state: TripState; replies: TripReply[] } {
+function askAboutGaps(state: TripState, now: string, actorId?: string): { state: TripState; replies: TripReply[] } {
   const cleared = clearAnsweredQuestions(state, openQuestionKeys(state));
   // Several commands from one message share a timestamp. Anything already asked at this instant belongs to the
   // same turn, and one turn asks at most two questions.
   if (cleared.pendingQuestions.some((q) => q.askedAt === now)) return { state: cleared, replies: [] };
-  const { questions } = checkReadiness(cleared, { now });
+  const { questions } = checkReadiness(cleared, { now, ...(actorId !== undefined ? { actorId } : {}) });
   return { state: recordQuestions(cleared, questions, now), replies: toReplies(questions) };
 }
 
@@ -164,7 +164,7 @@ function updateConstraint(state: TripState, command: TripCommand, update: Constr
     researchRequested = revised.researchRequested;
   }
   // Whatever is still missing, contradictory or only tentative gets asked about, at any stage of the plan.
-  const asked = askAboutGaps(next, now);
+  const asked = askAboutGaps(next, now, command.actorId);
   return { state: asked.state, replies: [...replies, ...asked.replies], researchRequested };
 }
 
@@ -174,7 +174,7 @@ function requestPlans(state: TripState, command: TripCommand, now: string, requi
   }
   const readiness = checkReadiness(state, { now, requireSignOff });
   if (!readiness.ready) {
-    const asked = askAboutGaps(state, now);
+    const asked = askAboutGaps(state, now, command.actorId);
     // A question going out says what is missing by itself. Only when nothing new is asked (everything is waiting on
     // an earlier answer) is the requester told what the plan is still waiting for, so they are never met with silence.
     const to = { kind: 'private', memberId: command.actorId } as const;

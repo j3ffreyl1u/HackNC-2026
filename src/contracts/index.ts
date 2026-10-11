@@ -257,6 +257,7 @@ export interface ConversationContext {
   pendingQuestion?: { questionId: string; field: ConstraintField };
   /** The shared basics this actor was asked to sign off on; a bare "yes" records them as theirs. */
   confirmBasics?: SharedConstraintValue[];
+  openFields?: ConstraintField[];
 }
 
 export interface ConversationService {

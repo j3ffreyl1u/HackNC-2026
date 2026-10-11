@@ -263,7 +263,7 @@ describe('friendly, customer-service style replies', () => {
   });
   it('apologises and offers examples when it does not understand a DM', async () => {
     const { service } = setup({}, () => ({ intent: 'none' }));
-    expect(text(await service.parseInbound(dm('asdfgh')))).toMatch(/^Sorry, I didn't catch that one/);
+    expect(text(await service.parseInbound(dm('asdfgh')))).toMatch(/^Hmm, I didn't quite catch that/);
   });
   it('locks in a confirmed budget with a thank-you, privately', async () => {
     const { service } = setup({ pendingConfirmation: { field: 'budget', valueCents: 25000 } });

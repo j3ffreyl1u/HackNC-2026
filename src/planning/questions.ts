@@ -67,7 +67,8 @@ function recentlyAsked(state: TripState, key: string, now: string | undefined): 
  * So a second person starting the conversation while a shared question is open gets no new questions at all, and
  * answers arrive one topic after another instead of five at once.
  */
-export function selectQuestions(state: TripState, candidates: readonly QuestionCandidate[], now?: string): ReadinessQuestion[] {
+export function selectQuestions(state: TripState, candidates: readonly QuestionCandidate[], now?: string, actorId?: string): ReadinessQuestion[] {
+  if (actorId !== undefined) return delegateQuestions(state, candidates, now, actorId);
   const everyone = participantIds(state);
   const open = state.pendingQuestions.filter((q) => now === undefined || Date.parse(now) - Date.parse(q.askedAt) < QUESTION_COOLDOWN_MS);
   const sharedOpen = open.some((q) => q.audience.kind === 'group');
@@ -83,6 +84,39 @@ export function selectQuestions(state: TripState, candidates: readonly QuestionC
         everyone.forEach((id) => taken.add(id));
       } else {
         if (busy.has(audience.memberId) || taken.has(audience.memberId)) continue;
+        taken.add(audience.memberId);
+      }
+      asking.push(question);
+    }
+  }
+  return asking;
+}
+
+/**
+ * When two people plan at the same time the work is split, not duplicated. The person talking is asked the next shared
+ * question (one shared question is open at a time, held by whoever got it), and everyone else is free to be asked their
+ * OWN things (dates, budget, tastes) in the meantime. Nobody gets more than one question per turn.
+ */
+function delegateQuestions(state: TripState, candidates: readonly QuestionCandidate[], now: string | undefined, actorId: string): ReadinessQuestion[] {
+  const open = state.pendingQuestions.filter((q) => now === undefined || Date.parse(now) - Date.parse(q.askedAt) < QUESTION_COOLDOWN_MS);
+  const sharedOpen = open.some((q) => q.audience.kind === 'group');
+  const busy = new Set<string>(open.flatMap((q) => (q.audience.kind === 'private' ? [q.audience.memberId] : [])));
+  const taken = new Set<string>();
+  const engaged = (id: string) => (state.memberConstraints[id]?.length ?? 0) > 0 || state.groupConstraints.some((r) => r.memberId === id);
+  let sharedTaken = false;
+  const asking: ReadinessQuestion[] = [];
+  const askable = candidates.filter((c) => !recentlyAsked(state, c.question.key, now));
+  for (const topic of TOPIC_ORDER) {
+    for (const { question } of askable.filter((c) => c.topic === topic)) {
+      const audience = question.audience;
+      if (audience.kind === 'group') {
+        if (sharedOpen || sharedTaken || busy.has(actorId) || taken.has(actorId)) continue;
+        sharedTaken = true;
+        taken.add(actorId);
+      } else {
+        if (busy.has(audience.memberId) || taken.has(audience.memberId)) continue;
+        // Someone who has not joined in yet is only contacted unprompted with a message that explains itself.
+        if (audience.memberId !== actorId && !engaged(audience.memberId) && !question.key.startsWith('confirm_basics:')) continue;
         taken.add(audience.memberId);
       }
       asking.push(question);

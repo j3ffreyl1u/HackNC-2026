@@ -19,6 +19,8 @@ export interface ReadinessOptions {
   now?: string;
   /** Count a missing sign-off on the shared basics as not ready. Off by default: an explicit request for options goes ahead. */
   requireSignOff?: boolean;
+  /** Who is talking right now. Questions are then divided between people instead of all going to everyone. */
+  actorId?: string;
 }
 
 function names(state: TripState, ids: readonly string[]): string {
@@ -210,7 +212,7 @@ export function checkReadiness(state: TripState, options: ReadinessOptions = {})
   const evaluated = evaluate(state);
   const { conflicts, candidates } = evaluated;
   const missing = options.requireSignOff ? evaluated.missing : evaluated.missing.filter((m) => !m.startsWith('confirm_basics:'));
-  const questions: ReadinessQuestion[] = selectQuestions(state, candidates, options.now);
+  const questions: ReadinessQuestion[] = selectQuestions(state, candidates, options.now, options.actorId);
   return { ready: missing.length === 0 && conflicts.length === 0, missing, conflicts, questions };
 }
 

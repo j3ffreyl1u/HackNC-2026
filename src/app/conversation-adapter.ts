@@ -59,6 +59,7 @@ export async function createChatAdapter(enrollment: C.TripEnrollment, timeZone: 
       const parsed = await service.parseInbound(message, { tripId: context.tripId, revision: context.revision, actionable,
         pendingQuestion: context.pendingQuestion,
         ...(context.confirmBasics ? { confirmBasics: context.confirmBasics } : {}),
+        ...(context.openFields?.length ? { openFields: context.openFields } : {}),
         pendingConfirmation: context.pendingConfirmation,
         targetProposal: context.targetProposal?.kind ? { ...context.targetProposal, kind: context.targetProposal.kind } : undefined });
       if (parsed.kind === 'ignored') return parsed;
