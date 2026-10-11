@@ -23,6 +23,11 @@ export interface SerpApiConfig {
   /** Injectable for tests. Defaults to the global `fetch`. */
   fetch?: typeof fetch;
   timeoutMs?: number;
+  /** Searches this process may spend before it stops asking (default 30). SerpApi plans are small, and a re-search must not burn them. */
+  maxSearches?: number;
+  /** How long an identical search (same place, dates and group) is reused, in ms (default 12 hours). 0 turns the cache off. */
+  cacheMs?: number;
+  now?: () => number;
 }
 
 export interface HotelQuery { query: string; checkIn: string; checkOut: string; adults: number }
@@ -33,7 +38,9 @@ export type FindHotels = (query: HotelQuery) => Promise<HotelResults | undefined
 /** Read the key from an environment object. `undefined` means hotel prices are not configured. */
 export function serpApiConfigFromEnv(env: Record<string, string | undefined>): SerpApiConfig | undefined {
   const apiKey = env.SERPAPI_API_KEY?.trim();
-  return apiKey ? { apiKey } : undefined;
+  if (!apiKey) return undefined;
+  const max = Number(env.SERPAPI_MAX_SEARCHES);
+  return { apiKey, ...(Number.isInteger(max) && max >= 0 ? { maxSearches: max } : {}) };
 }
 
 const isUrl = (text: unknown): text is string => {
@@ -53,7 +60,26 @@ function nightlyCents(property: Record<string, any>): number | undefined {
 /** A Google Hotels search for one stay. Throws a message that never contains the key. */
 export function createSerpApiHotels(config: SerpApiConfig): FindHotels {
   const fetchImpl = config.fetch ?? fetch;
-  return async (q) => {
+  const now = config.now ?? Date.now;
+  const cacheMs = config.cacheMs ?? 12 * 3_600_000;
+  const cache = new Map<string, { at: number; value: Promise<HotelResults | undefined> }>();
+  let spent = 0;
+  return (q) => {
+    // The same place, dates and group size always gives the same answer, so a re-search (a changed cap, a retry) costs nothing.
+    const key = JSON.stringify([q.query.toLowerCase(), q.checkIn, q.checkOut, q.adults]);
+    const hit = cache.get(key);
+    if (hit && cacheMs > 0 && now() - hit.at < cacheMs) return hit.value;
+    if (spent >= (config.maxSearches ?? 30)) return Promise.reject(new Error('Hotel price search skipped: this run has used its search allowance.'));
+    spent += 1;
+    const value = search(q);
+    if (cacheMs > 0) {
+      cache.set(key, { at: now(), value });
+      value.catch(() => cache.delete(key));   // a failure is not remembered, so a retry can succeed
+    }
+    return value;
+  };
+
+  async function search(q: HotelQuery): Promise<HotelResults | undefined> {
     const url = new URL(ENDPOINT);
     for (const [k, v] of Object.entries({ engine: 'google_hotels', q: q.query, check_in_date: q.checkIn, check_out_date: q.checkOut, adults: String(q.adults), currency: 'USD', gl: 'us', hl: 'en', api_key: config.apiKey })) url.searchParams.set(k, v);
     let body: any;
@@ -84,7 +110,7 @@ export function createSerpApiHotels(config: SerpApiConfig): FindHotels {
     if (hotels.length === 0) return undefined;
     const searchUrl = body?.search_metadata?.google_hotels_url;
     return { hotels, ...(isUrl(searchUrl) ? { searchUrl } : {}) };
-  };
+  }
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

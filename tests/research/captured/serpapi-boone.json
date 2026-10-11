@@ -1,0 +1,260 @@
+{
+ "_note": "Real SerpApi google_hotels response for Hotels in Boone, NC, 2026-11-14 to 2026-11-16, 2 adults, captured 2026-10-11 and trimmed to the fields we read (first 18 properties, ads and images removed).",
+ "search_metadata": {
+  "status": "Success",
+  "google_hotels_url": "https://www.google.com/travel/search?q=Hotels+in+Boone%2C+NC&hl=en&gl=us"
+ },
+ "properties": [
+  {
+   "type": "hotel",
+   "name": "Holiday Inn Boone - University Area by IHG",
+   "link": "https://www.ihg.com/holidayinn/hotels/us/en/boone/hkybo/hoteldetail?cm_mmc=GoogleMaps-_-HI-_-US-_-HKYBO",
+   "rate_per_night": {
+    "lowest": "$109",
+    "extracted_lowest": 109
+   },
+   "total_rate": {
+    "lowest": "$217",
+    "extracted_lowest": 217
+   },
+   "overall_rating": 3.6
+  },
+  {
+   "type": "hotel",
+   "name": "Holiday Inn Express Boone by IHG",
+   "link": "https://www.ihg.com/holidayinnexpress/hotels/us/en/boone/boopr/hoteldetail?cm_mmc=GoogleMaps-_-EX-_-US-_-BOOPR",
+   "rate_per_night": {
+    "lowest": "$113",
+    "extracted_lowest": 113
+   },
+   "total_rate": {
+    "lowest": "$226",
+    "extracted_lowest": 226
+   },
+   "overall_rating": 4.2
+  },
+  {
+   "type": "hotel",
+   "name": "Country Inn & Suites by Radisson, Boone, NC",
+   "link": "https://www.choicehotels.com/north-carolina/boone/country-inn-suites-hotels/nca91?mc=llgoxxpx",
+   "rate_per_night": {
+    "lowest": "$105",
+    "extracted_lowest": 105
+   },
+   "total_rate": {
+    "lowest": "$210",
+    "extracted_lowest": 210
+   },
+   "overall_rating": 3.8
+  },
+  {
+   "type": "hotel",
+   "name": "Quality Inn & Suites Boone - University Area",
+   "link": "https://www.choicehotels.com/north-carolina/boone/quality-inn-hotels/nc790?mc=llgoxxpx",
+   "rate_per_night": {
+    "lowest": "$95",
+    "extracted_lowest": 95
+   },
+   "total_rate": {
+    "lowest": "$189",
+    "extracted_lowest": 189
+   },
+   "overall_rating": 3.7
+  },
+  {
+   "type": "hotel",
+   "name": "Smoketree Lodge",
+   "link": "http://www.smoketree-lodge.com/",
+   "rate_per_night": {
+    "lowest": "$76",
+    "extracted_lowest": 76
+   },
+   "total_rate": {
+    "lowest": "$152",
+    "extracted_lowest": 152
+   },
+   "overall_rating": 4
+  },
+  {
+   "type": "hotel",
+   "name": "Comfort Suites Boone - University Area",
+   "link": "https://www.choicehotels.com/north-carolina/boone/comfort-suites-hotels/nc052?mc=llgoxxpx",
+   "rate_per_night": {
+    "lowest": "$112",
+    "extracted_lowest": 112
+   },
+   "total_rate": {
+    "lowest": "$223",
+    "extracted_lowest": 223
+   },
+   "overall_rating": 4.1
+  },
+  {
+   "type": "hotel",
+   "name": "Graystone Lodge, an Ascend Collection Hotel",
+   "link": "https://www.choicehotels.com/north-carolina/boone/ascend-hotels/nc507?mc=llgoxxpx",
+   "rate_per_night": {
+    "lowest": "$143",
+    "extracted_lowest": 143
+   },
+   "total_rate": {
+    "lowest": "$285",
+    "extracted_lowest": 285
+   },
+   "overall_rating": 4.7
+  },
+  {
+   "type": "hotel",
+   "name": "Sleep Inn Boone University Area",
+   "link": "https://www.choicehotels.com/north-carolina/boone/sleep-inn-hotels/nc514?mc=llgoxxpx",
+   "rate_per_night": {
+    "lowest": "$113",
+    "extracted_lowest": 113
+   },
+   "total_rate": {
+    "lowest": "$227",
+    "extracted_lowest": 227
+   },
+   "overall_rating": 4.3
+  },
+  {
+   "type": "hotel",
+   "name": "La Quinta Inn & Suites by Wyndham Boone University",
+   "link": "https://www.wyndhamhotels.com/laquinta/boone-north-carolina/la-quinta-inn-and-suites-boone-university/overview?CID=LC:6ysy27krtpcrqev:53027&iata=00093796",
+   "rate_per_night": {
+    "lowest": "$127",
+    "extracted_lowest": 127
+   },
+   "total_rate": {
+    "lowest": "$254",
+    "extracted_lowest": 254
+   },
+   "overall_rating": 4.4
+  },
+  {
+   "type": "hotel",
+   "name": "Haven Hotel",
+   "link": "https://havenhotel.co/",
+   "rate_per_night": {
+    "lowest": "$238",
+    "extracted_lowest": 238
+   },
+   "total_rate": {
+    "lowest": "$476",
+    "extracted_lowest": 476
+   },
+   "overall_rating": 5
+  },
+  {
+   "type": "hotel",
+   "name": "The Wanderer Guesthouse",
+   "rate_per_night": {
+    "lowest": "$126",
+    "extracted_lowest": 126
+   },
+   "total_rate": {
+    "lowest": "$253",
+    "extracted_lowest": 253
+   },
+   "overall_rating": 4.7
+  },
+  {
+   "type": "hotel",
+   "name": "Hampton Inn & Suites Boone",
+   "link": "https://www.hilton.com/en/hotels/hkybohx-hampton-suites-boone/?SEO_id=GMB-AMER-HX-HKYBOHX",
+   "rate_per_night": {
+    "lowest": "$158",
+    "extracted_lowest": 158
+   },
+   "total_rate": {
+    "lowest": "$316",
+    "extracted_lowest": 316
+   },
+   "overall_rating": 4.7
+  },
+  {
+   "type": "hotel",
+   "name": "The Horton Hotel",
+   "link": "https://thehorton.com/",
+   "rate_per_night": {
+    "lowest": "$317",
+    "extracted_lowest": 317
+   },
+   "total_rate": {
+    "lowest": "$634",
+    "extracted_lowest": 634
+   },
+   "overall_rating": 4.6
+  },
+  {
+   "type": "hotel",
+   "name": "Rhode's Motor Lodge",
+   "link": "http://rhodesmotorlodge.com/",
+   "rate_per_night": {
+    "lowest": "$143",
+    "extracted_lowest": 143
+   },
+   "total_rate": {
+    "lowest": "$285",
+    "extracted_lowest": 285
+   },
+   "overall_rating": 4.7
+  },
+  {
+   "type": "hotel",
+   "name": "Mountainaire Inn & Log Cabins",
+   "link": "https://www.mountainaireinn.com/",
+   "rate_per_night": {
+    "lowest": "$135",
+    "extracted_lowest": 135
+   },
+   "total_rate": {
+    "lowest": "$271",
+    "extracted_lowest": 271
+   },
+   "overall_rating": 4.5
+  },
+  {
+   "type": "hotel",
+   "name": "The 1850 Hotel",
+   "link": "http://1850boone.com/",
+   "rate_per_night": {
+    "lowest": "$297",
+    "extracted_lowest": 297
+   },
+   "total_rate": {
+    "lowest": "$593",
+    "extracted_lowest": 593
+   },
+   "overall_rating": 4.9
+  },
+  {
+   "type": "hotel",
+   "name": "Meadowbrook Inn",
+   "link": "https://www.meadowbrook-inn.com/",
+   "rate_per_night": {
+    "lowest": "$153",
+    "extracted_lowest": 153
+   },
+   "total_rate": {
+    "lowest": "$306",
+    "extracted_lowest": 306
+   },
+   "overall_rating": 4.2
+  },
+  {
+   "type": "hotel",
+   "name": "Holiday Inn Express Blowing Rock South by IHG",
+   "link": "https://www.ihg.com/holidayinnexpress/hotels/us/en/blowing-rock/boorn/hoteldetail?cm_mmc=GoogleMaps-_-EX-_-US-_-BOORN",
+   "rate_per_night": {
+    "lowest": "$129",
+    "extracted_lowest": 129
+   },
+   "total_rate": {
+    "lowest": "$257",
+    "extracted_lowest": 257
+   },
+   "overall_rating": 4
+  }
+ ]
+}

@@ -1,11 +1,12 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { EvidenceStore } from '../../src/research/grounding.js';
 import { createSerpApiHotels, lodgingFromHotels, serpApiConfigFromEnv, stayDates } from '../../src/research/serpapi.js';
 import { priceOption } from '../../src/research/pricing.js';
 import type { ResearchOption, ResearchRequest } from '../../src/research/types.js';
 
-// The response shape below follows SerpApi's public Google Hotels documentation (engine=google_hotels). It is NOT a
-// capture from a live call: before relying on it, run one real search and compare (see docs/research.md).
+// `response` below is a small hand-made sample for exact arithmetic. The real shape was checked against one live search
+// on 2026-10-11 (tests/research/captured/serpapi-boone.json, see the last test).
 const response = {
   search_metadata: { status: 'Success', google_hotels_url: 'https://www.google.com/travel/search?q=hotels+in+boone' },
   properties: [
@@ -45,6 +46,38 @@ describe('createSerpApiHotels', () => {
       expect(String((err as Error).message)).not.toMatch(/SECRET123/);
       expect(String((err as Error).stack ?? '')).not.toMatch(/SECRET123/);
     }
+  });
+});
+
+describe('search allowance (the plan is small)', () => {
+  it('an identical search is answered from memory, so a re-search spends nothing', async () => {
+    const fetchImpl = ok(response); const find = createSerpApiHotels({ apiKey: 'k', fetch: fetchImpl });
+    await find(query); await find({ ...query, query: 'hotels in boone, nc' });   // same place, different capitalization
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    await find({ ...query, checkIn: '2026-11-21', checkOut: '2026-11-23' });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+  it('concurrent identical searches share one request', async () => {
+    const fetchImpl = ok(response); const find = createSerpApiHotels({ apiKey: 'k', fetch: fetchImpl });
+    await Promise.all([find(query), find(query), find(query)]);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+  it('stops asking after the allowance and says so, instead of spending more', async () => {
+    const fetchImpl = ok(response); const find = createSerpApiHotels({ apiKey: 'k', fetch: fetchImpl, maxSearches: 2 });
+    await find(query); await find({ ...query, checkIn: '2026-11-21', checkOut: '2026-11-23' });
+    await expect(find({ ...query, checkIn: '2026-12-05', checkOut: '2026-12-07' })).rejects.toThrow(/allowance/);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+  it('a failed search is not remembered or counted as an answer, but still counts against the allowance', async () => {
+    let calls = 0;
+    const flaky = vi.fn(async () => { calls += 1; return calls === 1 ? new Response('{}', { status: 500 }) : new Response(JSON.stringify(response), { status: 200 }); }) as unknown as typeof fetch;
+    const find = createSerpApiHotels({ apiKey: 'k', fetch: flaky, maxSearches: 5 });
+    await expect(find(query)).rejects.toThrow();
+    expect((await find(query))?.hotels.length).toBe(3);
+  });
+  it('the allowance can be set from the environment', () => {
+    expect(serpApiConfigFromEnv({ SERPAPI_API_KEY: 'abc', SERPAPI_MAX_SEARCHES: '10' })).toEqual({ apiKey: 'abc', maxSearches: 10 });
+    expect(serpApiConfigFromEnv({ SERPAPI_API_KEY: 'abc', SERPAPI_MAX_SEARCHES: 'lots' })).toEqual({ apiKey: 'abc' });
   });
 });
 
@@ -101,5 +134,19 @@ describe('serpApiConfigFromEnv', () => {
     expect(serpApiConfigFromEnv({})).toBeUndefined();
     expect(serpApiConfigFromEnv({ SERPAPI_API_KEY: '  ' })).toBeUndefined();
     expect(serpApiConfigFromEnv({ SERPAPI_API_KEY: 'abc' })).toEqual({ apiKey: 'abc' });
+  });
+});
+
+describe('a real captured response (Boone, 2026-10-11)', () => {
+  const real = readFileSync(new URL('./captured/serpapi-boone.json', import.meta.url), 'utf8');
+  it('parses every listing with a believable nightly rate and prices a 3-person, 2-night stay with citations', async () => {
+    const found = await createSerpApiHotels({ apiKey: 'k', fetch: (async () => new Response(real, { status: 200 })) as unknown as typeof fetch })(query);
+    expect(found!.hotels.length).toBeGreaterThanOrEqual(10);
+    expect(found!.hotels.every((h) => h.nightlyCents >= 2_000 && h.name.length > 0)).toBe(true);
+    expect(found!.searchUrl).toMatch(/^https:\/\/www\.google\.com\/travel/);
+    const store = new EvidenceStore('2026-10-11T00:00:00.000Z');
+    const priced = lodgingFromHotels(found!, 2, 3, '2026-11-14', store)!;
+    expect(priced.lowCents).toBeGreaterThan(0); expect(priced.highCents).toBeGreaterThan(priced.lowCents);
+    expect(store.evidence.every((e) => /^https:\/\//.test(e.url) && /per night/.test(e.claim))).toBe(true);
   });
 });
