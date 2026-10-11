@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
 import { EvidenceStore } from '../../src/research/grounding.js';
-import { createSerpApiHotels, lodgingFromHotels, serpApiConfigFromEnv, stayDates } from '../../src/research/serpapi.js';
+import { createLodgingLookup, createSerpApiHotels, lodgingFromHotels, serpApiConfigFromEnv, stayDates } from '../../src/research/serpapi.js';
 import { priceOption } from '../../src/research/pricing.js';
 import type { ResearchOption, ResearchRequest } from '../../src/research/types.js';
 
@@ -126,6 +126,31 @@ describe('priceOption with a live hotel lookup', () => {
       const out = await priceOption(option, request, vi.fn(noAnswer), new EvidenceStore('x'), { typicalCosts: true, lookupLodging });
       expect(out.option.costs.find((c) => c.costId === 'lodging')!.label).toMatch(/typical cost/);
     }
+  });
+});
+
+describe('createLodgingLookup', () => {
+  const trail: ResearchOption = { optionId: 't', name: 'Falls loop', region: 'High Country', tags: [], stops: [{ label: 'Hike', location: 'Price Lake Recreation Area', tags: ['hiking'], hours: 3, evidenceIds: [] }], costs: [], perPersonCosts: [], evidenceIds: [], tradeoffs: [] };
+  const town: ResearchOption = { ...trail, optionId: 'w', stops: [{ label: 'Walk', location: 'King Street', tags: [], hours: 2, evidenceIds: [] }] };
+  const req: ResearchRequest = { purpose: 'plan', revision: 1, interests: [], nights: 2, groupSize: 3, window: { startAt: '2999-11-14T05:00:00Z', endAt: '2999-11-18T05:00:00Z' } };
+  it('searches the group\'s destination town, so every option there shares one search', async () => {
+    const fetchImpl = ok(response);
+    const lookup = createLodgingLookup(createSerpApiHotels({ apiKey: 'k', fetch: fetchImpl }));
+    const store = new EvidenceStore('x');
+    const [a, b] = await Promise.all([lookup(trail, { ...req, destination: 'Boone' }, store), lookup(town, { ...req, destination: 'Boone' }, store)]);
+    expect(a && b).toBeTruthy(); expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(new URL((fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0]![0] as string).searchParams.get('q')).toBe('Hotels in Boone');
+  });
+  it('without a destination it falls back to the first stop, then the region', async () => {
+    const fetchImpl = ok(response);
+    await createLodgingLookup(createSerpApiHotels({ apiKey: 'k', fetch: fetchImpl }))(trail, req, new EvidenceStore('x'));
+    expect(new URL((fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0]![0] as string).searchParams.get('q')).toBe('Hotels in Price Lake Recreation Area');
+  });
+  it('does nothing without a window, trip length or group size (never guesses dates)', async () => {
+    const fetchImpl = ok(response); const lookup = createLodgingLookup(createSerpApiHotels({ apiKey: 'k', fetch: fetchImpl }));
+    expect(await lookup(trail, { ...req, window: undefined }, new EvidenceStore('x'))).toBeUndefined();
+    expect(await lookup(trail, { ...req, nights: undefined }, new EvidenceStore('x'))).toBeUndefined();
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
 

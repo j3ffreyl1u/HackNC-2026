@@ -158,9 +158,12 @@ export function lodgingFromHotels(found: HotelResults, nights: number, groupSize
   };
 }
 
-/** The place to search: the first named stop location, else the option's region. */
-function searchPlace(option: ResearchOption): string {
-  return option.stops.map((s) => s.location.trim()).find((l) => l.length > 0) ?? option.region;
+/**
+ * The place to search. The group's chosen destination wins: they sleep in that town, and every option there then shares one
+ * (cached) search. Without one, the first named stop, else the option's region. A trail or park as the first stop finds no hotels.
+ */
+function searchPlace(option: ResearchOption, request: ResearchRequest): string {
+  return request.destination?.trim() || option.stops.map((s) => s.location.trim()).find((l) => l.length > 0) || option.region;
 }
 
 /** What `priceOption` calls for lodging: dates from the group's window, one Google Hotels search per option. */
@@ -169,7 +172,7 @@ export function createLodgingLookup(find: FindHotels, timeZone = 'America/New_Yo
     if (request.nights === undefined || request.groupSize === undefined) return undefined;
     const dates = stayDates(request.window, request.nights, timeZone);
     if (!dates) return undefined;
-    const found = await find({ query: `Hotels in ${searchPlace(option)}`, checkIn: dates.checkIn, checkOut: dates.checkOut, adults: Math.min(request.groupSize, SLEEPS_PER_ROOM) });
+    const found = await find({ query: `Hotels in ${searchPlace(option, request)}`, checkIn: dates.checkIn, checkOut: dates.checkOut, adults: Math.min(request.groupSize, SLEEPS_PER_ROOM) });
     return found ? lodgingFromHotels(found, request.nights, request.groupSize, dates.checkIn, store) : undefined;
   };
 }
