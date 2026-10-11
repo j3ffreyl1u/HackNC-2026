@@ -76,6 +76,8 @@ export interface ResearchResult {
    * Pass to whatever renders the answer; absent for fixtures.
    */
   searchSuggestionsHtml?: string[];
+  /** For a guide question: one or two sentences that answer it directly, kept only when a citation covers them. */
+  answer?: { text: string; evidenceIds: string[] };
 }
 
 export interface ResearchProvider {

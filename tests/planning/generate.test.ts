@@ -97,7 +97,7 @@ describe('planTrip: the acceptance fixture', () => {
     const text = groupText(outcome);
     expect(text).toContain('{{PLAN_LINK}}');              // sources, itinerary and costs live on the trip page
     expect(text).not.toContain('https://fixtures.invalid/');
-    expect(text).toMatch(/About \$\d+ each \(hotel \$\d+/);
+    expect(text).toMatch(/About \$\d+ each, up to \$\d+ at the high end \(hotel \$\d+/);
     expect(text).toMatch(/demo data/i);
     expect(text).toMatch(/couldn't price it well enough to propose it/);   // the option with incomplete prices is flagged as a maybe, not proposed
     for (const reply of outcome.replies) expect(reply.text.length).toBeLessThan(420);
@@ -257,7 +257,7 @@ describe('planTrip: option messages read like a friend explaining', () => {
       const lines = text.split('\n').filter((l) => !l.startsWith('Good news'));
       expect(lines.filter(Boolean).length, text).toBeLessThanOrEqual(4);
       expect(text).toMatch(new RegExp(`Option ${i + 1}: .+, Oct 16-18\\.`));
-      expect(text).toMatch(/About \$\d+ each \(hotel \$\d+, food \$\d+, gas and parking \$\d+/);
+      expect(text).toMatch(/About \$\d+ each, up to \$\d+ at the high end \(hotel \$\d+, food \$\d+, gas and parking \$\d+/);
       expect(text).toMatch(/Roughly a [\d.]+ hours? drive\./);
       expect(text).not.toContain('·');
     }
@@ -266,7 +266,7 @@ describe('planTrip: option messages read like a friend explaining', () => {
   it('the total is the sum of the parts it lists', async () => {
     for (const text of await proposals()) {
       const total = Number(/About \$(\d+) each/.exec(text)?.[1]);
-      const inside = /each \((.*?)\)\./.exec(text)?.[1] ?? '';
+      const inside = /high end \((.*?)\)\./.exec(text)?.[1] ?? '';
       const parts = [...inside.matchAll(/\$(\d+)/g)].map((m) => Number(m[1]));
       expect(parts.length).toBeGreaterThanOrEqual(3);
       expect(parts.reduce((a, b) => a + b, 0)).toBe(total);
@@ -316,5 +316,39 @@ describe('planTrip: whose limit is in the way', () => {
     expect(text).toMatch(/Mason and Alex/);
     expect(text).not.toMatch(/Jordan/);
     expect(privatesOf(outcome).map((p) => p.audience.memberId).sort()).toEqual(['alex', 'mason']);
+  });
+});
+
+describe('planTrip: what the message says matches what the budget check uses', () => {
+  it('the "up to" figure is the one the cap is checked against, so a shown option never exceeds anyone’s max', async () => {
+    const outcome = await planTrip(readyState(), provider);
+    for (const c of outcome.candidates.filter((x) => x.feasibility.feasible)) {
+      const text = outcome.replies.find((r) => r.proposalRef?.candidateId === c.candidateId)!.text;
+      const upTo = Number(/up to \$(\d+) at the high end/.exec(text)?.[1]);
+      const worst = Math.max(...c.perPersonTotals.map((t) => t.highCents)) / 100;
+      expect(Math.abs(upTo - worst)).toBeLessThanOrEqual(2.5); // rounded to the nearest $5
+      expect(upTo).toBeGreaterThanOrEqual(Number(/About \$(\d+) each/.exec(text)?.[1]));
+    }
+  });
+
+  it('never writes "You\'ll" in front of a bare list of places', async () => {
+    for (const r of (await planTrip(readyState(), provider)).replies) expect(r.text).not.toMatch(/You'll [A-Z]/);
+  });
+});
+
+describe('a change after approval that leaves people disagreeing', () => {
+  it('does not tell the group to accept again while it is also asking them to settle the disagreement', async () => {
+    let state = readyState();
+    const candidates = await generateCandidates(state, provider);
+    state = installCandidates(state, 1, candidates).state;
+    const dear = candidates[1];
+    state = applyCommand(state, command('mason', { kind: 'select_candidate', candidateId: dear.candidateId, revision: 1 }), { now: NOW }).state;
+    for (const id of ids) state = applyCommand(state, command(id, { kind: 'accept_candidate', candidateId: dear.candidateId, revision: 1 }), { now: NOW }).state;
+    expect(state.status).toBe('approved');
+    const result = applyCommand(state, command('mason', { kind: 'update_constraint', update: { memberId: 'mason', field: 'duration', value: { nights: 3 }, sourceMessageId: 'late', certainty: 'confirmed' } }), { now: NOW });
+    const text = result.replies.map((r) => r.text).join('\n');
+    expect(text).toMatch(/Which should we go with\?/);
+    expect(text).toMatch(/Earlier approvals no longer apply/);
+    expect(text).not.toMatch(/Please accept/);
   });
 });

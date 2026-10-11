@@ -166,9 +166,15 @@ function describeOption(c: TripCandidate, rank: number, timeZone: string, option
 
   const places = [...new Set(c.itinerary.map((i) => i.label).filter((l) => !looksLikeRoute(l) && !/^drive\b/i.test(l)))].slice(0, 3).map((l) => clip(l, 40));
   const region = option?.region && !c.title.toLowerCase().includes(option.region.toLowerCase()) ? option.region : '';
-  const where = [region ? `In ${region}` : '', places.length > 0 ? `${region ? ': ' : 'You\'ll '}${places.join(', ')}` : ''].join('');
+  const where = [region ? `In ${region}` : '', places.length > 0 ? `${region ? ': ' : 'Highlights: '}${places.join(', ')}` : ''].join('');
   const drive = option?.driveMinutesFromOrigin !== undefined ? ` Roughly a ${driveWords(option.driveMinutesFromOrigin)} drive.` : '';
-  const cost = `${provisional ? 'At least about' : 'About'} $${total} each (${shown.map(([label, d]) => `${label} $${d}`).join(', ')}${provisional ? '; some prices still unknown' : ''}).${drive}`;
+  // The cap check uses the top of each range, so the message names that figure too: nobody is shown a price under their max
+  // that the check then rejects. The middle figure and its parts are what to plan around.
+  const worst = Math.max(total, roughDollars(Math.max(...c.perPersonTotals.map((t) => t.highCents))));
+  const parts_ = shown.map(([label, d]) => `${label} $${d}`).join(', ');
+  const cost = provisional
+    ? `At least about $${total} each (${parts_}; some prices still unknown).${drive}`
+    : `About $${total} each, up to $${worst} at the high end (${parts_}).${drive}`;
   return [`${provisional ? 'Maybe' : `Option ${rank}`}: ${c.title}, ${tripDates(c, timeZone)}.`, where ? `${where}.` : '', cost].filter(Boolean).join('\n');
 }
 

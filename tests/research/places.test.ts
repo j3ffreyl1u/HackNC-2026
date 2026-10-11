@@ -181,3 +181,35 @@ describe('two options when there is room', () => {
     expect(prompts.filter((p) => p.includes('OPTION |'))[1]).toMatch(/A weekend of monuments/); // told what was already found
   });
 });
+
+describe('a guide question gets a direct answer', () => {
+  const ask: ResearchRequest = { purpose: 'guide', revision: 1, destination: 'Washington DC', interests: ['food'], question: 'is parking hard near the national mall?' };
+
+  it('asks for one cited ANSWER line before any options', () => {
+    const prompt = buildPrompt(ask);
+    expect(prompt).toMatch(/ANSWER \|/);
+    expect(prompt).toContain('is parking hard near the national mall?');
+  });
+
+  it('keeps a cited ANSWER line as the answer, with its sources', () => {
+    const lines = ['ANSWER | Street parking near the Mall is limited and metered; garages near Union Station are the easier bet.', opt('Union Station garage', 'Washington, DC', 'Union Station~Washington, DC~1~parking')];
+    const result = parseInteraction(answer(lines), ask, NOW);
+    expect(result.answer?.text).toMatch(/Street parking near the Mall is limited/);
+    expect(result.answer!.evidenceIds.length).toBeGreaterThan(0);
+    for (const id of result.answer!.evidenceIds) expect(result.evidence.some((e) => e.evidenceId === id)).toBe(true);
+    expect(result.options.map((o) => o.name)).toEqual(['Union Station garage']);
+  });
+
+  it('drops an ANSWER line no citation covers: that is the model’s own guess', () => {
+    const lines = ['ANSWER | Parking is easy.', opt('Union Station garage', 'Washington, DC', 'Union Station~Washington, DC~1~parking')];
+    const result = parseInteraction(answer(lines, 1), ask, NOW); // only the first line is cited ...
+    expect(result.answer).toBeDefined();
+    const second = parseInteraction({ steps: [{ type: 'model_output', content: [{ type: 'text', text: 'ANSWER | Parking is easy.\n' + lines[1], annotations: [{ type: 'url_citation', url: 'https://r.example/x', title: 'nps.gov', start_index: 27, end_index: lines[1].length + 26 }] }] }] }, ask, NOW);
+    expect(second.answer).toBeUndefined();
+  });
+
+  it('only guide questions get an answer; planning searches never do', () => {
+    const lines = ['ANSWER | Something.', opt('A weekend of monuments')];
+    expect(parseInteraction(answer(lines), dc, NOW).answer).toBeUndefined();
+  });
+});

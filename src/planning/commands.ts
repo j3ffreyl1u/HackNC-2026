@@ -131,7 +131,10 @@ function startNewRevision(state: TripState, changed: readonly string[]): { state
     }
     if (selectedOk) {
       const chosen = candidates.find((c) => c.candidateId === next.selectedCandidateId) as TripCandidate;
-      replies.push({ audience: GROUP, text: `${lines.join(' ')} Please accept ${chosen.title} again.`, proposalRef: { candidateId: chosen.candidateId, revision } });
+      // While people still disagree on a basic (say the trip length), asking them to accept would contradict the question
+      // that goes out next. They accept again once that is settled.
+      if (ready) replies.push({ audience: GROUP, text: `${lines.join(' ')} Please accept ${chosen.title} again.`, proposalRef: { candidateId: chosen.candidateId, revision } });
+      else replies.push({ audience: GROUP, text: `${lines.join(' ')} Once that's settled, you'll need to accept ${chosen.title} again.` });
     } else if (researchRequested) {
       replies.push({ audience: GROUP, text: `${lines.join(' ')} Give me a minute to look for options that fit.` });
     } else {

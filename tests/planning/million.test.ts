@@ -68,7 +68,7 @@ describe('with a $1,000,000 max everyone gets two options', () => {
     const noDrive = PLACES.map((l) => l.replace('| 240 |', '| unknown |'));
     const outcome = await planTrip(dcState(), provider((p) => json(p.includes('OPTION |') ? answer(noDrive) : answer(['nothing']))));
     expect(outcome.candidates.filter((c) => c.feasibility.feasible)).toHaveLength(2);
-    expect(outcome.replies.map((r) => r.text).join('\n')).toMatch(/About \$\d+ each \(hotel \$\d+/);
+    expect(outcome.replies.map((r) => r.text).join('\n')).toMatch(/About \$\d+ each, up to \$\d+ at the high end \(hotel \$\d+/);
   });
 
   it('and still labels the costs as typical, not found', async () => {

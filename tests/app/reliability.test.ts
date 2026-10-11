@@ -168,3 +168,28 @@ describe('a search that takes a while', () => {
     await t.runtime.stop(); t.repository.close();
   });
 });
+
+describe('asking for options again at the same revision', () => {
+  it('delivers the second answer too, instead of treating it as a duplicate of the first', async () => {
+    let calls = 0;
+    const t = await setup({ research: async (s) => { calls += 1; return found(s.revision, calls === 1 ? 'Nothing fit yet.' : 'Here are the new options.'); } });
+    await t.runtime.start();
+    await t.runtime.handleInbound(t.event('again-1')); await t.runtime.waitForIdle();
+    await t.runtime.handleInbound(t.event('again-2')); await t.runtime.waitForIdle();
+    expect(t.sent.map((m) => m.text)).toEqual(expect.arrayContaining(['Nothing fit yet.', 'Here are the new options.']));
+    expect((await t.repository.loadTrip(t.state.tripId))?.status).toBe('proposed');
+    await t.runtime.stop(); t.repository.close();
+  });
+
+  it('still sends options once after a restart in the middle of a search', async () => {
+    // covered by the earlier restart test; this checks the answer is not duplicated when the same revision is searched once.
+    let calls = 0;
+    const t = await setup({ research: async (s) => { calls += 1; return found(s.revision, 'Only once.'); } });
+    await t.runtime.start();
+    await t.runtime.handleInbound(t.event('once-1')); await t.runtime.waitForIdle();
+    await t.runtime.handleInbound(t.event('once-1')); await t.runtime.waitForIdle(); // the same inbound event delivered twice
+    expect(t.sent.filter((m) => m.text === 'Only once.')).toHaveLength(1);
+    expect(calls).toBe(1);
+    await t.runtime.stop(); t.repository.close();
+  });
+});

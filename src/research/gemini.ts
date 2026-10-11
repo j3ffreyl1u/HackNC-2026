@@ -85,7 +85,9 @@ export function buildPrompt(request: ResearchRequest): string {
     "Where relevant, include what actual travelers have said in forum or discussion threads (such as Reddit, TripAdvisor forums, or similar community sites), not only official sites and blogs. Attribute a forum post as one traveler's experience, never as an established fact.",
     task,
     `Trip: ${trip.join('; ') || 'no details given'}.`,
-    `Reply with one line per option and nothing else, in exactly this format:\n${COLUMNS}`,
+    request.purpose === 'guide'
+      ? `Reply with nothing else: first one line "ANSWER | one or two plain sentences that directly answer the question, using only what search results state", then one line per alternative in exactly this format:\n${COLUMNS}`
+      : `Reply with one line per option and nothing else, in exactly this format:\n${COLUMNS}`,
     `Run at most ${MAX_SEARCHES} searches in total. Write each stop's hours as a plain number of hours (for example 2 or 1.5), or unknown.`,
     ...(request.exclude && request.exclude.length > 0 ? [`Already found, so find different ones: ${request.exclude.map((n) => JSON.stringify(sanitizeRetrievedText(n, 80))).join(', ')}.`] : []),
     'Include only what a search result supports. Write "unknown" instead of guessing a number. Do not invent places, prices or opening hours.',
@@ -159,6 +161,7 @@ export function parseInteraction(interaction: unknown, request: ResearchRequest,
   if (blocks.length === 0) throw new ResearchError('invalid_result', "The research service's answer was empty or in a format I couldn't read.");
 
   const options: ResearchOption[] = [];
+  let answer: ResearchResult['answer'];
   let unsourced = 0;
   let malformed = 0;
   let roads = 0;
@@ -169,6 +172,13 @@ export function parseInteraction(interaction: unknown, request: ResearchRequest,
       const lineStart = offset;
       const lineEnd = offset + raw.length;
       offset = lineEnd + 1;
+      if (request.purpose === 'guide' && answer === undefined && /^ANSWER\s*\|/i.test(raw.trim())) {
+        const text = sanitizeRetrievedText(raw.slice(raw.indexOf('|') + 1), 400);
+        const covering = citesOver(block, lineStart, lineEnd);
+        const ids = covering.map((c) => store.add(c, text)).filter((id): id is string => Boolean(id));
+        if (text !== '' && ids.length > 0) answer = { text, evidenceIds: [...new Set(ids)] };
+        continue;
+      }
       if (!raw.trim().toUpperCase().startsWith('OPTION')) continue;
       if (options.length >= MAX_OPTIONS) break;
 
@@ -242,6 +252,7 @@ export function parseInteraction(interaction: unknown, request: ResearchRequest,
   if (options.some((o) => [...o.costs, ...o.perPersonCosts].some((c) => c.priceStatus === 'unknown'))) limitations.push('Some prices were not found and are marked unknown.');
   return {
     mode: 'live', revision: request.revision, retrievedAt, options, evidence: [...store.evidence], limitations,
+    ...(answer ? { answer } : {}),
     ...(suggestions.length > 0 ? { searchSuggestionsHtml: suggestions } : {}),
   };
 }
