@@ -173,7 +173,9 @@ function requestPlans(state: TripState, command: TripCommand, now: string): Appl
   const readiness = checkReadiness(state, { now });
   if (!readiness.ready) {
     const asked = askAboutGaps(state, now);
-    const reply = asked.replies.length > 0 ? asked.replies : [{ audience: GROUP, text: describeGaps(state, readiness) }];
+    // Always say what is missing, privately to whoever asked, and then the questions that go with it.
+    const summary = { audience: { kind: 'private', memberId: command.actorId } as const, text: describeGaps(state, readiness, command.actorId) };
+    const reply = [summary, ...asked.replies];
     return {
       state: asked.state,
       replies: reply,

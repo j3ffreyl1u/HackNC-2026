@@ -59,13 +59,24 @@ function recentlyAsked(state: TripState, key: string, now: string | undefined): 
 
 /**
  * Pick what to ask this turn: drop anything asked and still unanswered within the cooldown, take the most
- * important topic that has anything left, and ask at most two questions from it.
+ * important topic that has anything left, and ask at most two per recipient from it.
  */
 export function selectQuestions(state: TripState, candidates: readonly QuestionCandidate[], now?: string): ReadinessQuestion[] {
   const askable = candidates.filter((c) => !recentlyAsked(state, c.question.key, now));
   for (const topic of TOPIC_ORDER) {
     const inTopic = askable.filter((c) => c.topic === topic);
-    if (inTopic.length > 0) return inTopic.slice(0, MAX_QUESTIONS_PER_TURN).map((c) => c.question);
+    if (inTopic.length === 0) continue;
+    // The limit is per recipient: each person (or the shared chat) hears at most two, and a private question
+    // reaches only its own person, so asking everyone for their own cap in one turn is still two or fewer each.
+    const perRecipient = new Map<string, number>();
+    return inTopic
+      .filter((c) => {
+        const who = c.question.audience.kind === 'private' ? c.question.audience.memberId : 'group';
+        const count = perRecipient.get(who) ?? 0;
+        perRecipient.set(who, count + 1);
+        return count < MAX_QUESTIONS_PER_TURN;
+      })
+      .map((c) => c.question);
   }
   return [];
 }

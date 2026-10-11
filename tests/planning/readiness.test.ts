@@ -97,8 +97,30 @@ describe('checkReadiness: every required slot blocks readiness', () => {
     for (const id of ['mason', 'alex']) state = put(state, id, 'availability', { intervals: [WEEKEND] });
     const result = checkReadiness(state);
     expect(result.missing).toEqual(['availability:jordan']);
-    expect(result.questions[0].text).toContain('Jordan');
-    expect(result.questions[0].text).not.toContain('Mason');
+    expect(result.questions).toHaveLength(1);
+    expect(result.questions[0].audience).toEqual({ kind: 'private', memberId: 'jordan' });
+    expect(result.questions[0].key).toBe('availability:jordan');
+    expect(result.questions[0].text).not.toMatch(/Mason|Alex|Jordan/);
+  });
+
+  it('personal questions about dates and tastes go only to the person they are about', () => {
+    for (const slot of ['availability', 'preferences'] as const) {
+      const result = checkReadiness(trip([slot]));
+      expect(result.questions.map((q) => q.audience)).toEqual(members.map((memberId) => ({ kind: 'private', memberId })));
+      for (const q of result.questions) expect(q.text).not.toMatch(/Mason|Alex|Jordan/);
+    }
+  });
+
+  it('the two-question limit applies to each recipient, not across everyone', () => {
+    const result = checkReadiness(trip(['budget', 'availability', 'preferences']));
+    const perPerson = new Map<string, number>();
+    for (const q of result.questions) {
+      const who = q.audience.kind === 'private' ? q.audience.memberId : 'group';
+      perPerson.set(who, (perPerson.get(who) ?? 0) + 1);
+    }
+    for (const count of perPerson.values()) expect(count).toBeLessThanOrEqual(MAX_QUESTIONS_PER_TURN);
+    // Asking everyone their cap in one turn is fine because each person gets only their own.
+    expect(checkReadiness(trip(['budget'])).questions).toHaveLength(members.length);
   });
 
   it('missing budgets are reported per participant', () => {
@@ -426,7 +448,7 @@ describe('question fields', () => {
       trip(['preferences']),
     ];
     const keys = new Set(states.flatMap((state) => [...openQuestionKeys(state)]));
-    for (const wanted of ['consent', 'roster', 'vehicle', 'conflict:duration', 'conflict:region', 'conflict:transport', 'conflict:dates', 'availability_unconfirmed:alex', 'budget_unconfirmed:mason', 'must_dos_unconfirmed:jordan', 'preferences', 'origin']) {
+    for (const wanted of ['consent', 'roster', 'vehicle', 'conflict:duration', 'conflict:region', 'conflict:transport', 'conflict:dates', 'availability_unconfirmed:alex', 'budget_unconfirmed:mason', 'must_dos_unconfirmed:jordan', 'preferences:mason', 'availability:mason', 'origin']) {
       expect(keys).toContain(wanted);
     }
     for (const key of keys) {
@@ -448,6 +470,7 @@ describe('question fields', () => {
     expect(asked.pendingQuestions.map((q) => [q.key, q.field])).toEqual([
       ['budget:mason', 'budget'],
       ['budget:alex', 'budget'],
+      ['budget:jordan', 'budget'],
     ]);
     const group = recordQuestions(createTrip('t', roster), checkReadiness(createTrip('t', roster)).questions, NOW);
     expect(group.pendingQuestions.every((q) => q.field !== undefined)).toBe(true);
