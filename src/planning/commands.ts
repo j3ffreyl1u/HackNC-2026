@@ -232,7 +232,7 @@ function acceptCandidate(state: TripState, command: TripCommand, candidateId: st
   const next: TripState = { ...state, acceptances, status: approved ? 'approved' : 'awaiting_acceptance' };
   if (already) return { state: next, replies: [], researchRequested: false };
   const text = approved
-    ? `Everyone's in, so ${candidate.title} is approved. Prices are estimates and nothing is booked yet.`
+    ? `Everyone's in, so ${candidate.title} is approved. Prices are estimates and nothing is booked yet.\nAdd it to your calendar: {{CALENDAR_LINK}}`
     : `${displayName(state, command.actorId)} is in. Still waiting on ${waiting.map((id) => displayName(state, id)).join(', ')}.`;
   return { state: next, replies: [{ audience: GROUP, text, proposalRef: { candidateId, revision } }], researchRequested: false };
 }

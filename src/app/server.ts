@@ -5,6 +5,7 @@ import type { Repository } from '../contracts/index.js';
 import type { LiveResearchDisplay } from './live-research.js';
 import type { FundService } from '../funding/service.js';
 import { toPlanningCandidate } from './planning-adapter.js';
+import { planToIcs } from '../planning/calendar.js';
 import { outdoorSummary, drivingComparison } from '../planning/nature.js';
 
 export interface HttpServerOptions {
@@ -89,6 +90,17 @@ async function route(request: IncomingMessage, response: ServerResponse, options
       if (current?.revision !== state.revision) { sendJson(response, 409, { error: 'Plan changed. Refresh the fund.' }); return; }
       sendJson(response, 200, fund);
     } catch { sendJson(response, 503, { status: 'unknown', error: 'Fund unavailable. No simulated data was substituted.' }); }
+    return;
+  }
+  const icsMatch = /^\/api\/trips\/([^/]+)\/plan\.ics$/.exec(url.pathname);
+  if (request.method === 'GET' && icsMatch) {
+    const state = await options.repository.loadTrip(decodeURIComponent(icsMatch[1]));
+    if (!state) { sendJson(response, 404, { error: 'Trip not found.' }); return; }
+    const chosen = state.status === 'approved' ? state.candidates.find((c) => c.candidateId === state.selectedCandidateId && c.revision === state.revision) : undefined;
+    const ics = chosen ? planToIcs({ candidateId: chosen.candidateId, revision: chosen.revision, title: chosen.title, itinerary: chosen.itinerary.map((i) => ({ itemId: i.itemId, label: i.label ?? i.location, location: i.location, startAt: i.startAt, endAt: i.endAt })) }) : undefined;
+    if (!ics) { sendJson(response, 409, { error: 'There is no approved plan with times to add to a calendar yet.' }); return; }
+    response.writeHead(200, { 'content-type': 'text/calendar; charset=utf-8', 'content-disposition': 'attachment; filename="trip-plan.ics"', 'cache-control': 'no-store', ...securityHeaders });
+    response.end(ics);
     return;
   }
   const match = /^\/api\/trips\/([^/]+)\/snapshot$/.exec(url.pathname);

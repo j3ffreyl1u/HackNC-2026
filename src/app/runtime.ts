@@ -41,6 +41,8 @@ export interface ApplicationRuntimeDependencies {
   voice?: { polish(text: string): Promise<string> };
   /** Address of the trip page, put into messages that point at the full plan. Defaults to the words "the trip page". */
   planUrl?: string;
+  /** Address of the approved plan as a calendar file. Without it, the line that offers the calendar is left out. */
+  calendarUrl?: string;
   fundService?: FundService;
 }
 
@@ -62,7 +64,14 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
     return Promise.all(messages.map(async (m) => (m.proposalRef ? m : { ...m, text: await voice.polish(m.text).catch(() => m.text) })));
   };
   /** Messages from the planner point at the trip page with a token; this puts the real address in. */
-  const withPlanLink = (text: string) => text.replaceAll('{{PLAN_LINK}}', dependencies.planUrl ?? 'the trip page');
+  const withPlanLink = (text: string) => {
+    const planned = text.replaceAll('{{PLAN_LINK}}', dependencies.planUrl ?? 'the trip page');
+    if (!planned.includes('{{CALENDAR_LINK}}')) return planned;
+    // No address means no calendar offer at all, rather than a line pointing nowhere.
+    return dependencies.calendarUrl
+      ? planned.replaceAll('{{CALENDAR_LINK}}', dependencies.calendarUrl)
+      : planned.split('\n').filter((line) => !line.includes('{{CALENDAR_LINK}}')).join('\n').trimEnd();
+  };
   const queued: Promise<void>[] = [];
   let processQueue: Promise<void> = Promise.resolve();
   let outboxDrain: Promise<void> | undefined;
@@ -203,7 +212,7 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
           throw new Error('Planner returned a state for another trip or an invalid revision step.');
         }
         nextState = applied.state;
-        replies.push(...applied.replies.map((reply, replyIndex) => planner.install ? makeMessage(tripId, `${message.eventId}:${index}:${replyIndex}`, { ...reply, proposalRef: reply.proposalRef ? { ...reply.proposalRef, kind: applied.state.status === 'awaiting_acceptance' || applied.state.status === 'approved' ? 'accept' : 'select' } : undefined }) : reply));
+        replies.push(...applied.replies.map((reply) => ({ ...reply, text: withPlanLink(reply.text) })).map((reply, replyIndex) => planner.install ? makeMessage(tripId, `${message.eventId}:${index}:${replyIndex}`, { ...reply, proposalRef: reply.proposalRef ? { ...reply.proposalRef, kind: applied.state.status === 'awaiting_acceptance' || applied.state.status === 'approved' ? 'accept' : 'select' } : undefined }) : reply));
         researchRequested = applied.researchRequested;
         // Asked for options too early? Message whoever is holding things up, so it is not left to the requester to chase them.
         if (command.action.kind === 'request_plans' && applied.rejection?.code === 'NOT_READY' && planner.nudgeMissing) {
