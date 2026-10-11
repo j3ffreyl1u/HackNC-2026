@@ -65,3 +65,12 @@ it('does not read the ledger for an unapproved plan, and says why', async () => 
   expect(view.status).toBe('not_ready'); expect(view.reason).toMatch(/approved/i);
   expect(read).not.toHaveBeenCalled();
 });
+
+it('food the buyer said was for everyone is split; other food stays personal', async () => {
+  const state = await approved();
+  const purchases = [buy(M, 120, 'hotel'), { ...buy(A, 150, 'restaurant'), id: 'dinner-for-all' }, { ...buy(J, 30, 'restaurant'), id: 'jordans-lunch' }];
+  const plain = await createFundService({ read: async () => ({ purchases }) }, 'mock', { cacheMs: 0 }).publicView(state) as any;
+  expect(plain.sharedSpentDollars).toBe(120);   // no food counted
+  const shared = await createFundService({ read: async () => ({ purchases }) }, 'mock', { cacheMs: 0 }).publicView({ ...state, purchaseChecks: { 'dinner-for-all': { memberId: A, status: 'trip', askedAt: '2026-10-11T00:00:00Z', dollars: 150, category: 'food' } } }) as any;
+  expect(shared.sharedSpentDollars).toBe(270);  // the hotel and the dinner for everyone, not Jordan's lunch
+});

@@ -51,7 +51,7 @@ export async function startApp(): Promise<() => Promise<void>> {
   const fundService = config.fundingMode === 'disabled' ? undefined : createFundService(nessieReader ?? { read: async () => ({ purchases: [] }) }, config.fundingMode, bankDemo || logPurchases ? { cacheMs: 0 } : {});
   const MERCHANT_FOR: Record<string, string> = { accommodation: 'hotel', fuel_parking_tolls: 'gas', food: 'restaurant', activities: 'parks', taxes_fees: 'fees', other: 'other' };
   const purchaseLogger = logPurchases ? {
-    async log(memberId: string, category: string, dollars: number, what: string): Promise<void> {
+    async log(memberId: string, category: string, dollars: number, what: string): Promise<string | undefined> {
       const writer = createNessieWriter({ baseUrl: process.env.NESSIE_BASE_URL!, apiKey: process.env.NESSIE_API_KEY! });
       const account = accounts[memberId];
       if (!account) throw new Error('No sandbox account for this person.');
@@ -62,7 +62,7 @@ export async function startApp(): Promise<() => Promise<void>> {
         merchantCategories[merchant] = merchantCategory;
         if (process.env.NESSIE_MERCHANTS_PATH) await writeFile(process.env.NESSIE_MERCHANTS_PATH, JSON.stringify(merchantCategories, null, 2));   // so a restart still knows what each merchant is
       }
-      await writer.postPurchase(account, merchant, dollars, `SIMULATED trip purchase: ${what}`, new Date().toISOString().slice(0, 10));
+      return writer.postPurchase(account, merchant, dollars, `SIMULATED trip purchase: ${what}`, new Date().toISOString().slice(0, 10));
     },
   } : undefined;
   // Demo only: after a plan is approved, walk through the bank accounts (see src/funding/demo-sequence.ts).

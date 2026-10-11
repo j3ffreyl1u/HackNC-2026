@@ -21,7 +21,7 @@ export interface DemoStep {
 export interface NessieWriter {
   createAccount(label: string): Promise<string>;
   createMerchant(category: string): Promise<string>;
-  postPurchase(accountId: string, merchantId: string, dollars: number, description: string, date: string): Promise<void>;
+  postPurchase(accountId: string, merchantId: string, dollars: number, description: string, date: string): Promise<string>;
 }
 
 const ADDRESS = { street_number: '1', street_name: 'Simulation Way', city: 'Chapel Hill', state: 'NC', zip: '27514' };
@@ -49,8 +49,8 @@ export function createNessieWriter(config: { baseUrl: string; apiKey: string }, 
       return post(`customers/${encodeURIComponent(customer)}/accounts`, { type: 'Checking', nickname: `SIMULATED ${label}`, rewards: 0, balance: 0 });
     },
     createMerchant: (category) => post('merchants', { name: `SIMULATED ${category}`, category, address: ADDRESS, geocode: { lat: 35.9132, lng: -79.0558 } }),
-    async postPurchase(accountId, merchantId, dollars, description, date) {
-      await post(`accounts/${encodeURIComponent(accountId)}/purchases`, { merchant_id: merchantId, medium: 'balance', status: 'completed', purchase_date: date, amount: dollars, description });
+    postPurchase(accountId, merchantId, dollars, description, date) {
+      return post(`accounts/${encodeURIComponent(accountId)}/purchases`, { merchant_id: merchantId, medium: 'balance', status: 'completed', purchase_date: date, amount: dollars, description });
     },
   };
 }

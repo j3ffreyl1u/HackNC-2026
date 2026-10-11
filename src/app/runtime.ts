@@ -53,7 +53,7 @@ export interface ApplicationRuntimeDependencies {
   /** How long `stop()` waits for work in flight (a search) before giving up on it. A search cut off here is resumed on the next start. Default 5 seconds. */
   stopWaitMs?: number;
   /** Records a purchase someone says they made in their simulated Nessie account. Demo only; the assistant never moves real money. */
-  purchaseLogger?: { log(memberId: string, category: string, dollars: number, what: string): Promise<void> };
+  purchaseLogger?: { log(memberId: string, category: string, dollars: number, what: string): Promise<string | undefined> };
   /** The scripted bank walk-through shown once a plan is approved (demo only). Receives what it needs to message everyone and read the settle-up. */
   demoLedger?: (run: import('../funding/demo-sequence.js').DemoRun) => Promise<void>;
   /** How often the bank is read for purchases worth asking the buyer about (default 2 minutes, 0 turns it off). */
@@ -97,7 +97,7 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
   const researchRevisions = new Set<number>();
   const demoRevisions = new Set<number>();
   /** A purchase someone said they made, waiting for an amount or a yes before it is logged. In memory: any other message cancels it. */
-  const logPending = new Map<string, { category: string; what: string; dollars?: number; revision: number }>();
+  const logPending = new Map<string, { category: string; what: string; dollars?: number; revision: number; shared?: boolean }>();
   let demoRunning = false;
   /** Who asked whom what through the bot, so the answer can be passed back. Kept in memory: lost if the app restarts mid-question. */
   const relayAsks = new Map<string, { askerId: string; field?: string }>();
@@ -292,8 +292,8 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
         const isNo = /^(?:no|nope|nah|cancel|never ?mind|nvm|stop|don'?t|wait|not yet|hold on)$/.test(said);
         const isYes = /^(?:yes|yep|yeah|yup|sure|ok(?:ay)?|confirm(?:ed)?|y|log it|do it|go ahead|sounds good|that works|👍)(?:[ ,]+(?:please|pls|thanks|thank you|do it|go ahead))*$/.test(said);
         const amount = waitingLog.dollars === undefined ? /^(?:it was |about |around |like |roughly )?\$?\s*(\d{1,5})(?:\.\d{1,2})?(?:\s*(?:dollars|bucks))?$/.exec(said) : null;
-        const finish = async (out: OutboundMessage[]) => {
-          const result = await repository.commitEvent({ eventId: message.eventId, state, expectedRevision: state.revision, messages: out });
+        const finish = async (out: OutboundMessage[], nextState: TripState = state) => {
+          const result = await repository.commitEvent({ eventId: message.eventId, state: nextState, expectedRevision: state.revision, messages: out });
           if (result === 'stale') return false;
           if (result === 'committed') await runtime.drainOutbox();
           return true;
@@ -307,23 +307,31 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
           const dollars = Math.ceil(Number(amount[1]));
           if (dollars < 1 || dollars > 10_000) { if (!await finish([toPerson(member.memberId, 'Tell me a whole-dollar amount between $1 and $10,000.', 'log-range')])) continue; return; }
           logPending.set(member.memberId, { ...waitingLog, dollars });
-          if (!await finish([toPerson(member.memberId, `Log $${dollars} for ${waitingLog.what} to your simulated Nessie account? Say "yes" to add it.`, 'log-confirm')])) continue;
+          if (!await finish([toPerson(member.memberId, confirmText(waitingLog.category, waitingLog.what, dollars, waitingLog.shared), 'log-confirm')])) continue;
           return;
         }
-        if (waitingLog.dollars !== undefined && isYes) {
+        // Food is bought by whoever eats it, so ask once whether it was for everyone (split) or just them (personal).
+        const needsScope = waitingLog.dollars !== undefined && waitingLog.category === 'food' && waitingLog.shared === undefined;
+        const scope = needsScope ? (/^(?:everyone|everybody|all|all of us|us|split|split it|shared|share it|for everyone|for everybody|the group|the whole group|yes everyone)$/.test(said) ? 'shared' : /^(?:just me|me|only me|personal|mine|just mine|just for me|only mine)$/.test(said) ? 'personal' : undefined) : undefined;
+        if (waitingLog.dollars !== undefined && (isYes && !needsScope || scope)) {
+          const shared = waitingLog.shared ?? scope === 'shared';
           logPending.delete(member.memberId);
           const out: OutboundMessage[] = [];
+          let loggedState: TripState = state;
           if (state.status !== 'approved' || state.revision !== waitingLog.revision) out.push(toPerson(member.memberId, "The plan changed while we were talking, so I didn't log anything. Tell me again once it's approved.", 'log-stale'));
           else {
             try {
-              await dependencies.purchaseLogger.log(member.memberId, waitingLog.category, waitingLog.dollars, waitingLog.what);
-              out.push(toPerson(member.memberId, `Logged: you paid $${waitingLog.dollars} for ${waitingLog.what}, on your simulated Nessie account. Ask "who covered what?" or open the trip page to see the tally.`, 'log-done'));
-              for (const other of (state.roster ?? []).filter((m) => m.consented && m.memberId !== member.memberId)) out.push(toPerson(other.memberId, `${member.displayName} logged $${waitingLog.dollars} for ${waitingLog.what} (simulated). Ask "who covered what?" to see the tally.`, 'log-told'));
+              const purchaseId = await dependencies.purchaseLogger.log(member.memberId, waitingLog.category, waitingLog.dollars, waitingLog.what);
+              // Said to be for everyone: remember that, so the ledger splits it even though its category (food) normally is not.
+              if (shared && purchaseId) loggedState = { ...state, purchaseChecks: { ...state.purchaseChecks, [purchaseId]: { memberId: member.memberId, status: 'trip', askedAt: new Date().toISOString(), dollars: waitingLog.dollars, category: waitingLog.category } } };
+              const splitWords = shared && waitingLog.category === 'food' ? ', split with everyone' : waitingLog.category === 'food' ? ', kept personal' : '';
+              out.push(toPerson(member.memberId, `Logged: you paid $${waitingLog.dollars} for ${waitingLog.what}${splitWords}, on your simulated Nessie account. Ask "who covered what?" or open the trip page to see the tally.`, 'log-done'));
+              for (const other of (state.roster ?? []).filter((m) => m.consented && m.memberId !== member.memberId)) out.push(toPerson(other.memberId, `${member.displayName} logged $${waitingLog.dollars} for ${waitingLog.what}${splitWords} (simulated). Ask "who covered what?" to see the tally.`, 'log-told'));
             } catch {
               out.push(toPerson(member.memberId, "I couldn't reach the simulated bank just now, so nothing was logged. Try again in a moment.", 'log-error'));
             }
           }
-          if (!await finish(out)) continue;
+          if (!await finish(out, loggedState)) continue;
           return;
         }
         logPending.delete(member.memberId);   // anything else drops it and is read as a normal message
@@ -363,7 +371,7 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
       if (parsed.kind === 'commands' && parsed.acknowledgement) {
         replies.push(makeMessage(tripId, `ack:${message.eventId}`, { audience: { kind: 'private', memberId: member.memberId }, text: parsed.acknowledgement }));
       }
-      let logRequest: { category: string; what: string; dollars?: number } | undefined;
+      let logRequest: { category: string; what: string; dollars?: number; shared?: boolean } | undefined;
       let fundRequested = false;
       let fundTopic: 'status' | 'remind' | 'wrap_up' = 'status';
 
@@ -384,7 +392,7 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
           }
         }
         if (command.action.kind === 'request_funding') { fundRequested = true; fundTopic = command.action.topic ?? 'status'; continue; }
-        if (command.action.kind === 'log_purchase') { logRequest = { category: command.action.category, what: command.action.what, ...(command.action.dollars !== undefined ? { dollars: command.action.dollars } : {}) }; continue; }
+        if (command.action.kind === 'log_purchase') { logRequest = { category: command.action.category, what: command.action.what, ...(command.action.dollars !== undefined ? { dollars: command.action.dollars } : {}), ...(command.action.shared ? { shared: true } : {}) }; continue; }
         if (command.action.kind === 'relay') {
           const relay = command.action;
           const target = (state.roster ?? []).find((m) => m.consented && m.memberId !== member.memberId && m.displayName.toLowerCase() === relay.to.toLowerCase());
@@ -523,7 +531,7 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
         else if (nextState.status !== 'approved') replies.push(toMe('I can log what you pay for once everyone has approved a plan.'));
         else {
           logPending.set(member.memberId, { ...logRequest, revision: nextState.revision });
-          replies.push(toMe(logRequest.dollars === undefined ? `How much was ${/^(?:gas|food|dinner|lunch|breakfast)$/.test(logRequest.what) ? '' : 'the '}${logRequest.what}?` : `Log $${logRequest.dollars} for ${logRequest.what} to your simulated Nessie account? Say "yes" to add it.`));
+          replies.push(toMe(logRequest.dollars === undefined ? `How much was ${/^(?:gas|food|dinner|lunch|breakfast)$/.test(logRequest.what) ? '' : 'the '}${logRequest.what}?` : confirmText(logRequest.category, logRequest.what, logRequest.dollars, logRequest.shared)));
         }
       }
       if (fundService && nextState.status !== 'approved') nextState = { ...nextState, fundingStatus: 'unknown' };
@@ -855,6 +863,12 @@ function askedAsText(toName: string, asker: string, question: string): string {
   const body = question.replace(/[?.!\s]+$/, '');
   if (/^(?:if|whether)\s/i.test(body)) return `Hey ${toName}! ${asker} was wondering ${body}?`;
   return indirect ? `Hey ${toName}! ${asker} would like to know ${body}.` : `Hey ${toName}! ${asker} would like to know: ${body}?`;
+}
+
+/** The question before a purchase is logged. Food also asks whether it was for everyone, since food is personal unless the group shares it. */
+function confirmText(category: string, what: string, dollars: number, shared?: boolean): string {
+  if (category === 'food' && shared === undefined) return `Was the $${dollars} for ${what} for everyone, or just you? Say "everyone" to split it, or "just me" to keep it personal.`;
+  return `Log $${dollars} for ${what}${shared && category === 'food' ? ' and split it with everyone' : ''} to your simulated Nessie account? Say "yes" to add it.`;
 }
 
 function toSecondPerson(text: string, asker: string, target?: string): string {

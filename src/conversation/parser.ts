@@ -42,6 +42,8 @@ const READ_ONLY_MONEY = 'I can\'t pay or log spending from here. I only read the
 const LOG_AFTER_APPROVAL = "I can log what you pay for once everyone has approved a plan. Tell me then, like \"I just paid $60 for gas\".";
 /** How a logged purchase reads back: "the hotel", "gas", "dinner". */
 const loggedWhat = (thing: string): string => thing.trim().toLowerCase().replace(/^(?:the|our|some|a|an)\s+/, '').replace(/[.!?]+$/, '').slice(0, 40);
+/** "I covered everyone's dinner": the purchase was for the whole group, so it is split. */
+const forEveryone = (text: string): boolean => /\b(?:everyone|everybody|everyone's|everybody's|everyones|everybodys|all of us|the (?:whole )?group|the table|for us all|for all of us)\b/i.test(text);
 const GUIDE = /^(?:guide|ask guide|\/guide)\s*[:\-]?\s+(.{3,500})$/is;
 const SELECT = new RegExp(`^(?:pick|choose|select|go with|vote(?: for)?|i vote(?: for)?)\\s+(?:option\\s+|plan\\s+)?${ID}(?:\\s+v(\\d+))?$`, 'i');
 /**
@@ -568,7 +570,7 @@ export function createParser(deps: ConversationDependencies) {
       const amount = spendFormA ? spendFormA[1]! : spendFormB![2]!;
       const dollars = Math.ceil(Number(amount.replace(/,/g, '')));
       const category = spendCategory(thing);
-      if (Number.isFinite(dollars) && dollars > 0 && category) return ctx.status === 'approved' ? one(msg, ctx, { kind: 'log_purchase', category, what: loggedWhat(thing), dollars }) : reply(msg, LOG_AFTER_APPROVAL, 'log-too-early', true);
+      if (Number.isFinite(dollars) && dollars > 0 && category) return ctx.status === 'approved' ? one(msg, ctx, { kind: 'log_purchase', category, what: loggedWhat(thing), dollars, ...(forEveryone(lean) ? { shared: true } : {}) }) : reply(msg, LOG_AFTER_APPROVAL, 'log-too-early', true);
       if (Number.isFinite(dollars) && dollars > 0 && ctx.status === 'approved') return reply(msg, `What was the $${dollars} for? Try "I spent $${dollars} on gas", food, the hotel, or park tickets.`, 'spend-what', true);
     }
     // "I spent money", "log a purchase": there is no amount or purpose yet, so ask for both.
@@ -580,7 +582,7 @@ export function createParser(deps: ConversationDependencies) {
     // "I just paid gas", "I covered dinner": no amount yet, so the app asks for it before logging.
     const spendFormC = /^(?:(?:please|pls|ok(?:ay)?|so)\s+)*(?:i|we)?\s*(?:'ve|have)?\s*(?:just|already)?\s*(?:paid(?:\s+for)?|covered|bought|grabbed|booked|picked\s+up|got)\s+(?:the\s+|our\s+|some\s+|everyone'?s\s+|everybody'?s\s+|all\s+the\s+)?([a-z][a-z' ]{1,30})[.!]*$/i.exec(lean);
     if (talkativeChat && spendFormC && spendCategory(spendFormC[1]!)) {
-      return ctx.status === 'approved' ? one(msg, ctx, { kind: 'log_purchase', category: spendCategory(spendFormC[1]!)!, what: loggedWhat(spendFormC[1]!) }) : reply(msg, LOG_AFTER_APPROVAL, 'log-too-early', true);
+      return ctx.status === 'approved' ? one(msg, ctx, { kind: 'log_purchase', category: spendCategory(spendFormC[1]!)!, what: loggedWhat(spendFormC[1]!), ...(forEveryone(lean) ? { shared: true } : {}) }) : reply(msg, LOG_AFTER_APPROVAL, 'log-too-early', true);
     }
     // Paying into the simulated fund: "pay my share", "let me chip in $50", "cover Mason's share", "put in $60 for Jeffrey". The app asks for a yes before anything is added.
     const lead = "(?:(?:please|pls|ok(?:ay)?|so)\\s+)*(?:(?:can|could|may|should|shall|would)\\s+(?:i|we)\\s+|let\\s*me\\s+|lemme\\s+|time\\s+to\\s+|(?:i|we)(?:'ll|\\s+will|'d like to|\\s+would like to|\\s+want to|\\s+wanna|\\s+should|\\s+can|\\s+gotta|\\s+need to|\\s+have to)?\\s+)?";

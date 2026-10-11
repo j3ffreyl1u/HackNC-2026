@@ -383,7 +383,7 @@ describe('asking and telling through the bot', () => {
 describe('logging a purchase from chat', () => {
   async function approvedWithLogger() {
     const logged: Array<[string, string, number, string]> = [];
-    const t = await live({ purchaseLogger: { log: async (m, c, d, w) => { logged.push([m, c, d, w]); } } });
+    const t = await live({ purchaseLogger: { log: async (m, c, d, w) => { logged.push([m, c, d, w]); return `p${logged.length}`; } } });
     await t.say(JEFF, "I'm leaving from Chapel Hill, 2 nights, NC mountains, I have a car, I'm free Nov 14-17, my max is $340, I like hiking");
     for (const m of ['hey', 'sounds good', "I'm free Nov 14-17, my max is $310, I like food"]) await t.say(MASON, m);
     await t.say(JEFF, 'option 1'); await t.say(JEFF, "I'm in"); await t.say(MASON, "I'm in");
@@ -410,9 +410,23 @@ describe('logging a purchase from chat', () => {
     expect(logged).toHaveLength(0);
     await t.stop();
   });
+  it('food asks whether it was for everyone, and "everyone" splits it while "just me" keeps it personal', async () => {
+    const { t, logged } = await approvedWithLogger();
+    expect((await t.say(JEFF, 'I paid $150 for food')).jeff.join(' ')).toMatch(/Was the \$150 for food for everyone, or just you\?/);
+    const shared = await t.say(JEFF, 'everyone');
+    expect(shared.jeff.join(' ')).toMatch(/Logged: you paid \$150 for food, split with everyone/);
+    expect(shared.mason.join(' ')).toMatch(/Jeffrey logged \$150 for food, split with everyone/);
+    expect((await t.say(MASON, 'I covered everyones dinner')).mason.join(' ')).toMatch(/How much was dinner\?/);
+    expect((await t.say(MASON, '40')).mason.join(' ')).toMatch(/Log \$40 for dinner and split it with everyone/);
+    await t.say(MASON, 'yes');
+    expect((await t.say(MASON, 'I paid $20 for lunch')).mason.join(' ')).toMatch(/for everyone, or just you\?/);
+    expect((await t.say(MASON, 'just me')).mason.join(' ')).toMatch(/kept personal/);
+    expect(logged.map((l) => l[2])).toEqual([150, 40, 20]);
+    await t.stop();
+  });
   it('before a plan is approved it says to wait', async () => {
     const { t } = await approvedWithLogger();
-    const fresh = await live({ purchaseLogger: { log: async () => undefined } });
+    const fresh = await live({ purchaseLogger: { log: async () => 'p1' } });
     expect((await fresh.say(JEFF, 'I paid $60 for gas')).jeff.join(' ')).toMatch(/once everyone has approved a plan/);
     await fresh.stop(); await t.stop();
   });

@@ -45,7 +45,9 @@ export function createFundService(reader: FundReader, mode: 'mock' | 'nessie', o
       const answers: Record<string, PurchaseAnswer> = {};
       for (const [id, check] of Object.entries(state.purchaseChecks ?? {})) if (check.status !== 'asked') answers[id] = check.status;
       const review = reviewPurchases(plan, ledger.purchases, answers, period);
-      const coverage = trackCoverage(plan, review.counted, period);
+      // A purchase its buyer said was for everyone ("trip") is split even when its category (food) normally is not.
+      const sharedPurchaseIds = new Set(Object.entries(answers).filter(([, answer]) => answer === 'trip').map(([id]) => id));
+      const coverage = trackCoverage(plan, review.counted, { ...period, sharedPurchaseIds });
       return { status: ledgerStatus(coverage), mode, revision: plan.revision, plan, coverage, toCheck: review.flagged };
     },
     /**

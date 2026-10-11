@@ -9,7 +9,7 @@ function fakeBank() {
   const writer: NessieWriter = {
     createAccount: async (label) => `acct-${label}-${++n}`,
     createMerchant: async (category) => `m-${category}`,
-    postPurchase: async (accountId, merchantId, dollars) => { rows.push({ accountId, merchantId, dollars }); },
+    postPurchase: async (accountId, merchantId, dollars) => { rows.push({ accountId, merchantId, dollars }); return `p${rows.length}`; },
   };
   return { rows, writer };
 }
