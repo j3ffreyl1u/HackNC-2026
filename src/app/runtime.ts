@@ -913,7 +913,7 @@ function sharedBasics(state: TripState): ConstraintValue[] {
   if (origin) out.push({ field: 'origin', value: origin.value.city });
   if (duration) out.push({ field: 'duration', value: duration.value.nights });
   if (region) out.push({ field: 'region', value: region.value.label, ...(region.value.maxTravelMinutes !== undefined ? { maxTravelMinutes: region.value.maxTravelMinutes } : {}) });
-  if (transport) out.push({ field: 'transport', value: transport.value.mode === 'plane' ? 'plane' : transport.value.hasVehicle ? 'own_vehicle' : 'no_vehicle', vehicleAvailable: transport.value.hasVehicle });
+  if (transport) out.push({ field: 'transport', value: transport.value.mode === 'plane' ? 'plane' : transport.value.hasVehicle ? 'own_vehicle' : transport.value.notes === 'driving' ? 'driving' : 'no_vehicle', vehicleAvailable: transport.value.hasVehicle });
   return out;
 }
 

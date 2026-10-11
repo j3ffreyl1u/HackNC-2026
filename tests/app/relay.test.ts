@@ -498,3 +498,17 @@ describe('final-merge fixes', () => {
     await t.stop();
   });
 });
+
+describe('the demo script', () => {
+  it('"can you ask mason if he has a car" then "yeah i have one" records his car and tells the asker', async () => {
+    const t = await live();
+    await t.say(JEFF, 'hey, mason and I want to plan a trip. leaving from chapel hill, 2 nights, nc mountains, free nov 14-16, my max is $2,000, i like hiking');
+    expect((await t.say(JEFF, 'driving')).jeff.join(' ')).toMatch(/Whose car are we taking\?/);
+    expect((await t.say(JEFF, 'can you ask mason if he has a car')).mason.join(' ')).toMatch(/Does anyone have a car we can take\?/);
+    const answer = await t.say(MASON, 'yeah i have one');
+    expect(answer.mason.join(' ')).toMatch(/there's a car/);
+    expect(answer.mason.join(' ')).not.toMatch(/no car/);
+    expect(answer.jeff.join(' ')).toMatch(/Mason has a car\./);
+    await t.stop();
+  });
+});

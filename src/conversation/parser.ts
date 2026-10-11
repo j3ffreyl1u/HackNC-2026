@@ -779,7 +779,8 @@ export function createParser(deps: ConversationDependencies) {
         : { kind: 'ignored', reason: 'nothing to correct' };
     }
     // "Does the plan so far work for you?": yes adopts it as their own answer, no asks what they would change.
-    if (ctx.confirmBasics?.length && ctx.actionable.length === 0 && !ctx.pendingConfirmation) {
+    // A question someone else asked through the bot ("does anyone have a car?") is answered first; a "yeah" here is that answer, not a sign-off.
+    if (ctx.confirmBasics?.length && ctx.actionable.length === 0 && !ctx.pendingConfirmation && !(ctx.pendingQuestion as { questionId?: string } | undefined)?.questionId?.startsWith('relay:')) {
       if (YES.test(text) || YES.test(plain) || BASICS_OK.test(plain)) {
         // "I'm in, my max is 800, free Nov 10-14": agreeing and adding their own facts in one message keeps both.
         const own = BASICS_OK.test(plain) && !YES.test(plain) ? extractWithCoverage(text, localReference(msg.occurredAt, trip.timezone)).items : [];
