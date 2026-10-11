@@ -109,7 +109,7 @@ describe('first live DM scenario, end to end (A parser + C runtime + B planner, 
       expect(questions(r.jeff).length, answer).toBeLessThanOrEqual(1);         // never more than one question
       asked.push(...questions(r.jeff));
     }
-    expect(asked[0]).toMatch(/nights/i);                                       // the conversation keeps moving
+    expect(asked[0]).toMatch(/driving or flying/i);                            // how you're getting there comes right after the starting city
     await t.stop();
   });
 

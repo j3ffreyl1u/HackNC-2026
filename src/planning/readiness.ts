@@ -126,6 +126,19 @@ function evaluate(state: TripState): Evaluation {
     group('basics', 'conflict:origin', `${options.join(' and ')}. Which city should I plan the trip from?`);
   }
 
+  // How you're getting there comes right after where you start: it shapes the place question that follows.
+  const transport = resolveGroupField(state, 'transport');
+  if (transport.status === 'unset') {
+    missing.push('transport');
+    group('basics', 'transport', Q.transport);
+  } else if (transport.status === 'conflict') {
+    conflicts.push('transport');
+    group('basics', 'conflict:transport', "Some of you said driving and some said flying, so I have conflicting answers. Are you driving or flying?");
+  } else if (!travelSorted(transport.value as ConstraintValues['transport'])) {
+    missing.push('vehicle');
+    group('basics', 'vehicle', Q.vehicle);
+  }
+
   const duration = resolveGroupField(state, 'duration');
   if (duration.status === 'unset') {
     missing.push('duration');
@@ -139,7 +152,7 @@ function evaluate(state: TripState): Evaluation {
   const region = resolveGroupField(state, 'region');
   if (region.status === 'unset') {
     missing.push('region');
-    group('basics', 'region', Q.region);
+    group('basics', 'region', transport.status === 'agreed' && (transport.value as ConstraintValues['transport']).mode === 'plane' ? Q.regionFlying : Q.region);
   } else if (region.status === 'conflict') {
     conflicts.push('region');
     const options = region.positions.map((p) => {
@@ -148,18 +161,6 @@ function evaluate(state: TripState): Evaluation {
       return `${displayName(state, p.memberId)} is thinking ${label}`;
     });
     group('basics', 'conflict:region', `${options.join(' and ')}. Which sounds better?`);
-  }
-
-  const transport = resolveGroupField(state, 'transport');
-  if (transport.status === 'unset') {
-    missing.push('transport');
-    group('basics', 'transport', Q.transport);
-  } else if (transport.status === 'conflict') {
-    conflicts.push('transport');
-    group('basics', 'conflict:transport', "Some of you said driving and some said flying, so I have conflicting answers. Are you driving or flying?");
-  } else if (!travelSorted(transport.value as ConstraintValues['transport'])) {
-    missing.push('vehicle');
-    group('basics', 'vehicle', Q.vehicle);
   }
 
   // -- everyone gets a say in the shared basics: anyone who has not weighed in is asked whether the plan so far works

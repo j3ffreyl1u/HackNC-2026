@@ -419,7 +419,7 @@ describe('one turn asks at most two questions', () => {
   it('asks the next question as soon as the open one is answered', () => {
     const first = run(createTrip('trip-1', roster), 'mason', { kind: 'update_constraint', update: update('mason', 'preferences', { items: ['hiking'] }) });
     const answered = applyCommand(first.state, command('mason', { kind: 'update_constraint', update: update('mason', 'origin', { city: 'Chapel Hill' }) }), { now: '2026-10-10T12:05:00.000Z' });
-    expect(answered.replies.filter((r) => r.text.endsWith('?')).map((r) => r.text)).toEqual(['How many nights are you thinking?']);
+    expect(answered.replies.filter((r) => r.text.endsWith('?')).map((r) => r.text)).toEqual(['Are you planning on driving or flying?']);   // right after the starting city
   });
 
   it('asks the same question again once the cooldown has passed', () => {

@@ -657,7 +657,7 @@ export function createParser(deps: ConversationDependencies) {
   /** Where a conversation stands, as the question to put back to someone who just said hi in the middle of it. */
   const REASK: Partial<Record<string, string>> = {
     origin: 'Where are you all leaving from?',
-    region: 'Got a place in mind, or how far are you up for driving?',
+    region: 'Got a place in mind, or how far are you up for driving?',   // (the planner asks the flying version once it knows)
     duration: 'How many nights are you thinking?',
     budget: "What's your maximum total for this trip, including food and travel?",
     availability: 'Which dates could you do for the trip?',

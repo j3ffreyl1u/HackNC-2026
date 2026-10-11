@@ -466,3 +466,19 @@ describe('car or plane', () => {
     await t.stop();
   });
 });
+
+describe('the order of the basics questions', () => {
+  it('asks driving or flying right after the starting city, and the place question for a flight does not talk about driving', async () => {
+    const t = await live();
+    const afterCity = await t.say(JEFF, "I'm planning a trip, leaving from Chapel Hill");
+    expect(afterCity.jeff.join(' ')).toMatch(/driving or flying\?/);
+    expect(afterCity.jeff.join(' ')).not.toMatch(/how many nights/i);
+    const afterFly = await t.say(JEFF, "I'm thinking of flying");
+    expect(afterFly.jeff.join(' ')).toMatch(/you're flying/);
+    expect(afterFly.jeff.join(' ')).toMatch(/How many nights/);
+    const afterNights = await t.say(JEFF, '2 nights');
+    expect(afterNights.jeff.join(' ')).toMatch(/Where would you like to fly to\?/);
+    expect(afterNights.jeff.join(' ')).not.toMatch(/driving/i);
+    await t.stop();
+  });
+});
