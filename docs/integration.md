@@ -95,3 +95,13 @@ Readiness questions are now deferred during per-command application and selected
 Explicit request_plans with NOT_READY receives a private, actor-facing summary of missing/conflicting fields even when prior questions are on cooldown. It names missing member slots without exposing caps or calendar details. The standard readiness questions use the proposed casual wording. The roster message asks the organizer to add missing participants rather than claiming the bot can dynamically enroll someone who texts it.
 
 A runtime regression covers two commands in one message, only two stored/delivered readiness questions and a repeated request during cooldown. Jeffrey's 961d0c4 parser/acknowledgement changes were not available on origin during this fetch; he should push/integrate them on A's side and verify that show us some options reaches request_plans. No live test messages were sent by C.
+
+## C's assigned live DM follow-up
+
+A new regression sends origin, nights, vehicle, region, budget, availability and preferences in one inbound event. All facts persist for the actor and none of those answered group facts are re-asked; only final-state gaps are considered. C's f6182a9 turn-finalization fix remains the runtime solution, not simply dropping the first replies after saving their cooldowns.
+
+Live startup now warns if fewer than two participants are enrolled. Enrollment is fixed and cannot be expanded by an arbitrary person texting the bot. The organizer-facing roster copy remains accurate rather than promising automatic additions.
+
+`npm run diagnose:trip -- --trip TRIP_ID [--event EVENT_ID]` is a read-only SQLite diagnostic. It prints budget/date record presence and certainty per internal member ID without values, dates, phone numbers or message text, and optionally whether an event was recorded. Missing Mason records cannot be diagnosed as data loss without confirmation that the messages were sent, received, attributed and parsed. Jeffrey should run it against the actual live database and compare his local provider/parse evidence; C has not accessed that database or sent any live messages.
+
+Mason owns planner-level readiness summaries/copy and preference merge semantics; his pending message-turn fixes should be checked with C's deferQuestions/finalizeTurn adapter before the next integration. No planner or conversation source snapshots are included in C's follow-up.

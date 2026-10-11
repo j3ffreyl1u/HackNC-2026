@@ -77,6 +77,32 @@ afterEach(() => {
 });
 
 describe('application runtime', () => {
+  it('does not re-ask facts supplied together in one multi-command event', async () => {
+    const { repository, enrollment, state } = setup();
+    state.roster = enrollment.participants.map(p => ({ memberId: p.memberId, displayName: p.displayName, consented: true }));
+    const conversation = new FakeConversation();
+    const updates: Array<TripCommand['action']> = [
+      { kind: 'update_constraint', update: { memberId: 'alex', field: 'origin', value: 'Chapel Hill', sourceMessageId: 'facts', certainty: 'confirmed' } },
+      { kind: 'update_constraint', update: { memberId: 'alex', field: 'duration', value: 2, sourceMessageId: 'facts', certainty: 'confirmed' } },
+      { kind: 'update_constraint', update: { memberId: 'alex', field: 'transport', value: 'own_vehicle', vehicleAvailable: true, sourceMessageId: 'facts', certainty: 'confirmed' } },
+      { kind: 'update_constraint', update: { memberId: 'alex', field: 'region', value: 'NC mountains', sourceMessageId: 'facts', certainty: 'confirmed' } },
+      { kind: 'update_constraint', update: { memberId: 'alex', field: 'budget', value: 20000, sourceMessageId: 'facts', certainty: 'confirmed' } },
+      { kind: 'update_constraint', update: { memberId: 'alex', field: 'availability', value: [{ startAt: '2026-11-14T05:00:00Z', endAt: '2026-11-17T05:00:00Z', timeZone: 'America/New_York' }], sourceMessageId: 'facts', certainty: 'confirmed' } },
+      { kind: 'update_constraint', update: { memberId: 'alex', field: 'preferences', value: ['hiking'], sourceMessageId: 'facts', certainty: 'confirmed' } },
+    ];
+    conversation.parseInbound.mockResolvedValue({ kind: 'commands', commands: updates.map((action, index) => ({ commandId: `facts-${index}`, eventId: 'facts', actorId: 'alex', tripId: state.tripId, action })) });
+    await repository.bootstrapTrip(enrollment, state);
+    const runtime = createApplicationRuntime({ repository, conversation, planner: createPlannerAdapter(createResearchProvider({ mode: 'mock', fixtures: defaultFixtures }), enrollment.groupSpaceId), tripId: state.tripId });
+    try {
+      await runtime.start(); await conversation.emit(inbound('facts'));
+      const saved = (await repository.loadTrip(state.tripId))!;
+      expect(saved.groupConstraints).toHaveLength(4);
+      expect(saved.memberConstraints.filter(r => r.memberId === 'alex')).toHaveLength(3);
+      expect(conversation.sent.filter(m => m.text.endsWith('?')).length).toBeLessThanOrEqual(2);
+      expect(conversation.sent.map(m => m.text).join('\n')).not.toMatch(/Where are you all leaving|How many nights|car we can take|Got a place/);
+      expect(saved.pendingQuestions.every(q => q.field === 'availability')).toBe(true);
+    } finally { await runtime.stop(); repository.close(); }
+  });
   it('asks at most two readiness questions for a multi-command message and answers a cooldown-blocked request', async () => {
     const { repository, enrollment, state } = setup();
     state.roster = enrollment.participants.map(p => ({ memberId: p.memberId, displayName: p.displayName, consented: true }));
