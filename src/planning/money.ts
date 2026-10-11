@@ -84,3 +84,9 @@ export function formatUsd(cents: number): string {
   const dollars = Math.floor(cents / 100);
   return `$${dollars.toLocaleString('en-US')}.${String(cents % 100).padStart(2, '0')}`;
 }
+
+/** "$135": whole dollars, rounded up, for chat messages where cents only add noise. */
+export function formatUsdWhole(cents: number): string {
+  assertCents(cents);
+  return `$${Math.ceil(cents / 100).toLocaleString('en-US')}`;
+}

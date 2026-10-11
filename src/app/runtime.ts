@@ -521,6 +521,13 @@ function othersShared(state: TripState, actorId: string): Array<{ memberId: stri
     if (prefs && prefs.field === 'preferences' && likes.length > 0) shared.push(likes.includes('no preference') ? 'has no strong preferences' : `is into ${likes.join(' and ')}`); else missing.push('preferences');
     const must = latest('must_dos');
     if (must && must.field === 'must_dos' && must.value.length > 0) shared.push(`has must-haves: ${must.value.join(', ')}`);
+    // What they said about the shared basics counts too ("I'd rather do 3 nights"), so "what did Mason say?" is not empty after they weighed in.
+    const said = <F extends GroupConstraintRecord['field']>(field: F) => [...state.groupConstraints].reverse().find((c): c is Extract<GroupConstraintRecord, { field: F }> => c.field === field && c.memberId === m.memberId);
+    const nights = said('duration'), from = said('origin'), place = said('region'), car = said('transport');
+    if (nights) shared.push(`wants ${nights.value.nights} night${nights.value.nights === 1 ? '' : 's'}`);
+    if (from) shared.push(`is leaving from ${from.value.city}`);
+    if (place) shared.push(/^(?:within|any)\b/i.test(place.value.label) ? `is up for ${place.value.label}` : `wants to go to ${place.value.label}`);
+    if (car) shared.push(car.value.hasVehicle ? 'has a car' : "doesn't have a car");
     if (!latest('budget')) missing.push('budget');
     return { memberId: m.memberId, name: m.displayName, shared, missing };
   });

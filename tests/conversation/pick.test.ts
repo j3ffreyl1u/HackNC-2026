@@ -139,7 +139,9 @@ describe('tapbacks that arrive as text', () => {
 
   it('a typed thumbs up counts as a yes for the single plan awaiting acceptance, and is ignored when nothing is open', async () => {
     expect(cmds(await liked('👍', { actionable: [accept] }))[0]?.action.kind).toBe('accept_candidate');
-    expect((await liked('👍', { actionable: [] })).kind).toBe('ignored');
+    expect(text(await liked('👍', { actionable: [] }))).toMatch(/Glad that works/);   // a private chat is answered, not left silent
+    expect((await liked('👍', { actionable: [] }, 'group')).kind).toBe('ignored');     // a group reaction is just a reaction
+    expect(cmds(await liked(':+1:', { actionable: [accept] }))[0]?.action.kind).toBe('accept_candidate');
   });
 
   it('a typed thumbs up with two options open asks which, and picks nothing', async () => {

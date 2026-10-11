@@ -138,7 +138,7 @@ describe('planTrip: hard limits filter', () => {
     const privates = outcome.replies.filter((r) => r.audience.kind === 'private');
     expect(privates).toHaveLength(1);
     expect(privates[0].audience).toEqual({ kind: 'private', memberId: 'mason' });
-    expect(privates[0].text).toMatch(/about \$\d+\.\d\d over your max/);
+    expect(privates[0].text).toMatch(/about \$\d+ over your max/);
     expect(privates[0].text).toMatch(/If you're okay stretching/);
   });
 
@@ -306,7 +306,7 @@ describe('planTrip: whose limit is in the way', () => {
     const outcome = await planTrip(readyState({ mason: 17_000, alex: 25_000, jordan: 30_000 }), provider);
     const privates = privatesOf(outcome);
     expect(privates.map((p) => p.audience.memberId)).toEqual(['mason']);
-    expect(privates[0].text).toMatch(/\$\d+\.\d\d over your max/);
+    expect(privates[0].text).toMatch(/\$\d+ over your max/);
     for (const r of outcome.replies.filter((x) => x.audience.kind === 'group')) expect(r.text).not.toMatch(/over your max|\$10\.00/);
   });
 

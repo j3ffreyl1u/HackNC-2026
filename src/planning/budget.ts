@@ -1,5 +1,5 @@
 import { effectiveAvailability, effectiveBudget, effectiveMustDos, normalizeIntervals, resolveGroupField } from './constraints.js';
-import { MoneyError, addCents, formatUsd, makeRange, splitEqual, sumCents } from './money.js';
+import { MoneyError, addCents, formatUsd, formatUsdWhole, makeRange, splitEqual, sumCents } from './money.js';
 import { displayName, participantIds } from './state.js';
 import type {
   ConstraintValues,
@@ -179,5 +179,5 @@ export function publicFeasibilitySummary(feasibility: Feasibility): string {
 /** The one person's own over-budget amount, for their private message only. */
 export function privateOverage(feasibility: Feasibility, memberId: MemberId): string | undefined {
   const v = feasibility.violations.find((x) => x.kind === 'budget' && x.memberId === memberId && x.overByCents !== undefined);
-  return v ? `The upper estimate is ${formatUsd(v.overByCents as number)} over your maximum.` : undefined;
+  return v ? `The upper estimate is ${formatUsdWhole(v.overByCents as number)} over your maximum.` : undefined;
 }

@@ -234,10 +234,18 @@ function acceptCandidate(state: TripState, command: TripCommand, candidateId: st
   const approved = waiting.length === 0;
   const next: TripState = { ...state, acceptances, status: approved ? 'approved' : 'awaiting_acceptance' };
   if (already) return { state: next, replies: [], researchRequested: false };
-  const text = approved
-    ? `Everyone's in, so ${candidate.title} is approved. Prices are estimates and nothing is booked yet.\nAdd it to your calendar: {{CALENDAR_LINK}}`
-    : `${displayName(state, command.actorId)} is in. Still waiting on ${waiting.map((id) => displayName(state, id)).join(', ')}.`;
-  return { state: next, replies: [{ audience: GROUP, text, proposalRef: { candidateId, revision } }], researchRequested: false };
+  if (approved) {
+    const text = `Everyone's in, so ${candidate.title} is approved. Prices are estimates and nothing is booked yet.\nAdd it to your calendar: {{CALENDAR_LINK}}`;
+    return { state: next, replies: [{ audience: GROUP, text, proposalRef: { candidateId, revision } }], researchRequested: false };
+  }
+  // Same words to every phone would tell someone "still waiting on <their own name>", so each person hears it their own way.
+  const who = displayName(state, command.actorId);
+  const names = waiting.map((id) => displayName(state, id));
+  const replies: TripReply[] = [
+    { audience: { kind: 'private', memberId: command.actorId }, text: `You're in. Still waiting on ${names.join(', ')}.` },
+    ...waiting.map((id) => ({ audience: { kind: 'private' as const, memberId: id }, text: `${who} is in. Say "I'm in" when you're ready.`, proposalRef: { candidateId, revision } })),
+  ];
+  return { state: next, replies, researchRequested: false };
 }
 
 /**

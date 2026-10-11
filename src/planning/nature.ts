@@ -65,6 +65,6 @@ export function drivingComparison(candidates: readonly TripCandidate[]): Driving
   return {
     fewestDrivingId: best.c.candidateId,
     savedMinutes: saved,
-    text: `${headline} Minutes come from the drive times in the plans' sources; the drive home is not counted.${demo}`,
+    text: `${headline} The drive home is not counted.${demo}`,
   };
 }

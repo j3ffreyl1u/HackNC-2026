@@ -32,7 +32,7 @@ export function parseMaxTravelMinutes(text: string): number | undefined {
 }
 
 /** Short replies that are not a place even when a place was asked for: a change of subject, a date, or a liking. */
-const NOT_A_PLACE_ANSWER = /^(?:cancel|never ?mind|nvm|stop|quit|skip|idk|not sure|no idea|later|nothing|none|n\/a|ok(?:ay)?|sure|thanks|thank you|hello|hi|hey)$|\b(?:weekends?|weeks?|months?|days?|today|tomorrow|tonight|next|this|monday|tuesday|wednesday|thursday|friday|saturday|sunday|mostly|mainly|probably|maybe|just|only|really|kind of|whatever|anything|food|foods|nights?|monuments?|museums?|histor(?:y|ical)|hiking|nightlife|sightseeing|restaurants?|breweries|brewery|shopping|nature|outdoors?|relax(?:ing)?|looks?|sounds?|seems?|good|fine|perfect|awesome|lol|lmao|haha|ok(?:ay)?|yes|yeah|yep|thanks|everything|how|what|why|does|this|that)\b/i;
+const NOT_A_PLACE_ANSWER = /^(?:start over|restart|reset|begin again|cancel|never ?mind|nvm|stop|quit|skip|idk|not sure|no idea|later|nothing|none|n\/a|ok(?:ay)?|sure|thanks|thank you|hello|hi|hey)$|\b(?:weekends?|weeks?|months?|days?|today|tomorrow|tonight|next|this|monday|tuesday|wednesday|thursday|friday|saturday|sunday|mostly|mainly|probably|maybe|just|only|really|kind of|whatever|anything|food|foods|nights?|monuments?|museums?|histor(?:y|ical)|hiking|nightlife|sightseeing|restaurants?|breweries|brewery|shopping|nature|outdoors?|relax(?:ing)?|looks?|sounds?|seems?|good|fine|perfect|awesome|lol|lmao|haha|ok(?:ay)?|yes|yeah|yep|thanks|everything|how|what|why|does|this|that)\b/i;
 /** "I like the second one better" is about the options, not something the person likes doing. */
 const PICK_TALK = /\b(?:the\s+)?(?:first|second|third|1st|2nd|3rd|last|other)\s+(?:one|option|plan)\b|\b(?:option|plan)\s+\d\b|\bone\s+better\b/i;
 const NOT_A_PLACE = /\b(i|we|you|he|she|they|has|have|had|is|are|was|am|can|will|would|want|like|need|car|trip|my|our|it|not|but|with|for|please|thanks|yes|no|help|huh|menu|options?|wait|sorry|skip|later|stop|cancel|idk|dunno|what|why|how|nothing|never ?mind)\b/i;
@@ -49,6 +49,7 @@ function splitItems(raw: string): string[] {
   const items = raw
     .split(/\s*(?:,|&|\band\b|\bor\b)\s*/i)
     .map(clean)
+    .map((s) => s.replace(/^(?:mostly|mainly|especially|really|just|probably|definitely|maybe|some|lots of|a lot of)\s+(?=\S)/i, ''))
     .map((s) => s.replace(/^(?:eat|see|visit|do|try|explore|check out|go to|go)\s+(?=\S)/i, ''))   // "eat yummy food" is about yummy food
     .filter((s) => s.length > 1 && s.length <= 60 && !GENERIC.test(s));
   return [...new Set(items)].slice(0, 10);
@@ -76,7 +77,8 @@ function extractSentence(s: string, reference: string, pending: ConstraintField 
   if (split.length >= 2 && split.every((c): c is number => c !== null)) push({ field: 'budget', value: split.reduce((a, b) => a + b, 0) }, { hedged: true });
   else {
     const cents = budgetFrom(s);
-    if (cents !== null) push({ field: 'budget', value: cents });
+    // A total for a whole trip under $20 is almost certainly a typo: ask once instead of locking it in.
+    if (cents !== null) push({ field: 'budget', value: cents }, cents < 2000 ? { hedged: true } : {});
   }
 
   const windows = parseDateWindows(s, reference);
@@ -156,7 +158,7 @@ function pendingAnswer(text: string, reference: string, pending: ConstraintField
     case 'must_dos': {
       if (t.length > 200 || t.includes('?')) return null;
       // A question without its question mark, or a reaction ("everything looks good", "sounds great") is not something they like.
-      if (/^(?:lol|lmao|haha+|omg|wow|ha+)\b/i.test(t) || /^(?:how|what|when|where|why|who|which|can|could|do|does|did|is|are|will|would|should|any)\b/i.test(t) || /\b(?:looks?|sounds?|seems?|is|are)\s+(?:good|great|fine|perfect|right|correct|ok(?:ay)?|awesome)\b|^(?:ok(?:ay)?|sure|cool|great|perfect|nice|awesome|thanks|thank you|yes|yep|yeah|yup|no problem)[.!]*$/i.test(t)) return null;
+      if (/^(?:tell|ask|remind|nudge|ping|poke|text|message|start over|restart|reset)\b/i.test(t) || /^(?:lol|lmao|haha+|omg|wow|ha+)\b/i.test(t) || /^(?:how|what|when|where|why|who|which|can|could|do|does|did|is|are|will|would|should|any)\b/i.test(t) || /\b(?:looks?|sounds?|seems?|is|are)\s+(?:good|great|fine|perfect|right|correct|ok(?:ay)?|awesome)\b|^(?:ok(?:ay)?|sure|cool|great|perfect|nice|awesome|thanks|thank you|yes|yep|yeah|yup|no problem)[.!]*$/i.test(t)) return null;
       if (/^(?:none|nothing|no)[.!]*$/i.test(t)) return { value: { field: pending, value: pending === 'preferences' ? ['no preference'] : [] }, hedged: false };
       // "I want to have fun and learn about historical museums" is about historical museums, not the whole sentence.
       let core = t.replace(/^(?:i|we)(?:\s+really)?\s+(?:want to|wanna|would like to|'d like to|like to|like|love|enjoy|prefer|am into|are into|'m into|'re into)\s+/i, '');

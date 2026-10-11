@@ -287,7 +287,7 @@ describe('reprice and summaries', () => {
 
   it('only that person gets their own overage, and only privately', () => {
     const result = validateCandidate(fixtureState({ mason: 18_000, alex: 25_000, jordan: 30_000 }), candidate('a', 48_000));
-    expect(privateOverage(result, 'mason')).toBe('The upper estimate is $10.00 over your maximum.');
+    expect(privateOverage(result, 'mason')).toBe('The upper estimate is $10 over your maximum.');
     expect(privateOverage(result, 'alex')).toBeUndefined();
   });
 

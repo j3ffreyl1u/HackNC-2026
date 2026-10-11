@@ -51,7 +51,7 @@ const CHOICE_NUMBER: Record<string, number> = { first: 1, '1st': 1, one: 1, seco
 const BARE_CHOICE = /^(?:[1-9]|one|two|three|four)$/i;
 /** iMessage on Android and SMS show a tapback as text: Liked "…". Only the positive ones count. */
 const TEXT_TAPBACK = /^(Liked|Loved|Disliked|Laughed at|Emphasized|Questioned)\s+["“](.*)["”]$/s;
-const THUMBS = /^(?:👍[\u{1F3FB}-\u{1F3FF}]?|❤️?|✅)$/u;
+const THUMBS = /^(?:👍[\u{1F3FB}-\u{1F3FF}]?|❤️?|✅|:\+1:|:thumbsup:|:thumbs_up:|:heart:|:white_check_mark:)$/iu;
 const ACCEPT = new RegExp(`^accept\\s+${ID}\\s+v(\\d+)$`, 'i');
 
 const UNAVAILABLE = "Sorry, my language helper isn't answering right now, so I couldn't read that one. Try again in a minute, or use plain phrases like \"my max is $200\" or \"free Oct 17-19\".";
@@ -67,7 +67,7 @@ function ackPart(v: ConstraintValue, tentative: boolean): string {
     case 'availability': return `you're free ${v.value.filter((w): w is { start: string; end: string } => 'start' in w).map(formatWindow).join(' or ')}`;
     case 'duration': return `${v.value} night${v.value === 1 ? '' : 's'}`;
     case 'origin': return `leaving from ${titleCase(v.value)}`;
-    case 'region': return /^(?:within|any)\b/.test(v.value) ? v.value : titleCase(v.value);
+    case 'region': return /^(?:within|any)\b/.test(v.value) ? v.value : /\b(?:beach(?:es)?|coast|mountains?|lakes?|shore|countryside)\b/i.test(v.value) ? (/^the\b/i.test(v.value) ? v.value : `the ${v.value}`) : titleCase(v.value);
     case 'transport': return v.vehicleAvailable === true ? "there's a car" : v.vehicleAvailable === false ? 'no car for you' : `transport: ${v.value}`;
     case 'preferences': return v.value.includes('no preference') ? 'no strong preferences' : `you ${tentative ? 'might be' : "'re"} into ${list(v.value)}`.replace("you 're", "you're");
     case 'must_dos': return v.value.length ? `must-haves: ${list(v.value)}` : 'no must-haves';
@@ -90,6 +90,7 @@ function chatFacts(ctx: TripConversationContext): string[] {
   const needed = [...new Set([...(ctx.pendingQuestion ? [ctx.pendingQuestion.field] : []), ...(ctx.openFields ?? [])].map((f) => word[f] ?? f))];
   facts.push(needed.length ? `Still needed from the person asking: ${needed.join(', ')}.` : 'Nothing else is needed from the person asking right now.');
   if (ctx.actionable.length) facts.push('There are options waiting for the person asking to pick or approve.');
+  facts.push('How plans change: when anyone changes the dates, the number of nights, the place, the starting city, the car, or their own maximum budget, the old options are dropped and a fresh search starts. Budgets are private, so never say whose budget changed or by how much; say only that someone changed a detail or a limit.');
   return facts;
 }
 
@@ -301,6 +302,16 @@ export function createParser(deps: ConversationDependencies) {
       const left = person.missing.length > 0 ? ` Still waiting on ${person.name}'s ${list(person.missing)}. Say "show us options" and I'll nudge for it.` : ' I have everything I need from them.';
       return reply(msg, `${said}${left}`, 'about-someone', true);
     }
+    if (/^(?:cancel|never ?mind|nvm|forget it|ignore that|scratch that|stop)$/i.test(plain)) {
+      return reply(msg, 'No worries! Tell me whenever you want to pick it back up, or anything you want to change.', 'never-mind', true);
+    }
+    // "start over": nothing can be wiped yet, so say so and point at what can be changed.
+    if (/^(?:please\s+)?(?:start over|restart|reset|begin again|start again|from scratch)(?:\s+please)?$/i.test(plain)) {
+      return reply(msg, 'I can\'t clear a trip yet, but you can change anything by telling me, like "leaving from Raleigh", "3 nights" or "my max is $300".', 'start-over', true);
+    }
+    // "tell Mason to hurry up", "nudge Mason": the same as asking for options, which nudges whoever is still missing and tells the asker.
+    const nudge = /^(?:(?:please|can you|could you|pls)\s+)*(?:tell|ask|nudge|ping|poke|text|message)\s+(\w+)\b/i.exec(plain);
+    if (nudge && ctx.others?.some((o) => o.name.toLowerCase() === nudge[1]!.toLowerCase())) return one(msg, ctx, { kind: 'request_plans' });
     if (FUND_REMIND.test(plain)) return one(msg, ctx, { kind: 'request_funding', topic: 'remind' });
     if (FUND_WRAP.test(plain)) return one(msg, ctx, { kind: 'request_funding', topic: 'wrap_up' });
     if (FUND_STATUS.test(plain)) return one(msg, ctx, { kind: 'request_funding', topic: 'status' });
@@ -380,7 +391,14 @@ export function createParser(deps: ConversationDependencies) {
         : { kind: 'select_candidate', candidateId: target.candidateId, revision: target.revision });
     }
     if (THUMBS.test(text)) {
-      if (ctx.actionable.length === 0 && !ctx.pendingConfirmation) return { kind: 'ignored', reason: 'nothing to approve' };
+      // A thumbs-up to "does that work for you?" is a yes to the plan so far, the same as typing "yes".
+      if (ctx.confirmBasics?.length && ctx.actionable.length === 0 && !ctx.pendingConfirmation) return fromConstraints(msg, ctx, text, ctx.confirmBasics.map((value) => ({ value, hedged: false })));
+      if (ctx.actionable.length === 0 && !ctx.pendingConfirmation) {
+        // Nothing waiting for a yes. In a one-on-one chat staying silent looks broken, so answer; in a group it is just a reaction.
+        return msg.visibility === 'private' || trip.mode === 'direct'
+          ? reply(msg, 'Glad that works! Tell me anything else to add, or say "show us some options" when you\'re ready.', 'thumbs', true)
+          : { kind: 'ignored', reason: 'nothing to approve' };
+      }
       return resolveAnswer(msg, ctx, true);
     }
 

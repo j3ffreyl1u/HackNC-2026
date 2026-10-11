@@ -2,7 +2,7 @@ import { privateOverage, reprice } from './budget.js';
 import { TYPICAL_LABEL, looksLikeRoute } from '../research/pricing.js';
 import { checkReadiness } from './readiness.js';
 import { commonWindows, effectiveAvailability, hoursNeeded, resolveGroupField } from './constraints.js';
-import { formatUsd } from './money.js';
+import { formatUsd, formatUsdWhole } from './money.js';
 import { explainRanking, groupPreferences, rankCandidates } from './rank.js';
 import { DEFAULT_TIME_ZONE, assertTimeZone, scheduleStops } from './schedule.js';
 import { displayName, participantIds } from './state.js';
@@ -231,7 +231,7 @@ function conflictReplies(state: TripState, excluded: readonly TripCandidate[], p
       if (over) {
         replies.push({
           audience: { kind: 'private', memberId: id },
-          text: `${displayName(state, id)}, the closest one was ${closest.title}, and it came in about ${formatUsd(over.overByCents as number)} over your max. If you're okay stretching, just tell me your new max. If not, no worries, I'll keep looking within yours.`,
+          text: `${displayName(state, id)}, the closest one was ${closest.title}, and it came in about ${formatUsdWhole(over.overByCents as number)} over your max. If you're okay stretching, just tell me your new max. If not, no worries, I'll keep looking within yours.`,
         });
       }
     }

@@ -247,7 +247,7 @@ describe('checkReadiness: dates', () => {
     expect(result.ready).toBe(false);
     expect(result.conflicts).toContain('dates');
     expect(result.questions[0].audience).toEqual({ kind: 'group' });
-    expect(result.questions[0].text).toMatch(/no \d+ nights? stretch that works for everyone/i);
+    expect(result.questions[0].text).toMatch(/no \d+-nights? stretch that works for everyone/i);
     expect(result.questions[0].text).toMatch(/Mason is free .*Alex is free /);   // says who is free when, so people can fix it
   });
 

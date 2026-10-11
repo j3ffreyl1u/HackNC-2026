@@ -130,7 +130,10 @@ describe('select and accept', () => {
     s = run(s, 'mason', { kind: 'accept_candidate', candidateId: 'b', revision: 1 }).state;
     const two = run(s, 'alex', { kind: 'accept_candidate', candidateId: 'b', revision: 1 });
     expect(two.state.status).toBe('awaiting_acceptance');
-    expect(publicText(two)).toContain('Still waiting on Jordan');
+    // Each person hears it their own way: the one who just said yes is told who is left, and the one left is told to say yes.
+    const texts = two.replies.map((r) => `${r.audience.kind === 'private' ? r.audience.memberId : 'group'}: ${r.text}`);
+    expect(texts).toContain("alex: You're in. Still waiting on Jordan.");
+    expect(texts).toContain('jordan: Alex is in. Say "I\'m in" when you\'re ready.');
     const three = run(two.state, 'jordan', { kind: 'accept_candidate', candidateId: 'b', revision: 1 });
     expect(three.state.status).toBe('approved');
     expect(publicText(three)).toMatch(/nothing is booked/);

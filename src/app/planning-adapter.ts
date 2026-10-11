@@ -175,7 +175,8 @@ export function createPlannerAdapter(provider: ResearchProvider, spaceId: string
     async research(state) {
       const result = await planTrip(toPlanningState(state), provider, { timeZone: state.timeZone });
       // In chat, say something about the outdoors or driving only when there is something real to say; the page shows the rest.
-      const nature = result.candidates.flatMap(c => {
+      // Only for the options that were actually proposed: after "nothing fits" a stray line about an option nobody can pick is just noise.
+      const nature = result.candidates.filter(c => c.feasibility.feasible).flatMap(c => {
         const summary = outdoorSummary(c);
         if (!summary.outdoorStops.length && !summary.drivingMinutes) return [];
         return [`${summary.title}: ${summary.outdoorStops.length ? `outdoor stops: ${summary.outdoorStops.map(s => s.label).join(', ')}` : `${formatMinutes(summary.drivingMinutes)} of driving`}.`];
