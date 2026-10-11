@@ -14,6 +14,7 @@ import { LiveResearchDisplay, createLivePlanner } from './live-research.js';
 import { loadAppConfig, loadEnvironmentFile, planLinkWarning } from './config.js';
 import { createHttpServer } from './server.js';
 import { SqliteTripRepository } from '../storage/sqlite-repository.js';
+import { createNessieWriter, runDemoSequence, type DemoRun } from '../funding/demo-sequence.js';
 import { createNessieReader } from '../funding/nessie-reader.js';
 import { createFundService } from '../funding/service.js';
 
@@ -43,9 +44,11 @@ export async function startApp(): Promise<() => Promise<void>> {
   await mkdir(dirname(config.databasePath), { recursive: true });
   const repository = SqliteTripRepository.open(config.databasePath);
   const display = config.researchMode === 'gemini' ? new LiveResearchDisplay(process.env.GEMINI_API_KEY!, process.env.GEMINI_MODEL || 'gemini-3.8-flash', `http://127.0.0.1:${config.port}`) : undefined;
-  const fundService = config.fundingMode === 'disabled' ? undefined : createFundService(config.fundingMode === 'nessie'
-    ? createNessieReader({ baseUrl: process.env.NESSIE_BASE_URL!, apiKey: process.env.NESSIE_API_KEY!, accounts, merchantCategories })
-    : { read: async () => ({ purchases: [] }) }, config.fundingMode);
+  const bankDemo = config.fundingMode === 'nessie' && process.env.DEMO_LEDGER === 'auto';
+  const nessieReader = config.fundingMode === 'nessie' ? createNessieReader({ baseUrl: process.env.NESSIE_BASE_URL!, apiKey: process.env.NESSIE_API_KEY!, accounts, merchantCategories }) : undefined;
+  const fundService = config.fundingMode === 'disabled' ? undefined : createFundService(nessieReader ?? { read: async () => ({ purchases: [] }) }, config.fundingMode, bankDemo ? { cacheMs: 0 } : {});
+  // Demo only: after a plan is approved, walk through the bank accounts (see src/funding/demo-sequence.ts).
+  const demoLedger = bankDemo && nessieReader ? (run: DemoRun) => runDemoSequence({ writer: createNessieWriter({ baseUrl: process.env.NESSIE_BASE_URL!, apiKey: process.env.NESSIE_API_KEY! }), reader: nessieReader, accounts, merchantCategories }, run) : undefined;
   const server = createHttpServer({ repository, researchDisplay: display, fundService });
   let runtime: ReturnType<typeof createApplicationRuntime> | undefined;
   try {
@@ -62,7 +65,7 @@ export async function startApp(): Promise<() => Promise<void>> {
     // Phones can only open the trip page if this is an address they can reach (set PUBLIC_BASE_URL to a tunnel or LAN address).
     const planUrl = `${(process.env.PUBLIC_BASE_URL?.trim() || `http://127.0.0.1:${config.port}`).replace(/\/+$/, '')}/?trip=${encodeURIComponent(enrollment.tripId)}`;
     const calendarUrl = `${(process.env.PUBLIC_BASE_URL?.trim() || `http://127.0.0.1:${config.port}`).replace(/\/+$/, '')}/api/trips/${encodeURIComponent(enrollment.tripId)}/plan.ics`;
-    runtime = createApplicationRuntime({ repository, conversation: chat.conversation, planner, tripId: enrollment.tripId, fundService, planUrl, calendarUrl,
+    runtime = createApplicationRuntime({ repository, conversation: chat.conversation, planner, tripId: enrollment.tripId, fundService, ...(demoLedger ? { demoLedger } : {}), planUrl, calendarUrl,
       ...(config.voiceMode === 'gemini' ? { voice: createGeminiVoice({ apiKey: process.env.GEMINI_API_KEY!, model: process.env.GEMINI_VOICE_MODEL || process.env.GEMINI_INTENT_MODEL || process.env.GEMINI_MODEL || 'gemini-3.8-flash', onError: () => console.error('Voice rewrite failed; sent the original text.') }) } : {}) });
     await runtime.start();
     const port = await server.listen(config.port);

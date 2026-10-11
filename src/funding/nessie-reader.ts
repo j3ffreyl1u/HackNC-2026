@@ -29,7 +29,8 @@ export function createNessieReader(config: NessieConfig, fetcher: typeof fetch =
     } catch { throw new Error('Nessie read unavailable; no fixture data was substituted.'); }
   };
   return { async read() {
-    const lists = await Promise.all(members.map(async ([memberId, accountId]) => ({ memberId, raw: await get(`accounts/${encodeURIComponent(accountId)}/purchases`) })));
+    // Read at call time: the demo swaps in fresh accounts, and the page must follow.
+    const lists = await Promise.all(Object.entries(config.accounts).map(async ([memberId, accountId]) => ({ memberId, raw: await get(`accounts/${encodeURIComponent(accountId)}/purchases`) })));
     const purchases: Purchase[] = [];
     for (const { memberId, raw } of lists) {
       if (!Array.isArray(raw)) throw new Error('Nessie returned an invalid transaction list.');
