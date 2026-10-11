@@ -86,33 +86,71 @@ describe('first live DM scenario, end to end (A parser + C runtime + B planner, 
     await t.stop();
   });
 
-  it("Mason's dates question reaches only Mason's phone, never Jeffrey's, and names nobody", async () => {
+  it('two people saying "let\'s plan a trip" at once get ONE shared question between them, not a flood', async () => {
+    const t = await live();
+    const jeff = await t.say(JEFF, "Hey let's plan a trip");
+    const mason = await t.say(MASON, "Hey let's plan a trip");     // a few seconds later
+    // Jeffrey: the summary first, then exactly one question.
+    expect(jeff.jeff[0]).toMatch(/what I need to plan this/i);
+    expect(questions(jeff.jeff)).toEqual(['Where are you all leaving from?']);
+    expect(questions(jeff.mason)).toEqual(['Where are you all leaving from?']); // the same shared question reaches Mason too
+    // Mason's own request: only his private summary. No second batch, nothing for Jeffrey.
+    expect(mason.mason.length).toBe(1);
+    expect(mason.mason[0]).toMatch(/what I need to plan this/i);
+    expect(questions(mason.mason)).toEqual([]);
+    expect(mason.jeff).toEqual([]);
+    await t.stop();
+  });
+
+  it('after "Got it", the next question follows, one at a time, until the basics are done', async () => {
+    const t = await live();
+    await t.say(JEFF, "Hey let's plan a trip");
+    const asked: string[] = [];
+    for (const answer of ["I'm leaving from Chapel Hill", '2 nights', 'I want to go to Asheville', 'I have a car']) {
+      const r = await t.say(JEFF, answer);
+      expect(r.jeff.some((x) => /^Got it/.test(x)), answer).toBe(true);       // acknowledged
+      expect(questions(r.jeff).length, answer).toBeLessThanOrEqual(1);         // never more than one question
+      asked.push(...questions(r.jeff));
+    }
+    expect(asked[0]).toMatch(/nights/i);                                       // the conversation keeps moving
+    await t.stop();
+  });
+
+  it('"Got it" always comes BEFORE the next question in the same turn', async () => {
+    const t = await live();
+    await t.say(JEFF, "Hey let's plan a trip");
+    for (const answer of ["I'm leaving from Chapel Hill", '2 nights', 'I want to go to Asheville', 'I have a car']) {
+      const r = await t.say(JEFF, answer);
+      const ackAt = r.jeff.findIndex((x) => /^Got it/.test(x));
+      const questionAt = r.jeff.findIndex((x) => x.trim().endsWith('?'));
+      expect(ackAt, answer).toBeGreaterThanOrEqual(0);
+      if (questionAt >= 0) expect(ackAt, answer).toBeLessThan(questionAt);
+    }
+    await t.stop();
+  });
+
+  it("Mason's own dates question comes only to Mason, once the shared basics are settled, and names nobody", async () => {
     const t = await live();
     const steps = [
-      await t.say(JEFF, "Hi, let's plan a trip"),
-      await t.say(JEFF, "I'm leaving from Chapel Hill, 2 nights, I have a car, I'm free Nov 14-16, my max is $250"),
-      await t.say(JEFF, 'Can you show us some options?'),
-      await t.say(JEFF, 'Can you show us some options?'),
+      await t.say(JEFF, "Hey let's plan a trip"),
+      await t.say(JEFF, "I'm leaving from Chapel Hill, 2 nights, I have a car, I want to go to Asheville, I'm free Nov 14-16, my max is $250, I like hiking"),
     ];
     const datesQuestion = /which dates/i;
     const toMason = steps.flatMap((r) => r.mason).filter((x) => datesQuestion.test(x));
     const toJeffrey = steps.flatMap((r) => r.jeff).filter((x) => datesQuestion.test(x));
     expect(toMason.length).toBeGreaterThan(0);   // Mason gets his question
     expect(toJeffrey).toEqual([]);               // Jeffrey already gave his dates, so he is not asked
-    expect(steps.flatMap((r) => r.jeff).filter((x) => /^Mason,/.test(x))).toEqual([]); // and nothing addressed to Mason reaches him
-    for (const q of toMason) expect(q).not.toMatch(/Mason|Jeffrey/); // addressed by routing, not by name
+    for (const q of toMason) expect(q).not.toMatch(/Mason|Jeffrey/);
+    expect(steps.flatMap((r) => r.jeff).filter((x) => /^Mason,/.test(x))).toEqual([]);
     await t.stop();
   });
 
-  it('the very first early request already gets a private "what is missing" message, then at most two questions', async () => {
+  it('the very first request gets the summary first, then exactly one question, and only the asker gets the summary', async () => {
     const t = await live();
     const first = await t.say(JEFF, "Hi, let's plan a trip");
-    expect(first.jeff[0]).toMatch(/still waiting on/i);          // the summary comes first, to the person who asked
-    expect(first.mason.some((x) => /still waiting on/i.test(x))).toBe(false); // and only to them
-    expect(questions(first.jeff).length).toBeLessThanOrEqual(2);
-    await t.say(JEFF, "I'm leaving from Chapel Hill, 2 nights, I have a car, I'm free Nov 14-16, my max is $250");
-    const options = await t.say(JEFF, 'Can you show us some options?');
-    expect(options.jeff.some((x) => /still waiting on/i.test(x))).toBe(true);
+    expect(first.jeff[0]).toMatch(/what I need to plan this/i);
+    expect(questions(first.jeff).length).toBe(1);
+    expect(first.mason.some((x) => /what I need to plan this/i.test(x))).toBe(false);
     await t.stop();
   });
 

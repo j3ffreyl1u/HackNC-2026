@@ -174,7 +174,7 @@ export class SqliteTripRepository implements Repository {
   }
 
   async pendingMessages(): Promise<OutboundMessage[]> {
-    const rows = this.db.prepare("SELECT message_json FROM message_outbox WHERE status = 'pending' ORDER BY queued_at, delivery_id").all() as
+    const rows = this.db.prepare("SELECT message_json FROM message_outbox WHERE status = 'pending' ORDER BY queued_at, rowid").all() as
       Array<{ message_json: string }>;
     return rows.map((row) => JSON.parse(row.message_json) as OutboundMessage);
   }

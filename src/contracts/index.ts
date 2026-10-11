@@ -242,7 +242,7 @@ export interface ProposalReference {
 
 export type ParseResult =
   | { kind: 'command'; command: TripCommand }
-  | { kind: 'commands'; commands: TripCommand[]; clarificationQuestion?: string; expects?: { field: 'budget'; valueCents: number } }
+  | { kind: 'commands'; commands: TripCommand[]; clarificationQuestion?: string; acknowledgement?: string; expects?: { field: 'budget'; valueCents: number } }
   | { kind: 'reply'; message: OutboundMessage; expects?: { field: 'budget'; valueCents: number } }
   | { kind: 'ignored'; reason: string };
 

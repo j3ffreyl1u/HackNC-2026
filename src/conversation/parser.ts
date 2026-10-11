@@ -137,16 +137,17 @@ export function createParser(deps: ConversationDependencies) {
     for (const action of extra) commands.push(command(msg, ctx, action));
     // In a one-on-one chat, silence feels like being ignored: say what we noted. Groups stay quiet.
     const talkative = msg.visibility === 'private' || trip.mode === 'direct';
+    let acknowledgement: OutboundMessage | undefined;
     if (talkative && acks.length) {
-      asks.unshift(`Got it: ${list(acks)}.${asks.length ? '' : ' Tell me if I got anything wrong.'}`);
-      private_ = true;
+      if (asks.length === 0) acknowledgement = replyMessage(msg, `Got it: ${list(acks)}. Tell me if I got anything wrong.`, 'ack', true);
+      else { asks.unshift(`Got it: ${list(acks)}.`); private_ = true; } // a real question is coming, so say both in one message
     }
 
     const clarification = asks.length ? replyMessage(msg, asks.join('\n'), 'clarify', private_) : undefined;
     const expects = hedgedBudget !== undefined ? { expects: { field: 'budget' as const, valueCents: hedgedBudget } } : {};
     if (commands.length === 0) return clarification ? { kind: 'reply', message: clarification, ...expects } : { kind: 'ignored', reason: 'nothing to record' };
-    if (commands.length === 1 && !clarification) return { kind: 'command', command: commands[0]! };
-    return { kind: 'commands', commands, ...(clarification ? { clarification } : {}), ...expects };
+    if (commands.length === 1 && !clarification && !acknowledgement) return { kind: 'command', command: commands[0]! };
+    return { kind: 'commands', commands, ...(clarification ? { clarification } : {}), ...(acknowledgement ? { acknowledgement } : {}), ...expects };
   }
 
   // ----- plan selection / acceptance -----
@@ -182,7 +183,7 @@ export function createParser(deps: ConversationDependencies) {
       if (!yes) return reply(msg, "No problem! What's your firm max for the whole trip, including food and travel?", 'budget-no', true);
       // They confirmed the exact amount we asked about, so it is recorded as confirmed (it is still their own budget).
       const locked = updateCommand(msg, ctx, { field: 'budget', value: pending.valueCents }, false);
-      return { kind: 'commands', commands: [locked], clarification: replyMessage(msg, `Locked in, your max is ${money(pending.valueCents)}. Thanks, and that stays between us.`, 'locked', true) };
+      return { kind: 'commands', commands: [locked], acknowledgement: replyMessage(msg, `Locked in, your max is ${money(pending.valueCents)}. Thanks, and that stays between us.`, 'locked', true) };
     }
     const list = ctx.actionable;
     if (list.length === 0) {

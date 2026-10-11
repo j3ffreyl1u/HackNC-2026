@@ -242,7 +242,7 @@ describe('starting a conversation, and DMs never get silence', () => {
 
 describe('friendly, customer-service style replies', () => {
   const dm = (text: string, extra = {}) => msg({ visibility: 'private', spaceId: 'dm-mason', text, ...extra });
-  const ack = (r: ParseResult) => (r.kind === 'commands' ? r.clarification?.text ?? '' : '');
+  const ack = (r: ParseResult) => (r.kind === 'commands' ? r.acknowledgement?.text ?? r.clarification?.text ?? '' : '');
 
   it('in a DM, recorded facts get a warm "got it" that repeats what was understood and invites correction', async () => {
     const { service } = setup();
@@ -252,7 +252,8 @@ describe('friendly, customer-service style replies', () => {
     expect(t).toMatch(/^Got it: /);
     for (const bit of ['leaving from Chapel Hill', '2 nights', "there's a car", "you're free Nov 14-16", 'your max is $250 (just between us)', "you're into hiking and town visit"]) expect(t).toContain(bit);
     expect(t).toMatch(/Tell me if I got anything wrong/);
-    expect(r.kind === 'commands' && r.clarification?.audience).toEqual({ kind: 'private', memberId: 'mason' });
+    expect(r.kind === 'commands' && r.acknowledgement?.audience).toEqual({ kind: 'private', memberId: 'mason' });
+    expect(r.kind === 'commands' && r.clarification).toBeUndefined(); // an acknowledgement, not a question, so follow-up questions still come
   });
   it('in a group it stays quiet and never repeats a budget publicly', async () => {
     const { service } = setup();

@@ -206,5 +206,8 @@ export function describeGaps(state: TripState, result: Pick<ReadinessResult, 'mi
   const parts = items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items.at(-1)}` : (items[0] ?? '');
   const tail = result.conflicts.length > 0 ? 'Some answers also don\'t match yet, so I need those sorted out.' : '';
   if (parts === '') return tail === '' ? "I'm not ready to plan yet." : `I'm not ready to plan yet. ${tail}`;
+  // Nothing has been told to the assistant yet: "still waiting" would be wrong, so say what the plan needs instead.
+  const fresh = Object.values(state.memberConstraints).every((list) => list.length === 0) && state.groupConstraints.length === 0;
+  if (fresh) return `Here's what I need to plan this: ${parts}. Tell me in any order, or I'll ask one thing at a time.${tail === '' ? '' : ` ${tail}`}`;
   return `I'm still waiting on ${parts}.${tail === '' ? '' : ` ${tail}`}`;
 }

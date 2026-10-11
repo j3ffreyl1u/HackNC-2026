@@ -34,7 +34,7 @@ describe('integrated chat planner', () => {
     trip.state.groupConstraints = [];
     const planner = createPlannerAdapter(createResearchProvider({ mode: 'mock', fixtures: defaultFixtures }), trip.enrollment.groupSpaceId);
     const result = planner.applyCommand(trip.state, { commandId: 'plans', eventId: 'plans', actorId: 'mason', tripId: trip.state.tripId, action: { kind: 'request_plans' } }, { now: '2026-10-10T16:00:00Z' });
-    expect(result.state.pendingQuestions.map(q => q.field).sort()).toEqual(['duration', 'origin']);
+    expect(result.state.pendingQuestions.map(q => q.field).sort()).toEqual(['origin']);
   });
   it('supports a direct-mode shared broadcast through individual DM receipts', async () => {
     const trip = await loadDemoTrip('tests/fixtures/trip.json');

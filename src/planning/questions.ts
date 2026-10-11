@@ -1,10 +1,11 @@
+import { participantIds } from './state.js';
 import type { ConstraintField, PendingQuestion, ReadinessQuestion, TripState } from './types.js';
 
 /** The exact words for a missing budget. Asked privately, since a limit may be sensitive. */
 export const BUDGET_QUESTION = "What's your maximum total for this trip, including food and travel?";
 
-/** At most this many related questions go out in one turn. */
-export const MAX_QUESTIONS_PER_TURN = 2;
+/** Questions go out one at a time per person; this is kept for callers that import it. */
+export const MAX_QUESTIONS_PER_TURN = 1;
 
 /** An unanswered question is not asked again automatically until this long has passed. */
 export const QUESTION_COOLDOWN_MS = 12 * 60 * 60 * 1000;
@@ -58,27 +59,36 @@ function recentlyAsked(state: TripState, key: string, now: string | undefined): 
 }
 
 /**
- * Pick what to ask this turn: drop anything asked and still unanswered within the cooldown, take the most
- * important topic that has anything left, and ask at most two per recipient from it.
+ * Pick what to ask now, ONE question at a time per person, so nobody is flooded.
+ *  - A question that is asked and still unanswered (within the cooldown) blocks further questions to whoever it
+ *    reached: a shared question reaches everyone, a private one only its person.
+ *  - Candidates are taken in topic order. A shared question needs everyone free and then takes everyone; a private
+ *    question needs only its own person free. Nobody gets more than one per turn.
+ * So a second person starting the conversation while a shared question is open gets no new questions at all, and
+ * answers arrive one topic after another instead of five at once.
  */
 export function selectQuestions(state: TripState, candidates: readonly QuestionCandidate[], now?: string): ReadinessQuestion[] {
+  const everyone = participantIds(state);
+  const open = state.pendingQuestions.filter((q) => now === undefined || Date.parse(now) - Date.parse(q.askedAt) < QUESTION_COOLDOWN_MS);
+  const sharedOpen = open.some((q) => q.audience.kind === 'group');
+  const busy = new Set<string>(sharedOpen ? everyone : open.flatMap((q) => (q.audience.kind === 'private' ? [q.audience.memberId] : [])));
+  const taken = new Set<string>();
+  const asking: ReadinessQuestion[] = [];
   const askable = candidates.filter((c) => !recentlyAsked(state, c.question.key, now));
   for (const topic of TOPIC_ORDER) {
-    const inTopic = askable.filter((c) => c.topic === topic);
-    if (inTopic.length === 0) continue;
-    // The limit is per recipient: each person (or the shared chat) hears at most two, and a private question
-    // reaches only its own person, so asking everyone for their own cap in one turn is still two or fewer each.
-    const perRecipient = new Map<string, number>();
-    return inTopic
-      .filter((c) => {
-        const who = c.question.audience.kind === 'private' ? c.question.audience.memberId : 'group';
-        const count = perRecipient.get(who) ?? 0;
-        perRecipient.set(who, count + 1);
-        return count < MAX_QUESTIONS_PER_TURN;
-      })
-      .map((c) => c.question);
+    for (const { question } of askable.filter((c) => c.topic === topic)) {
+      const audience = question.audience;
+      if (audience.kind === 'group') {
+        if (everyone.length === 0 || everyone.some((id) => busy.has(id) || taken.has(id))) continue;
+        everyone.forEach((id) => taken.add(id));
+      } else {
+        if (busy.has(audience.memberId) || taken.has(audience.memberId)) continue;
+        taken.add(audience.memberId);
+      }
+      asking.push(question);
+    }
   }
-  return [];
+  return asking;
 }
 
 /** Remember that these were asked, so they are not repeated before the cooldown. */

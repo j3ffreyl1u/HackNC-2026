@@ -27,7 +27,7 @@ function askUntilSummary(start: TripState): ApplyResult {
   for (let hour = 1; hour <= 10; hour++) {
     state = result.state;
     result = applyCommand(state, command('alex', { kind: 'request_plans' }), { now: new Date(Date.parse(NOW) + hour * 3_600_000).toISOString() });
-    if (result.replies.some((r) => /still waiting on/i.test(r.text))) return result;
+    if (result.replies.some((r) => /(still waiting on|what I need to plan this)/i.test(r.text))) return result;
   }
   return result;
 }
@@ -63,7 +63,7 @@ describe('request_plans', () => {
     expect(later.rejection?.code).toBe('NOT_READY');
     expect(later.replies.length).toBeGreaterThan(0);
     const text = later.replies.map((r) => r.text).join(' ');
-    expect(text).toMatch(/still waiting on/i);
+    expect(text).toMatch(/what I need to plan this/i);   // nothing has been said yet, so not "still waiting"
     expect(text).toMatch(/everyone's budget/);
     expect(text).toMatch(/everyone's dates/);
     expect(text).toMatch(/where you're leaving from/);
@@ -373,9 +373,11 @@ describe('the early-request summary', () => {
   it('comes with the very first request, along with the questions', () => {
     const result = run(createTrip('trip-1', roster), 'mason', { kind: 'request_plans' });
     expect(result.rejection?.code).toBe('NOT_READY');
-    const summary = result.replies.find((r) => /still waiting on/i.test(r.text));
+    const summary = result.replies.find((r) => /what I need to plan this/i.test(r.text));
     expect(summary).toBeDefined();
-    expect(result.replies.some((r) => /leaving from/i.test(r.text))).toBe(true);
+    expect(result.replies[0]).toBe(summary);                                  // the summary comes first
+    const questions = result.replies.filter((r) => r.text.endsWith('?'));
+    expect(questions.map((r) => r.text)).toEqual(['Where are you all leaving from?']); // then exactly one question
   });
 
   it('goes to the person who asked and says "your" for them', () => {
@@ -403,9 +405,22 @@ describe('one turn asks at most two questions', () => {
     expect(asked.length).toBeLessThanOrEqual(2);
   });
 
-  it('asks again on a later turn', () => {
+  it('does not pile a second question on while the first is still unanswered', () => {
     const first = run(createTrip('trip-1', roster), 'mason', { kind: 'update_constraint', update: update('mason', 'preferences', { items: ['hiking'] }) });
-    const second = applyCommand(first.state, command('mason', { kind: 'update_constraint', update: update('mason', 'duration', { nights: 2 }) }), { now: '2026-10-10T12:05:00.000Z' });
-    expect(second.replies.length).toBeGreaterThan(0);
+    expect(first.replies.filter((r) => r.text.endsWith('?')).length).toBe(1);
+    const second = applyCommand(first.state, command('alex', { kind: 'update_constraint', update: update('alex', 'preferences', { items: ['food'] }) }), { now: '2026-10-10T12:05:00.000Z' });
+    expect(second.replies.filter((r) => r.text.endsWith('?'))).toEqual([]);
+  });
+
+  it('asks the next question as soon as the open one is answered', () => {
+    const first = run(createTrip('trip-1', roster), 'mason', { kind: 'update_constraint', update: update('mason', 'preferences', { items: ['hiking'] }) });
+    const answered = applyCommand(first.state, command('mason', { kind: 'update_constraint', update: update('mason', 'origin', { city: 'Chapel Hill' }) }), { now: '2026-10-10T12:05:00.000Z' });
+    expect(answered.replies.filter((r) => r.text.endsWith('?')).map((r) => r.text)).toEqual(['How many nights are you thinking?']);
+  });
+
+  it('asks the same question again once the cooldown has passed', () => {
+    const first = run(createTrip('trip-1', roster), 'mason', { kind: 'update_constraint', update: update('mason', 'preferences', { items: ['hiking'] }) });
+    const second = applyCommand(first.state, command('mason', { kind: 'update_constraint', update: update('mason', 'duration', { nights: 2 }) }), { now: '2026-10-11T01:30:00.000Z' });
+    expect(second.replies.some((r) => /leaving from/i.test(r.text))).toBe(true);
   });
 });

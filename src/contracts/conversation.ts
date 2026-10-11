@@ -81,7 +81,8 @@ export interface PendingConfirmation {
  */
 export type ParseResult =
   | { kind: 'command'; command: TripCommand }
-  | { kind: 'commands'; commands: TripCommand[]; clarification?: OutboundMessage; expects?: PendingConfirmation }
+  /** `acknowledgement` is a plain "Got it": unlike `clarification` (a real question) it does not pause follow-up questions. */
+  | { kind: 'commands'; commands: TripCommand[]; clarification?: OutboundMessage; acknowledgement?: OutboundMessage; expects?: PendingConfirmation }
   | { kind: 'reply'; message: OutboundMessage; expects?: PendingConfirmation }
   | { kind: 'ignored'; reason: string };
 

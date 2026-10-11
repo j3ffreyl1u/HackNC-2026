@@ -103,7 +103,7 @@ describe('application runtime', () => {
       expect(saved.pendingQuestions.every(q => q.field === 'availability')).toBe(true);
     } finally { await runtime.stop(); repository.close(); }
   });
-  it('asks at most two readiness questions for a multi-command message and answers a cooldown-blocked request', async () => {
+  it('asks one readiness question for a multi-command message and answers a cooldown-blocked request', async () => {
     const { repository, enrollment, state } = setup();
     state.roster = enrollment.participants.map(p => ({ memberId: p.memberId, displayName: p.displayName, consented: true }));
     const conversation = new FakeConversation();
@@ -117,14 +117,14 @@ describe('application runtime', () => {
       await runtime.start();
       await conversation.emit(inbound('start'));
       const questions = conversation.sent.filter(m => m.text.endsWith('?'));
-      expect(questions).toHaveLength(2);
-      expect(questions.map(m => m.text)).toEqual(['Where are you all leaving from?', 'How many nights are you thinking?']);
-      expect((await repository.loadTrip(state.tripId))?.pendingQuestions).toHaveLength(2);
+      expect(questions).toHaveLength(1);
+      expect(questions.map(m => m.text)).toEqual(['Where are you all leaving from?']);
+      expect((await repository.loadTrip(state.tripId))?.pendingQuestions).toHaveLength(1);
       const count = conversation.sent.length;
       await conversation.emit(inbound('again'));
       expect(conversation.sent.slice(count).some(m => m.text.includes("everyone's budget"))).toBe(true);
       expect(conversation.sent.slice(count).some(m => m.text.includes('where you want to go'))).toBe(true);
-      expect(conversation.sent.slice(count).filter(m => m.text.endsWith('?')).length).toBeLessThanOrEqual(2);
+      expect(conversation.sent.slice(count).filter(m => m.text.endsWith('?')).length).toBe(0);
     } finally { await runtime.stop(); repository.close(); }
   });
   it('reports missing legacy group authors privately without changing the saved trip', async () => {

@@ -63,7 +63,7 @@ export async function createChatAdapter(enrollment: C.TripEnrollment, timeZone: 
       if (parsed.kind === 'ignored') return parsed;
       if (parsed.kind === 'reply') return { kind: 'reply', message: parsed.message, expects: parsed.expects };
       if (parsed.kind === 'command') return { kind: 'command', command: convert(parsed.command, timeZone) };
-      return { kind: 'commands', commands: parsed.commands.map(c => convert(c, timeZone)), clarificationQuestion: parsed.clarification?.text, expects: parsed.expects };
+      return { kind: 'commands', commands: parsed.commands.map(c => convert(c, timeZone)), clarificationQuestion: parsed.clarification?.text, ...(parsed.acknowledgement ? { acknowledgement: parsed.acknowledgement.text } : {}), expects: parsed.expects };
     },
   } };
 }

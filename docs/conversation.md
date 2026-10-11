@@ -35,6 +35,13 @@ Pivoting is a config change (`mode: 'direct'`). In `direct`, `groupSpaceId` is o
 - Explicit forms (no AI): `show options`, `plan the trip`, `guide: <question>`, `request contributions`.
 - Gemini sees: message text, date, channel, timezone, member names, pending field. Never budgets or other members' private history. Output is validated (`intent.ts`); invalid items are dropped. Certainty and hedging are decided by code, not the model. Gemini errors degrade to a clarification (shown only in DMs).
 
+## One question at a time (changes in B's and C's files, proposed by A)
+Live test 2026-10-10: two people saying "let's plan a trip" 3 seconds apart got 4 shared questions + a long summary each, and after every "Got it" the conversation stalled. Fixes on `integration/combined-v3`, for B/C to adopt or replace:
+- **B `planning/questions.ts` `selectQuestions`**: one question per person at a time. A shared question blocks all further questions to everyone until answered (or the 12h cooldown passes); a private question blocks only its person. A second person's start request gets only the private summary.
+- **B `planning/readiness.ts` `describeGaps`**: "Here's what I need to plan this: ..." when nothing has been recorded yet; "I'm still waiting on ..." afterwards.
+- **Contract (C) `ParseResult.commands.acknowledgement`**: a plain "Got it" is separate from `clarification` (a real question). C's runtime sends the acknowledgement FIRST and still asks the next question; a `clarification` still pauses follow-ups.
+- **C `storage/sqlite-repository.ts`**: the outbox is drained in insertion order (`ORDER BY queued_at, rowid`); it used to tie-break on a hashed delivery id, so messages sent in the same moment came out in random order.
+
 ## Rules first, then Gemini (automatic handoff)
 Each message goes through the deterministic rules first (exact, instant, no network). The rules also report which sentences and long clauses they did **not** understand; exactly those are handed to Gemini automatically, and its validated answer is merged with the rules' (rules win per field, and Gemini is told which fields are already captured). Small talk ("thanks!", "hey", "lol") is answered without a model call, and a request tucked into a longer message ("..., can you show us some options?") is understood by rule. If Gemini says "clarify" it is asked once more; if it errors, the user gets the friendly help message (in a DM) instead of silence.
 

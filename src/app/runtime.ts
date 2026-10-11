@@ -142,6 +142,10 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
       let nextState = state;
       let researchRequested = false;
       const replies: OutboundMessage[] = [];
+      // A plain "Got it" is said FIRST, before any question and does NOT stop the next question; a real clarifying question does.
+      if (parsed.kind === 'commands' && parsed.acknowledgement) {
+        replies.push(makeMessage(tripId, `ack:${message.eventId}`, { audience: { kind: 'private', memberId: member.memberId }, text: parsed.acknowledgement }));
+      }
       for (const [index, parsedCommand] of commands.entries()) {
         const command: TripCommand = {
           ...parsedCommand,
