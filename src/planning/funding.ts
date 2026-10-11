@@ -258,14 +258,16 @@ export function describeFund(
   if (funding.status === 'funded') {
     lines.push(`The trip fund is fully funded: ${money(funding.collectedDollars)} in, ${money(plan.neededDollars)} needed.`);
   } else {
+    lines.push(`The trip fund has ${money(funding.collectedDollars)} of ${money(plan.neededDollars)}.`);
     const waiting = funding.perMember.filter((m) => m.outstandingDollars > 0).map((m) => `${name(m.memberId)} (${money(m.outstandingDollars)})`);
-    lines.push(`The trip fund has ${money(funding.collectedDollars)} of ${money(plan.neededDollars)}. Still waiting on ${list(waiting)}.`);
+    lines.push(`Still waiting on ${list(waiting)}.`);
   }
   if (spend !== undefined) {
     lines.push(`${money(spend.totalSpentDollars)} spent so far, ${money(Math.max(0, funding.collectedDollars - spend.totalSpentDollars))} left.`);
   }
-  if (options.simulated) lines.push('This is simulated money in a demo account.');
-  return lines.join(' ');
+  // Three short lines at most: the simulated-money note rides on the last one.
+  if (options.simulated) lines[lines.length - 1] += ' (Simulated money.)';
+  return lines.join('\n');
 }
 
 /** A private nudge for one person about their own share. Nothing about anyone else; undefined if they are covered. */
@@ -372,18 +374,20 @@ export function settleTrip(plan: Extract<ContributionPlan, { ok: true }>, fundin
 export function describeSettlement(state: TripState, settlement: Settlement, options: { simulated?: boolean } = {}): string {
   const name = (id: MemberId) => state.roster.find((m) => m.memberId === id)?.displayName ?? id;
   const lines: string[] = [];
+  const notes: string[] = [];
   if (settlement.shortfall) {
     const each = settlement.shortfall.perMember[0]?.dollars ?? 0;
-    lines.push(`Trip fund wrap-up: ${money(settlement.collectedDollars)} in, ${money(settlement.spentDollars)} spent, so the fund is ${money(settlement.shortfall.dollars)} short. Splitting that evenly would be ${money(each)} each.`);
+    lines.push(`Trip fund wrap-up: ${money(settlement.collectedDollars)} in, ${money(settlement.spentDollars)} spent, so the fund is ${money(settlement.shortfall.dollars)} short.`);
+    notes.push(`Splitting that evenly would be ${money(each)} each.`);
   } else {
     lines.push(`Trip fund wrap-up: ${money(settlement.collectedDollars)} in, ${money(settlement.spentDollars)} spent, ${money(settlement.leftoverDollars)} left.`);
-    if (settlement.refunds.length > 0) lines.push(`To send back: ${settlement.refunds.map((r) => `${name(r.memberId)} ${money(r.dollars)}`).join(', ')}.`);
+    if (settlement.refunds.length > 0) notes.push(`To send back: ${settlement.refunds.map((r) => `${name(r.memberId)} ${money(r.dollars)}`).join(', ')}.`);
   }
   if (settlement.staleReturns.length > 0) {
-    lines.push(`Also return what was sent for an earlier version of the plan: ${settlement.staleReturns.map((r) => `${name(r.memberId)} ${money(r.dollars)}`).join(', ')}.`);
+    notes.push(`Also return what was sent for an earlier plan: ${settlement.staleReturns.map((r) => `${name(r.memberId)} ${money(r.dollars)}`).join(', ')}.`);
   }
-  if (settlement.unattributedDollars > 0) lines.push(`${money(settlement.unattributedDollars)} didn't say who it was from, so someone needs to claim it.`);
-  lines.push("I don't move any money, so you'd send these yourselves.");
-  if (options.simulated) lines.push('This is simulated money in a demo account.');
-  return lines.join(' ');
+  if (settlement.unattributedDollars > 0) notes.push(`${money(settlement.unattributedDollars)} didn't say who it was from, so someone needs to claim it.`);
+  if (notes.length > 0) lines.push(notes.join(' '));
+  lines.push(`I don't move any money, so you'd send these yourselves.${options.simulated ? ' (Simulated money.)' : ''}`);
+  return lines.join('\n');
 }

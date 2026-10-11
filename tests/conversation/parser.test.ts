@@ -191,6 +191,30 @@ describe('requests, guide questions, and the model', () => {
     expect(cmds(await service.parseInbound(msg({ text: 'request contributions' })))[0]!.action.kind).toBe('request_funding');
     expect(model.calls).toHaveLength(0);
   });
+  it('understands fund questions, reminders and the wrap-up without the model', async () => {
+    const { service, model } = setup();
+    const topicOf = async (t: string) => {
+      const c = cmds(await service.parseInbound(msg({ text: t })))[0];
+      return c?.action.kind === 'request_funding' ? ((c.action as { topic?: string }).topic ?? 'status') : undefined;
+    };
+    for (const t of ["how's the fund?", 'how is the trip fund looking', "what's in the fund", 'who still owes?', 'who owes money', "who hasn't paid yet", 'fund status', 'how much is in the pot']) {
+      expect(await topicOf(t), t).toBe('status');
+    }
+    for (const t of ['remind everyone', 'please nudge them', 'remind the others to pay', 'send reminders']) {
+      expect(await topicOf(t), t).toBe('remind');
+    }
+    for (const t of ['wrap up the trip', 'wrap up', 'settle up', 'who gets what back?', 'how much do we get back']) {
+      expect(await topicOf(t), t).toBe('wrap_up');
+    }
+    expect(model.calls).toHaveLength(0);
+  });
+  it('does not mistake ordinary chat for a fund request', async () => {
+    const { service } = setup();
+    for (const t of ["how's the weather", 'who owes the most gas money lol', 'remind me to bring a jacket', 'we should wrap up the dinner plans']) {
+      const c = cmds(await service.parseInbound(msg({ text: t })))[0];
+      expect(c?.action.kind, t).not.toBe('request_funding');
+    }
+  });
   it('model-proposed constraints are validated, attributed to the sender, and hedges are decided by code', async () => {
     const { service } = setup({}, () => ({ intent: 'constraints', items: [{ field: 'budget', amount: '180' }, { field: 'duration', nights: 2 }, { field: 'budget', amount: '1e3' }, { field: 'nope' }] }));
     const r = await service.parseInbound(msg({ senderId: 'alex', text: 'I can only afford about one-eighty, two nights is plenty' }));

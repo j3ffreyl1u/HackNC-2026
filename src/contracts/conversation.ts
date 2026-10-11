@@ -47,7 +47,7 @@ export type TripAction =
   | { kind: 'select_candidate'; candidateId: string; revision: number }
   | { kind: 'accept_candidate'; candidateId: string; revision: number }
   | { kind: 'ask_guide'; question: string }
-  | { kind: 'request_funding' };
+  | { kind: 'request_funding'; topic?: 'status' | 'remind' | 'wrap_up' };
 
 export interface TripCommand {
   commandId: string;

@@ -401,3 +401,16 @@ describe('describeSettlement', () => {
     expect(text).toMatch(/\$7 each/);
   });
 });
+
+describe('messages are short', () => {
+  it('describeFund and describeSettlement fit in three short lines', () => {
+    const state = approved();
+    const p = planContributions(state);
+    if (!p.ok) throw new Error(p.reason);
+    const partial = checkFunding(p, [{ id: 'a', amountDollars: 100, description: depositTag('mason', 1) }, { id: 'old', amountDollars: 30, description: depositTag('alex', 0) }, { id: 'x', amountDollars: 5, description: 'cash' }]);
+    const spend = spendVsPlan(p, [{ id: 's', amountDollars: 20, category: 'food' }]);
+    const lines = (t: string) => t.split('\n').filter((l) => l.trim() !== '');
+    expect(lines(describeFund(state, p, partial, spend, { simulated: true })).length).toBeLessThanOrEqual(3);
+    expect(lines(describeSettlement(state, settleTrip(p, partial, spend), { simulated: true })).length).toBeLessThanOrEqual(3);
+  });
+});

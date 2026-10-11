@@ -166,6 +166,10 @@ export const corpus: Case[] = [
 
   // ---------- funding ----------
   c('request contributions', { actions: ['request_funding'] }),
+  c("how's the fund?", { actions: ['request_funding'] }),
+  c('who still owes?', { actions: ['request_funding'] }),
+  c('remind everyone', { actions: ['request_funding'] }),
+  c('wrap up the trip', { actions: ['request_funding'] }),
   c('can you set up the contribution requests', { actions: ['request_funding'] }, false, { soft: true }),
 
   // ---------- acknowledgements, small talk, corrections ----------

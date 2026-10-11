@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { FundService } from '../funding/service.js';
-import { describeFund, driftNotices } from '../planning/funding.js';
+import { describeFund, describeSettlement, driftNotices, reminderFor, settleTrip } from '../planning/funding.js';
 import { toPlanningState } from './planning-adapter.js';
 import type {
   ConstraintValue,
@@ -168,6 +168,7 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
         replies.push(makeMessage(tripId, `ack:${message.eventId}`, { audience: { kind: 'private', memberId: member.memberId }, text: parsed.acknowledgement }));
       }
       let fundRequested = false;
+      let fundTopic: 'status' | 'remind' | 'wrap_up' = 'status';
 
       for (const [index, parsedCommand] of commands.entries()) {
         const command: TripCommand = {
@@ -177,7 +178,7 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
           actorId: member.memberId,
           tripId,
         };
-        if (command.action.kind === 'request_funding') { fundRequested = true; continue; }
+        if (command.action.kind === 'request_funding') { fundRequested = true; fundTopic = command.action.topic ?? 'status'; continue; }
         if (command.action.kind === 'ask_guide' && planner.guide) {
           let text: string;
           try { text = await planner.guide(nextState, command.action.question, message.occurredAt); }
@@ -288,13 +289,32 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
           const report = await fundService.inspect(nextState);
           if (report.funding && report.plan && report.spending) {
             const keys = new Set(nextState.fundingNoticeKeys?.[String(nextState.revision)] ?? []);
-            const notices = driftNotices(report.spending, keys);
-            for (const notice of notices) {
+            // One notice per message: more than one at once reads as a wall of warnings. The rest follow next time.
+            const notice = driftNotices(report.spending, keys)[0];
+            if (notice) {
               keys.add(notice.key);
               replies.push(makeMessage(tripId, `fund-drift:${nextState.revision}:${notice.key}`, { audience: { kind: 'group', spaceId: enrollment.groupSpaceId }, text: `${notice.text} This is simulated sandbox money.` }));
             }
             nextState = { ...nextState, fundingStatus: report.funding.status, fundingNoticeKeys: { ...nextState.fundingNoticeKeys, [String(nextState.revision)]: [...keys] } };
-            if (fundRequested) replies.push(makeMessage(tripId, `fund:${message.eventId}`, { audience: { kind: 'private', memberId: member.memberId }, text: describeFund(toPlanningState(nextState), report.plan, report.funding, report.spending, { simulated: true }) }));
+            if (fundRequested) {
+              const planning = toPlanningState(nextState);
+              const privately = (id: string, text: string, tag: string) => makeMessage(tripId, tag, { audience: { kind: 'private', memberId: id }, text });
+              if (fundTopic === 'wrap_up') {
+                replies.push(makeMessage(tripId, `fund-wrap:${message.eventId}`, { audience: { kind: 'group', spaceId: enrollment.groupSpaceId }, text: describeSettlement(planning, settleTrip(report.plan, report.funding, report.spending), { simulated: true }) }));
+              } else if (fundTopic === 'remind') {
+                const others = report.funding.missingMemberIds.filter((id) => id !== member.memberId);
+                for (const id of others) {
+                  const text = reminderFor(id, report.funding);
+                  if (text) replies.push(privately(id, text, `fund-remind:${message.eventId}:${id}`));
+                }
+                const nudged = others.map((id) => planning.roster.find((m) => m.memberId === id)?.displayName ?? id);
+                const own = reminderFor(member.memberId, report.funding);
+                const told = nudged.length > 0 ? `Reminded ${nudged.length > 1 ? `${nudged.slice(0, -1).join(', ')} and ${nudged.at(-1)}` : nudged[0]}.` : "Everyone else is covered, so there's nobody to remind.";
+                replies.push(privately(member.memberId, own ? `${told}\n${own}` : told, `fund:${message.eventId}`));
+              } else {
+                replies.push(privately(member.memberId, describeFund(planning, report.plan, report.funding, report.spending, { simulated: true }), `fund:${message.eventId}`));
+              }
+            }
           } else if (fundRequested) replies.push(makeMessage(tripId, `fund:${message.eventId}`, { audience: { kind: 'private', memberId: member.memberId }, text: report.reason ?? 'Approve the current plan before checking the fund.' }));
         } catch {
           nextState = { ...nextState, fundingStatus: 'unknown' };
