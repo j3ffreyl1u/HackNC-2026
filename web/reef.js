@@ -91,19 +91,19 @@ function draw(timestamp = 0) {
   const time = animate ? timestamp / 1000 : 0;
   ctx.clearRect(0, 0, width, height);
   const mobile = width < 760;
-  const scale = mobile ? 900 : height * 1.7;
-  const baseY = mobile ? 495 : height * 1.06;
+  const scale = height * 1.7;
+  const baseY = height * (mobile ? .96 : 1.06);
   ctx.save();
   // Sun shafts sit behind the living reef.
   for (let i = 0; i < 4; i++) {
-    ctx.fillStyle = '#b1fffa0b'; ctx.beginPath(); ctx.moveTo(width * (.12 + i * .15), 0); ctx.lineTo(width * (.32 + i * .18), mobile ? 370 : height); ctx.lineTo(width * (.18 + i * .18), mobile ? 370 : height); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#b1fffa0b'; ctx.beginPath(); ctx.moveTo(width * (.12 + i * .15), 0); ctx.lineTo(width * (.32 + i * .18), height); ctx.lineTo(width * (.18 + i * .18), height); ctx.closePath(); ctx.fill();
   }
   const rock = ctx.createRadialGradient(width * .36, baseY, 10, width * .36, baseY, width * .35);
   rock.addColorStop(0, '#727aa3'); rock.addColorStop(.6, '#29386b'); rock.addColorStop(1, '#0b2350');
   ctx.fillStyle = rock; ctx.beginPath(); ctx.ellipse(width * .36, baseY + scale * .07, width * .34, scale * .15, -.08, 0, Math.PI * 2); ctx.fill();
-  fish(width * .16, mobile ? 65 : height * .15, mobile ? 18 : 27, time, 1, 'yellow');
-  fish(width * .49, mobile ? 115 : height * .19, mobile ? 26 : 40, time, -1, 'blue');
-  fish(width * .62, mobile ? 48 : height * .1, mobile ? 16 : 25, time, -1, 'yellow');
+  fish(width * .16, height * .15, mobile ? 18 : 27, time, 1, 'yellow');
+  fish(width * .49, height * .24, mobile ? 26 : 40, time, -1, 'blue');
+  fish(width * .62, height * .1, mobile ? 16 : 25, time, -1, 'yellow');
   strands.filter(s => !s.front).forEach(s => strand(s, time, dt, animate, scale, baseY));
   strands.filter(s => s.front).forEach(s => strand(s, time, dt, animate, scale, baseY));
   const fishY = baseY - scale * .36;
