@@ -1,6 +1,16 @@
-﻿# Group-chat trip agent
+﻿# Road-trip planner you text (HackNC 2026)
 
-An assistant inside an enrolled iMessage group gathers constraints, proposes trips, revises them and records everyone's acceptance of the exact version. The local page is a read-only view of the saved trip.
+Text the bot one-on-one over iMessage (Photon Spectrum). It collects each friend's budget, free dates and tastes, asks only what is missing, researches cited options with Gemini and real hotel prices (Google Hotels via SerpApi), gets each person's explicit yes to the exact plan version, and adapts when something changes. Nobody has to organise the group or do the research.
+
+- **Private by design.** Each person's budget stays between them and the bot. Free dates are shared with the group (the bot says so up front) so a date clash can be fixed. A cap is not a contribution promise, and an unknown cost is never treated as zero.
+- **Cited, honest prices.** Every option carries its sources. A price that was not found is labelled "typical cost, not a found price"; live availability is never claimed.
+- **Exact-version approval.** A change to dates, budget or plan bumps the revision and voids old acceptances.
+- **Who covered what (optional, Capital One Nessie sandbox).** Each friend pays with their own simulated account. The bot only reads those accounts, splits shared costs, keeps food personal, asks the buyer once about purchases the plan does not explain, and works out who owes whom. It never moves money. All money is simulated.
+- **Trip page.** A read-only page for the saved trip, with a calendar file once the plan is approved.
+
+Direct (one-on-one) messages only: group chat is not supported. See [docs/research.md](docs/research.md), [docs/funding.md](docs/funding.md) and [docs/api.md](docs/api.md).
+
+Quick look, no keys needed: `npm ci`, then `npm run demo:chat` (offline end-to-end story) or `npm run demo:web` (the trip page with a simulated ledger; `DEMO_STATE=gathering|researching|proposed|awaiting_acceptance|approved`). `npx vitest run` runs the test suite.
 
 ## Offline demo
 
