@@ -4,7 +4,7 @@ Draft only. Nothing has been submitted or published by the frontend agent.
 
 ## Project description
 
-Weekend, together is an iMessage trip-planning assistant that helps friends agree on a weekend they can attend and afford. Each friend texts the same assistant in their own private DM. It gathers their dates, private spending limit and preferences, asks for what is missing, and compares options. Everyone must say “I’m in” for the same plan revision. Changing a material detail invalidates the earlier approvals.
+Finding N.E.M.O (Next Excursion Mapped Out) is an iMessage trip-planning assistant that helps friends agree on a weekend they can attend and afford. Each friend texts the same assistant in their own private DM. It gathers their dates, private spending limit and preferences, asks for what is missing, and compares options. Everyone must say “I’m in” for the same plan revision. Changing a material detail invalidates the earlier approvals.
 
 The read-only companion page shows the saved itinerary, map links, cost estimates, sources and acceptance status. Plans with missing essential prices are labelled “maybe”. Demo prices are made up; live prices are estimates from web search. Outdoor stops and recorded driving comparisons connect the plan to the reef-themed Frutiger Aero interface. Unknown drive legs stay unknown, the drive home is excluded, and we do not claim emissions savings. An approved plan can be downloaded as a calendar file; that does not book anything.
 
