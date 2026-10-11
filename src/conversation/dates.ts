@@ -51,7 +51,7 @@ function monthIndex(word: string): number | undefined {
 const MONTH = '(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
 const SEP = '(?:to|-|–|—|through|thru|until|till)';
 const ISO_RANGE = new RegExp(`(\\d{4}-\\d{2}-\\d{2})(?:\\s*${SEP}\\s*(\\d{4}-\\d{2}-\\d{2}))?`, 'gi');
-const MD_RANGE = new RegExp(`\\b${MONTH}\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:\\s*${SEP}\\s*(?:${MONTH}\\.?\\s+)?(\\d{1,2})(?:st|nd|rd|th)?)?\\b`, 'gi');
+const MD_RANGE = new RegExp(`\\b${MONTH}\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:\\s*${SEP}\\s*(?:the\\s+)?(?:${MONTH}\\.?\\s+)?(\\d{1,2})(?:st|nd|rd|th)?)?\\b`, 'gi');
 const SLASH_RANGE = new RegExp(`\\b(\\d{1,2})/(\\d{1,2})(?:\\s*${SEP}\\s*(\\d{1,2})/(\\d{1,2}))?\\b`, 'gi');
 
 export interface ParsedWindow { start: string; end: string }
@@ -111,4 +111,48 @@ export function parseDateWindows(input: string, reference: string): ParsedWindow
     .filter((w) => !seen.has(w.start + w.end) && !!seen.add(w.start + w.end))
     .sort((a, b) => a.start.localeCompare(b.start))
     .slice(0, 6);
+}
+
+/** Throws a clear error for an unknown IANA timezone (so a bad config fails at startup, not mid-chat). */
+export function assertTimeZone(timeZone: string): void {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone });
+  } catch {
+    throw new Error(`Invalid trip timezone: ${timeZone}`);
+  }
+}
+
+/** The UTC instant (ISO) at which `date` (YYYY-MM-DD) begins in `timeZone`. DST-safe. */
+export function localMidnight(date: string, timeZone: string): string {
+  const target = Date.parse(`${date}T00:00:00Z`);
+  const fmt = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
+  let instant = target;
+  for (let i = 0; i < 3; i++) {
+    const p = Object.fromEntries(fmt.formatToParts(instant).map((x) => [x.type, x.value]));
+    instant += target - Date.parse(`${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}Z`);
+  }
+  return new Date(instant).toISOString();
+}
+
+export interface IntervalWindow { startAt: string; endAt: string; timeZone: string }
+
+/**
+ * Inclusive date windows -> real intervals: local midnight of the start date to local midnight of the day
+ * AFTER the end date, in the trip timezone. We never invent hours from casual texting.
+ */
+export function toIntervalWindows(windows: ParsedWindow[], timeZone: string): IntervalWindow[] {
+  return windows.map((w) => ({
+    startAt: localMidnight(w.start, timeZone),
+    endAt: localMidnight(new Date(Date.parse(`${w.end}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10), timeZone),
+    timeZone,
+  }));
+}
+
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** "Nov 14-16", "Nov 30 - Dec 2", "Nov 14" from inclusive YYYY-MM-DD dates, for friendly replies. */
+export function formatWindow(w: ParsedWindow): string {
+  const [, sm, sd] = w.start.split('-').map(Number) as [number, number, number];
+  const [, em, ed] = w.end.split('-').map(Number) as [number, number, number];
+  if (w.start === w.end) return `${MON[sm - 1]} ${sd}`;
+  return sm === em ? `${MON[sm - 1]} ${sd}-${ed}` : `${MON[sm - 1]} ${sd} - ${MON[em - 1]} ${ed}`;
 }

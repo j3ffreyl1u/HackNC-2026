@@ -287,13 +287,11 @@ describe('questions', () => {
     }
   });
 
-  it('asks at most two questions in one turn, all about one topic', () => {
+  it('asks ONE question at a time, the most basic gap first', () => {
     const result = checkReadiness(createTrip('empty', roster));
-    expect(result.questions.length).toBeGreaterThan(0);
-    expect(result.questions.length).toBeLessThanOrEqual(MAX_QUESTIONS_PER_TURN);
+    expect(result.questions.length).toBe(MAX_QUESTIONS_PER_TURN);
     // The most basic gap comes first: the trip basics, not tastes or money.
-    expect(result.questions[0].key).toBe('origin');
-    expect(result.questions.map((q) => q.key)).toEqual(['origin', 'duration']);
+    expect(result.questions.map((q) => q.key)).toEqual(['origin']);
   });
 
   it('asks people to confirm their consent before anything else', () => {
@@ -331,12 +329,32 @@ describe('questions', () => {
     expect(checkReadiness(asked, { now: later }).questions.map((q) => q.key)).toEqual(['origin']);
   });
 
-  it('moves on to the next unasked question while an earlier one is cooling down', () => {
+  it('holds the next question back while the first is unanswered, then moves on once it is answered', () => {
     const state = trip(['origin', 'duration', 'region']);
     const firstTurn = checkReadiness(state, { now: NOW });
-    expect(firstTurn.questions.map((q) => q.key)).toEqual(['origin', 'duration']);
+    expect(firstTurn.questions.map((q) => q.key)).toEqual(['origin']);
     const asked = recordQuestions(state, firstTurn.questions, NOW);
-    expect(checkReadiness(asked, { now: NOW }).questions.map((q) => q.key)).toEqual(['region']);
+    // Someone else starting the conversation right now must not unlock a second shared question.
+    expect(checkReadiness(asked, { now: NOW }).questions).toEqual([]);
+    // Once the answer arrives (origin is set and the open question is forgotten) the next one is asked.
+    const answered = put(asked, 'mason', 'origin', { city: 'Chapel Hill' });
+    const cleared = clearAnsweredQuestions(answered, openQuestionKeys(answered));
+    expect(checkReadiness(cleared, { now: NOW }).questions.map((q) => q.key)).toEqual(['duration']);
+  });
+
+  it('asks each person for their own private details one at a time, in parallel, never someone else\'s', () => {
+    const state = trip(['availability', 'budget', 'preferences']);
+    const keys = checkReadiness(state, { now: NOW }).questions.map((q) => q.key).sort();
+    expect(keys).toEqual(['availability:alex', 'availability:jordan', 'availability:mason']); // dates first, one each
+    for (const q of checkReadiness(state, { now: NOW }).questions) expect(q.audience.kind).toBe('private');
+  });
+
+  it('a shared question open for one person blocks that group question for everyone, but not after the cooldown', () => {
+    const state = trip(['origin']);
+    const asked = recordQuestions(state, checkReadiness(state, { now: NOW }).questions, NOW);
+    expect(checkReadiness(asked, { now: NOW }).questions).toEqual([]);
+    const muchLater = new Date(Date.parse(NOW) + 13 * 3_600_000).toISOString();
+    expect(checkReadiness(asked, { now: muchLater }).questions.map((q) => q.key)).toEqual(['origin']);
   });
 
   it('recordQuestions replaces an earlier entry for the same key and leaves the input unchanged', () => {

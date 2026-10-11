@@ -1,0 +1,20 @@
+[
+  {
+    "eventId": "evt-mason-budget-1",
+    "messageId": "msg-mason-budget-1",
+    "senderId": "mason",
+    "spaceId": "mock-friends",
+    "visibility": "private",
+    "occurredAt": "2026-10-10T12:01:00-04:00",
+    "text": "My total trip budget is $200."
+  },
+  {
+    "eventId": "evt-alex-window-1",
+    "messageId": "msg-alex-window-1",
+    "senderId": "alex",
+    "spaceId": "mock-friends",
+    "visibility": "group",
+    "occurredAt": "2026-10-10T12:02:00-04:00",
+    "text": "Either of those weekends works for me."
+  }
+]

@@ -39,6 +39,31 @@ describe('gemini intent model', () => {
     });
     expect(validateIntent({ intent: 'ask_guide', question: 'x'.repeat(501) }).intent).toBe('clarify');
   });
+  it('region and transport carry parsed numbers/booleans, derived or validated, never invented', () => {
+    const v = (items: unknown[]) => (validateIntent({ intent: 'constraints', items }) as { items: unknown[] }).items;
+    expect(v([{ field: 'region', text: 'within 2 hours', maxTravelMinutes: 120 }])).toEqual([{ field: 'region', value: 'within 2 hours', maxTravelMinutes: 120 }]);
+    expect(v([{ field: 'region', text: 'within 2 hours' }])).toEqual([{ field: 'region', value: 'within 2 hours', maxTravelMinutes: 120 }]);
+    expect(v([{ field: 'region', text: 'the mountains', maxTravelMinutes: 5 }])).toEqual([{ field: 'region', value: 'the mountains' }]);
+    expect(v([{ field: 'transport', text: 'my car', vehicleAvailable: true }])).toEqual([{ field: 'transport', value: 'my car', vehicleAvailable: true }]);
+    expect(v([{ field: 'transport', text: 'my car', vehicleAvailable: 'yes' }])).toEqual([{ field: 'transport', value: 'my car' }]);
+  });
+  it('asks once more when the model answers "clarify", and uses the second answer', async () => {
+    let calls = 0;
+    const model = createGeminiIntentModel({ apiKey: 'k', model: 'm', fetchImpl: (async () => new Response(JSON.stringify({ output_text: calls++ === 0 ? '{"intent":"clarify"}' : '{"intent":"request_plans"}' }))) as unknown as typeof fetch });
+    expect(await model.interpret(input)).toEqual({ intent: 'request_plans' });
+    expect(calls).toBe(2);
+  });
+  it('never retries more than once, and never retries real failures into a loop', async () => {
+    let calls = 0;
+    const model = createGeminiIntentModel({ apiKey: 'k', model: 'm', fetchImpl: (async () => { calls++; return new Response(JSON.stringify({ output_text: '{"intent":"clarify"}' })); }) as unknown as typeof fetch });
+    expect(validateIntent(await model.interpret(input)).intent).toBe('clarify');
+    expect(calls).toBe(2);
+  });
+  it('the prompt teaches that asking for ideas or the plan is a request, not small talk', () => {
+    const p = buildPrompt(input);
+    expect(p).toMatch(/"any ideas\?" -> request_plans/);
+    expect(p).toMatch(/never "none"/);
+  });
   it('requires key and model', () => {
     expect(() => createGeminiIntentModel({ apiKey: '', model: 'm' })).toThrow();
     expect(() => createGeminiIntentModel({ apiKey: 'k', model: '' })).toThrow();

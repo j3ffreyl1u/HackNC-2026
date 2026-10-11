@@ -1,0 +1,141 @@
+{
+    "tripId":  "chapel-hill-realistic-demo",
+    "groupSpaceId":  "mock-friends",
+    "revision":  1,
+    "status":  "gathering",
+    "participants":  [
+                         {
+                             "memberId":  "mason",
+                             "displayName":  "Mason",
+                             "providerUserId":  "mock-mason",
+                             "budgetCapCents":  52000,
+                             "origin":  {
+                                            "city":  "Chapel Hill",
+                                            "region":  "North Carolina",
+                                            "timeZone":  "America/New_York"
+                                        },
+                             "availability":  [
+                                                  {
+                                                      "startAt":  "2026-11-14T08:00:00-05:00",
+                                                      "endAt":  "2026-11-16T21:00:00-05:00",
+                                                      "timeZone":  "America/New_York"
+                                                  },
+                                                  {
+                                                      "startAt":  "2026-11-21T08:00:00-05:00",
+                                                      "endAt":  "2026-11-23T21:00:00-05:00",
+                                                      "timeZone":  "America/New_York"
+                                                  }
+                                              ],
+                             "preferences":  [
+                                                 "hiking",
+                                                 "town visit"
+                                             ],
+                             "mustDos":  [
+
+                                         ],
+                             "consentedAt":  "2026-10-10T12:00:00-04:00"
+                         },
+                         {
+                             "memberId":  "alex",
+                             "displayName":  "Alex",
+                             "providerUserId":  "mock-alex",
+                             "budgetCapCents":  56000,
+                             "origin":  {
+                                            "city":  "Chapel Hill",
+                                            "region":  "North Carolina",
+                                            "timeZone":  "America/New_York"
+                                        },
+                             "availability":  [
+                                                  {
+                                                      "startAt":  "2026-11-14T08:00:00-05:00",
+                                                      "endAt":  "2026-11-16T21:00:00-05:00",
+                                                      "timeZone":  "America/New_York"
+                                                  },
+                                                  {
+                                                      "startAt":  "2026-11-21T08:00:00-05:00",
+                                                      "endAt":  "2026-11-23T21:00:00-05:00",
+                                                      "timeZone":  "America/New_York"
+                                                  }
+                                              ],
+                             "preferences":  [
+                                                 "hiking",
+                                                 "town visit"
+                                             ],
+                             "mustDos":  [
+
+                                         ],
+                             "consentedAt":  "2026-10-10T12:00:00-04:00"
+                         },
+                         {
+                             "memberId":  "jordan",
+                             "displayName":  "Jordan",
+                             "providerUserId":  "mock-jordan",
+                             "budgetCapCents":  60000,
+                             "origin":  {
+                                            "city":  "Chapel Hill",
+                                            "region":  "North Carolina",
+                                            "timeZone":  "America/New_York"
+                                        },
+                             "availability":  [
+                                                  {
+                                                      "startAt":  "2026-11-14T08:00:00-05:00",
+                                                      "endAt":  "2026-11-16T21:00:00-05:00",
+                                                      "timeZone":  "America/New_York"
+                                                  },
+                                                  {
+                                                      "startAt":  "2026-11-21T08:00:00-05:00",
+                                                      "endAt":  "2026-11-23T21:00:00-05:00",
+                                                      "timeZone":  "America/New_York"
+                                                  }
+                                              ],
+                             "preferences":  [
+                                                 "hiking",
+                                                 "town visit"
+                                             ],
+                             "mustDos":  [
+
+                                         ],
+                             "consentedAt":  "2026-10-10T12:00:00-04:00"
+                         }
+                     ],
+    "groupConstraints":  {
+                             "durationNights":  2,
+                             "transport":  {
+                                               "mode":  "road_trip",
+                                               "hasVehicle":  true
+                                           },
+                             "destinationRegion":  {
+                                                       "label":  "Blue Ridge region",
+                                                       "maxTravelMinutes":  180
+                                                   }
+                         },
+    "planningAcceptance":  {
+                               "sharedUpperCostsCents":  [
+                                                             141000,
+                                                             89400
+                                                         ],
+                               "personalFoodUpperCentsPerPerson":  2000,
+                               "contingencyCentsPerPerson":  1000,
+                               "expectedUpperTotalsByOption":  [
+                                                                   50000,
+                                                                   32800
+                                                               ],
+                               "revisedMasonBudgetCapCents":  45000,
+                               "optionInvalidatedByRevisedCap":  0
+                           },
+    "mockOnly":  true,
+    "note":  "Synthetic demo configuration with $520/$560/$600 caps. Reported $328/$500 live estimates are unverified examples here; unknown essential prices still block approval.",
+    "liveDemoScenario":  {
+                             "capsCents":  [
+                                               52000,
+                                               56000,
+                                               60000
+                                           ],
+                             "reportedUpperTotalsCents":  [
+                                                              32800,
+                                                              50000
+                                                          ],
+                             "revisedMasonBudgetCapCents":  45000,
+                             "pricesVerified":  false
+                         }
+}

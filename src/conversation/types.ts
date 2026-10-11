@@ -35,6 +35,8 @@ export interface IntentInput {
   memberNames: string[];
   pendingField?: ConstraintField;
   hasActionable: boolean;
+  /** Fields the rules already captured from this message. The model should report only OTHER things. */
+  alreadyKnown?: ConstraintField[];
 }
 
 /** Untrusted model output. Always validated by `validateIntent` before use. */
@@ -48,6 +50,11 @@ export interface ConversationDependencies {
   trip: TripConfig;
   intentModel: IntentModel;
   messenger: Messenger;
+  /**
+   * Off by default. When true, a DM from a number that is NOT enrolled is let through only if it is a join-code
+   * message (identity `guest:<number>`), and the parser emits a `join_trip` command for the app to validate.
+   */
+  joinCodes?: boolean;
   /** Injected by the app (C). Used when `parseInbound` is called without an explicit context. */
   getConversationContext(actorId: string, spaceId: string, targetMessageId?: string): Promise<TripConversationContext>;
 }

@@ -1,7 +1,30 @@
 {
-  "name": "splitbot", "version": "0.1.0", "private": true, "type": "module",
-  "engines": { "node": ">=20 <21" },
-  "scripts": { "test": "vitest run", "typecheck": "tsc --noEmit", "build": "tsc" },
-  "dependencies": { "better-sqlite3": "^11.10.0" },
-  "devDependencies": { "@types/better-sqlite3": "^7.6.13", "@types/node": "^22.15.30", "typescript": "^5.8.3", "vitest": "^3.2.4" }
+  "name": "splitbot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20 <21"
+  },
+  "scripts": {
+    "dev": "node --env-file=.env --import tsx --watch src/app/main.ts",
+    "seed": "node --env-file=.env --import tsx scripts/seed.ts",
+    "demo": "npm run seed && npm run dev",
+    "demo:chat": "node --import tsx scripts/demo-chat.ts",
+    "diagnose:trip": "node --import tsx scripts/diagnose-trip.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --project tsconfig.build.json"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.10.0",
+    "spectrum-ts": "12.10.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.15.30",
+    "tsx": "^4.20.6",
+    "typescript": "^5.8.3",
+    "vitest": "^4.1.11"
+  }
 }

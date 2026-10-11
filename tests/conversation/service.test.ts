@@ -69,7 +69,8 @@ describe('direct (one-on-one) mode: same product without a group chat', () => {
   it('parses a DM the same way and replies privately', async () => {
     const { service } = setup({}, undefined, 'direct');
     const r = await service.parseInbound({ eventId: 'e', messageId: 'm', senderId: 'alex', spaceId: 'dm-alex', visibility: 'private', occurredAt: '2026-10-01T12:00:00Z', text: 'my max is $250' });
-    expect(r.kind === 'command' && r.command.action).toMatchObject({ kind: 'update_constraint', update: { memberId: 'alex', field: 'budget', value: 25000 } });
+    expect(r.kind === 'commands' && r.commands[0]!.action).toMatchObject({ kind: 'update_constraint', update: { memberId: 'alex', field: 'budget', value: 25000 } });
+    expect(r.kind === 'commands' && r.acknowledgement?.audience).toEqual({ kind: 'private', memberId: 'alex' });
     const q = await service.parseInbound({ eventId: 'e2', messageId: 'm2', senderId: 'alex', spaceId: 'dm-alex', visibility: 'private', occurredAt: '2026-10-01T12:00:00Z', text: 'I might spend $250' });
     expect(q.kind === 'reply' && q.message.audience).toEqual({ kind: 'private', memberId: 'alex' });
   });
