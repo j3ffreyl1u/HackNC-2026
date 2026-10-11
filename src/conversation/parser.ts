@@ -28,7 +28,7 @@ const WRONG = /^(?:(?:no|nope|nah)[ ,]+)?(?:that'?s|that is|it'?s|it is|this is)
 const ID = '([A-Za-z0-9][\\w:.\\-]*)';
 const REQUEST_PLANS = /^(?:(?:please|pls|ok|okay|alright|so)[,\s]+)?(?:(?:can|could) you\s+)?(?:(?:show|give|get|send)\s+(?:me\s+|us\s+)?(?:the\s+|some\s+|a few\s+|a couple of\s+|a couple\s+)?(?:trip\s+)?(?:options|plans|proposals|itineraries|ideas)|(?:pull|put) together\s+(?:a\s+|some\s+)?(?:(?:few|couple of|couple)\s+)?(?:trip\s+)?(?:options|plans|ideas)(?:\s+for us)?|(?:plan|research)\s+(?:it|this|the trip|our trip)|find\s+(?:us\s+)?(?:trip\s+)?options|what are (?:our|the) options|(?:(?:let'?s|lets|can we|could we|we should|i want to|we want to|i'?d like to)\s+)?(?:start|begin|get started)(?:\s+(?:on\s+)?(?:planning|plan))?(?:\s+(?:a|the|our|this))?(?:\s+(?:road\s+)?trip)?|(?:let'?s|lets|can we|could we|we should|i want to|we want to|i'?d like to)\s+plan(?:\s+(?:a|the|our|this))?(?:\s+(?:road\s+)?trip)?(?:\s+together)?)$/i;
 const STATUS = /^(?:(?:so\s+)?(?:what'?s|whats|how'?s|hows)\s+(?:the\s+)?(?:status|progress|plan|it going)(?:\s+(?:so far|looking|going))?|where (?:are we|do we stand)(?:\s+(?:at|on this))?|what do you have(?:\s+so far)?|any (?:updates?|news|progress)|status(?: update)?)$/i;
-const ABOUT_SOMEONE = /^(?:so\s+)?(?:what(?:'s|s| did| has| does| is)\s+(\w+)\s+(?:say|said|tell you|told you|put|give you|gave you|send|sent|want|think|thinking|saying)|(?:did|has)\s+(\w+)\s+(?:answer|reply|respond|text|say anything|send anything|tell you anything)|(?:any word from|have you heard from|heard from|anything from)\s+(\w+)|how(?:'s| is)\s+(\w+)\s+doing)(?:\s+(?:yet|so far))?$/i;
+const ABOUT_SOMEONE = /^(?:so\s+)?(?:what(?:'s|s| did| has| does| is)\s+(\w+)\s+(?:say|said|tell you|told you|put|give you|gave you|send|sent|want|think|thinking|saying)|(?:did|has)\s+(\w+)\s+(?:answer|reply|respond|text|say anything|send anything|tell you anything)|(?:any word from|have you heard from|heard from|anything from)\s+(\w+)|how(?:'s| is)\s+(\w+)\s+doing|(?:is|has|did)\s+(\w+)\s+(?:still\s+)?(?:planning|done|finished|finish|ready|all set|set|in|on board|there|responded|replied)(?:\s+(?:planning|yet|so far))?)(?:\s+(?:yet|so far))?$/i;
 const GREETING = /^(?:hi|hey|hello|yo|hiya|good (?:morning|afternoon|evening))\b[,!.\s]*/i;
 const REQUEST_FUNDING = /^(?:request|start|set up|send)\s+(?:the\s+)?(?:contributions?|funding|contribution requests)$/i;
 const FUND_STATUS = /^(?:so\s+)?(?:how(?:'s| is)\s+(?:the\s+)?(?:trip\s+)?(?:fund|pot|money)(?:\s+(?:looking|going|doing|so far))?|(?:what'?s|what is|how much is)\s+(?:in\s+)?(?:the\s+)?(?:trip\s+)?(?:fund|pot)(?:\s+(?:at|now|status))?|who(?:'s| is)?\s*(?:still\s+)?owes?(?:\s+(?:money|anything|us|the fund))?|who\s+(?:still\s+)?(?:needs to pay|hasn'?t\s+(?:paid|chipped in|sent(?: their share)?))(?:\s+yet)?|(?:trip\s+)?fund\s+status|who(?:'s|s| has| have)?\s+(?:paid|chipped in|sent (?:their|the) (?:share|money))(?:\s+(?:yet|so far))?|(?:has|did|have)\s+(?:everyone|everybody|anyone|anybody|we all)\s+(?:paid|chipped in|sent (?:their|the) (?:share|money))(?:\s+(?:yet|so far))?|how much\s+(?:money\s+)?(?:do|have)\s+(?:we|we've)\s+(?:have|got|raised|collected|put in)(?:\s+(?:so far|in the (?:fund|pot)|yet|total))?|how much\s+(?:money\s+)?(?:do we have|is there)(?:\s+(?:in the (?:fund|pot)|so far|left))?)[?!.]*$/i;
@@ -241,11 +241,20 @@ export function createParser(deps: ConversationDependencies) {
     let m: RegExpExecArray | null;
     // "What did Mason say?": the bot is the go-between, so it repeats what is fine to repeat (never a budget).
     const about = ABOUT_SOMEONE.exec(plain);
-    const aboutName = about ? (about[1] ?? about[2] ?? about[3] ?? about[4])?.toLowerCase() : undefined;
+    const aboutName = about ? (about[1] ?? about[2] ?? about[3] ?? about[4] ?? about[5])?.toLowerCase() : undefined;
     const person = aboutName ? ctx.others?.find((o) => o.name.toLowerCase() === aboutName || o.name.toLowerCase().startsWith(`${aboutName} `)) : undefined;
     if (person) {
+      const list = (items: string[]) => items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items.at(-1)}` : items[0]!;
+      if (about?.[5] !== undefined) {
+        // "Is Mason planning?": a plain yes or no first, then what they have given and what is still open.
+        const done = person.missing.length === 0;
+        const said = person.shared.length > 0 ? ` ${person.name} ${person.shared.join(' and ')}.` : '';
+        const open = done ? '' : ` ${person.shared.length > 0 ? 'However, I' : 'I'}'m still waiting on ${person.name}'s ${list(person.missing)}.`;
+        const lead = done ? `No, ${person.name} has finished.` : person.shared.length > 0 ? `Yes, ${person.name} is still planning.` : `Yes, ${person.name} hasn't told me anything yet.`;
+        return reply(msg, `${lead}${said}${open}`, 'about-someone', true);
+      }
       const said = person.shared.length > 0 ? `${person.name} ${person.shared.join(' and ')}.` : `${person.name} hasn't told me anything yet.`;
-      const left = person.missing.length > 0 ? ` Still waiting on ${person.name}'s ${person.missing.length > 1 ? `${person.missing.slice(0, -1).join(', ')} and ${person.missing.at(-1)}` : person.missing[0]}. Say "show us options" and I'll nudge for it.` : ' I have everything I need from them.';
+      const left = person.missing.length > 0 ? ` Still waiting on ${person.name}'s ${list(person.missing)}. Say "show us options" and I'll nudge for it.` : ' I have everything I need from them.';
       return reply(msg, `${said}${left}`, 'about-someone', true);
     }
     if (FUND_REMIND.test(plain)) return one(msg, ctx, { kind: 'request_funding', topic: 'remind' });

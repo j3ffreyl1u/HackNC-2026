@@ -46,6 +46,20 @@ function formatWindows(windows: readonly { startAt: string; endAt: string }[]): 
   }).join(', ') || 'never';
 }
 
+
+/** " Jeffrey is free Nov 14-17 and is into hiking.": what the people who started the plan have shared (never a budget). */
+function authorsSaid(state: TripState, ids: readonly string[]): string {
+  const parts = ids.map((id) => {
+    const windows = effectiveAvailability(state, id);
+    const prefs = statedPreferences(state, id);
+    const bits: string[] = [];
+    if (windows && windows.length > 0) bits.push(`is free ${formatWindows(windows)}`);
+    if (prefs && prefs.length > 0 && !prefs.includes('no preference')) bits.push(`is into ${prefs.join(' and ')}`);
+    return bits.length > 0 ? `${displayName(state, id)} ${bits.join(' and ')}.` : '';
+  }).filter(Boolean);
+  return parts.length > 0 ? ` ${parts.join(' ')}` : '';
+}
+
 /** "leaving from Chapel Hill for 2 nights, going to Washington DC": the shared basics in one casual phrase. */
 function describeBasics(origin: ConstraintValues['origin'], duration: ConstraintValues['duration'], region: ConstraintValues['region']): string {
   const place = region.destination !== undefined ? `going to ${titleCase(region.destination)}`
@@ -150,7 +164,7 @@ function evaluate(state: TripState): Evaluation {
     const authors = new Set([...origin.authors, ...duration.authors, ...region.authors, ...transport.authors]);
     for (const id of ids.filter((x) => !authors.has(x))) {
       missing.push(`confirm_basics:${id}`);
-      privately('basics', id, `confirm_basics:${id}`, `Hey ${displayName(state, id)}! ${names(state, [...authors])} started planning a trip with you. So far the idea is ${describeBasics(origin.value, duration.value, region.value)}, with a car. Does that work for you, or would you change anything?`);
+      privately('basics', id, `confirm_basics:${id}`, `Hey ${displayName(state, id)}! ${names(state, [...authors])} started planning a trip with you. So far the idea is ${describeBasics(origin.value, duration.value, region.value)}, with a car.${authorsSaid(state, [...authors])} Does that work for you, or would you change anything?`);
     }
   }
 

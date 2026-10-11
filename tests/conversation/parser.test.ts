@@ -458,6 +458,15 @@ describe('relaying what someone else said', () => {
     expect(reply).toMatch(/Still waiting on Mason's budget/);
     expect(reply).not.toMatch(/\$|\d{3,}/);
   });
+  it.each(['Is Mason planning?', 'is mason still planning', 'has Mason finished?', 'is Mason done yet'])('"%s" gets a yes, what Mason has given, and what is still open', async (t) => {
+    const reply = text(await ask(t));
+    expect(reply).toMatch(/^Yes, Mason is still planning\. Mason is free Nov 14-17 and is into food and museums\. However, I'm still waiting on Mason's budget\./);
+    expect(reply).not.toMatch(/\$|\d{3,}/);
+  });
+  it('answers no when the person has given everything', async () => {
+    const done = setup({ others: [{ memberId: 'mason', name: 'Mason', shared: ['is free Nov 14-17', 'is into food'], missing: [] }] } as never).service;
+    expect(text(await done.parseInbound(msg({ text: 'is Mason planning?', visibility: 'private' })))).toBe('No, Mason has finished. Mason is free Nov 14-17 and is into food.');
+  });
   it('says so plainly when someone has said nothing', async () => {
     expect(text(await ask('what did Alex say?'))).toMatch(/^Alex hasn't told me anything yet\. Still waiting on Alex's dates, preferences and budget\./);
   });

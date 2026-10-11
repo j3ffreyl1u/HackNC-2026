@@ -136,7 +136,7 @@ describe('first live DM scenario, end to end (A parser + C runtime + B planner, 
     expect(steps.flatMap((r) => r.mason)).toEqual([]);
     // ... but the moment he starts talking, he is asked whether the plan so far works for him (that names Jeffrey, who started it) ...
     steps.push(await t.say(MASON, 'I want to plan a trip'));
-    expect(steps.flatMap((r) => r.mason).some((x) => /^Hey Mason! Jeffrey started planning a trip with you\. So far the idea is leaving from Chapel Hill for 2 nights, going to Asheville, with a car\. Does that work for you/i.test(x))).toBe(true);
+    expect(steps.flatMap((r) => r.mason).some((x) => /^Hey Mason! Jeffrey started planning a trip with you\. So far the idea is leaving from Chapel Hill for 2 nights, going to Asheville, with a car\. Jeffrey is free Nov 14-16 and is into hiking\. Does that work for you/i.test(x))).toBe(true);
     steps.push(await t.say(MASON, 'yes that works'));
     // ... and only then his own dates question, one at a time.
     const datesQuestion = /which dates/i;
