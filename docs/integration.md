@@ -87,3 +87,11 @@ Google display restrictions are handled by C's original private, ephemeral view.
 origin/integration/combined-v2 is now available at e18a28a. Its src/planning and src/research match Mason e36d794 exactly (read-only git diff reports no paths). C's follow-up was tested locally against that branch's updated A boundary and Mason's current modules: 488 travel tests passed, one live test skipped; typecheck and build passed. The A/B overlays remain local and are excluded from C's follow-up commit. Jeffrey should cherry-pick C's follow-up onto e18a28a and handle the sole fast-forward of shared main.
 
 The new availability boundary emits real intervals; C passes them through unchanged. The agreed cap preset is $520/$560/$600 -> $450 with synthetic $328/$500 options. This verifies the budget/revision story rather than establishing live quotes. No live test message or research request was sent. Shared main was not merged or pushed by C.
+
+## First live DM feedback: C follow-up
+
+Readiness questions are now deferred during per-command application and selected once at the end of the inbound event. The final pass uses B's deterministic topic selection and two-question limit. Deferred questions are not saved as asked, so their cooldown does not suppress a question that was never delivered. An A clarification takes priority and suppresses extra readiness questions for that event. Material transitions, rejection replies and proposals remain separate from readiness questions.
+
+Explicit request_plans with NOT_READY receives a private, actor-facing summary of missing/conflicting fields even when prior questions are on cooldown. It names missing member slots without exposing caps or calendar details. The standard readiness questions use the proposed casual wording. The roster message asks the organizer to add missing participants rather than claiming the bot can dynamically enroll someone who texts it.
+
+A runtime regression covers two commands in one message, only two stored/delivered readiness questions and a repeated request during cooldown. Jeffrey's 961d0c4 parser/acknowledgement changes were not available on origin during this fetch; he should push/integrate them on A's side and verify that show us some options reaches request_plans. No live test messages were sent by C.
