@@ -186,6 +186,8 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
           throw new Error('Planner returned a state for another trip or an invalid revision step.');
         }
         nextState = applied.state;
+        replies.push(...applied.replies.map((reply, replyIndex) => planner.install ? makeMessage(tripId, `${message.eventId}:${index}:${replyIndex}`, { ...reply, proposalRef: reply.proposalRef ? { ...reply.proposalRef, kind: applied.state.status === 'awaiting_acceptance' || applied.state.status === 'approved' ? 'accept' : 'select' } : undefined }) : reply));
+        researchRequested = applied.researchRequested;
         // Asked for options too early? Message whoever is holding things up, so it is not left to the requester to chase them.
         if (command.action.kind === 'request_plans' && applied.rejection?.code === 'NOT_READY' && planner.nudgeMissing) {
           const nudged = planner.nudgeMissing(nextState, member.memberId, message.occurredAt);
@@ -193,8 +195,6 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
           replies.push(...nudged.replies.map((reply, nudgeIndex) => makeMessage(tripId, `nudge:${message.eventId}:${nudgeIndex}`, reply)));
           if (nudged.replies.length > 0) replies.push(makeMessage(tripId, `nudged:${message.eventId}`, { audience: { kind: 'private', memberId: member.memberId }, text: `I'll nudge ${nudged.replies.map((r) => (r.audience.kind === 'private' ? state.roster?.find((m) => m.memberId === (r.audience as { memberId: string }).memberId)?.displayName : undefined)).filter(Boolean).join(' and ')} for what I'm missing and let you know as soon as I have it.` }));
         }
-        replies.push(...applied.replies.map((reply, replyIndex) => planner.install ? makeMessage(tripId, `${message.eventId}:${index}:${replyIndex}`, { ...reply, proposalRef: reply.proposalRef ? { ...reply.proposalRef, kind: applied.state.status === 'awaiting_acceptance' || applied.state.status === 'approved' ? 'accept' : 'select' } : undefined }) : reply));
-        researchRequested = applied.researchRequested;
       }
       if (planner.finalizeTurn && !(parsed.kind === 'commands' && parsed.clarificationQuestion) && commands.some(c => c.action.kind === 'update_constraint' || c.action.kind === 'request_plans')) {
         const final = planner.finalizeTurn(nextState, message.occurredAt, member.memberId);

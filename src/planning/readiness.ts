@@ -274,7 +274,9 @@ export function outstandingForOthers(state: TripState, actorId: string): Array<{
   const out: Array<{ memberId: string; items: string[]; question: ReadinessQuestion }> = [];
   for (const id of participantIds(state)) {
     if (id === actorId) continue;
-    const items = missing.filter((m) => m.endsWith(`:${id}`)).map(label).filter((x): x is string => x !== undefined);
+    let items = missing.filter((m) => m.endsWith(`:${id}`)).map(label).filter((x): x is string => x !== undefined);
+    // The plan sign-off is the question itself, so it is only named when it is the one thing missing.
+    if (items.length > 1) items = items.filter((x) => x !== 'OK on the plan so far');
     if (items.length === 0) continue;
     const question = candidates
       .filter((c) => c.question.audience.kind === 'private' && c.question.audience.memberId === id)
