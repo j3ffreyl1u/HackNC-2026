@@ -164,7 +164,7 @@ describe('application runtime', () => {
       expect(alex.actionable[0].actions).toEqual(['accept']);
       expect(alex.targetProposal?.kind).toBe('accept');
       expect(alex.pendingQuestion?.field).toBe('budget');
-      expect(alex.pendingConfirmation?.valueCents).toBe(25000);
+      expect(alex.pendingConfirmation).toEqual({ field: 'budget', valueCents: 25000 });
       await conversation.emit(inbound('mason-context', 'mason'));
       const mason = conversation.parseInbound.mock.calls[1][1];
       expect(mason.actionable).toEqual([]);

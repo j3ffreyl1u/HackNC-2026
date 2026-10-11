@@ -65,3 +65,23 @@ describe('open gaps', () => {
     console.log('K>>', JSON.stringify(r.alex)); expect(said(r)).toMatch(/demo|fixture|made up/i); await h.stop();
   });
 });
+
+describe('tentative dates', () => {
+  const dates = async (h: Awaited<ReturnType<typeof humans>>) => (await h.state()).memberConstraints.filter((c) => c.memberId === 'mason' && c.field === 'availability');
+  it('"maybe Nov 14-16?" then "yes" saves those dates', async () => {
+    const h = await humans(); const ask = await h.say('mason', 'maybe Nov 14-16?');
+    expect(await dates(h), said(ask)).toHaveLength(0);
+    const r = await h.say('mason', 'yes');
+    const saved = await dates(h); expect(saved, said(r)).toHaveLength(1);
+    expect(JSON.stringify(saved[0]!.value)).toMatch(/11-14/); expect(said(r)).toMatch(/Nov(ember)? 14/); await h.stop();
+  });
+  it('"maybe Nov 14-16?" then "no" saves nothing and asks for the real dates', async () => {
+    const h = await humans(); await h.say('mason', 'maybe Nov 14-16?');
+    const r = await h.say('mason', 'no'); expect(await dates(h)).toHaveLength(0); expect(said(r)).toMatch(/which dates/i); await h.stop();
+  });
+  it('a different answer replaces the pending dates', async () => {
+    const h = await humans(); await h.say('mason', 'maybe Nov 14-16?'); await h.say('mason', 'free Nov 21-23');
+    const saved = await dates(h); expect(saved).toHaveLength(1); expect(JSON.stringify(saved[0]!.value)).toMatch(/11-21/);
+    const r = await h.say('mason', 'yes'); expect((await dates(h)).length, said(r)).toBe(1); await h.stop();
+  });
+});

@@ -68,10 +68,7 @@ export interface OutboundMessage {
  * A yes/no question we just asked this member. The app stores it (per member) and passes it back as
  * `TripConversationContext.pendingConfirmation` so a later "yes" has meaning. Clear it once answered.
  */
-export interface PendingConfirmation {
-  field: 'budget';
-  valueCents: number;
-}
+export type PendingConfirmation = { field: 'budget'; valueCents: number } | { field: 'availability'; windows: Array<{ start: string; end: string }> };
 
 /**
  * - `command`: exactly one command and nothing to say.

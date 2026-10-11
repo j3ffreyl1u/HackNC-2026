@@ -1,4 +1,5 @@
 /** Shared, provider-neutral contracts for the group trip planner. IDs are opaque strings. */
+import type { PendingConfirmation } from './conversation.js';
 export type {
   DateWindow, ConstraintValue, PendingConfirmation, SendResult, TripMember, TripConfig,
   ActionableItem, TripConversationContext,
@@ -199,7 +200,7 @@ export interface PendingQuestion {
 export interface TripState {
   /** Internal warning keys by approved revision; never part of the public snapshot. */
   fundingNoticeKeys?: Record<string, string[]>;
-  pendingConfirmations?: Record<MemberId, { field: 'budget'; valueCents: number }>;
+  pendingConfirmations?: Record<MemberId, PendingConfirmation>;
   costConfirmations?: Array<{ actorId: MemberId; candidateId: string; costId: string; revision: number; sourceMessageId: string; confirmedAt: string }>;
   itineraryConfirmations?: Array<{ actorId: MemberId; candidateId: string; itemId: string; revision: number; sourceMessageId: string; confirmedAt: string }>;
   roster?: Array<{ memberId: MemberId; displayName: string; consented: boolean }>;
@@ -245,12 +246,12 @@ export interface ProposalReference {
 
 export type ParseResult =
   | { kind: 'command'; command: TripCommand }
-  | { kind: 'commands'; commands: TripCommand[]; clarificationQuestion?: string; acknowledgement?: string; expects?: { field: 'budget'; valueCents: number } }
-  | { kind: 'reply'; message: OutboundMessage; expects?: { field: 'budget'; valueCents: number } }
+  | { kind: 'commands'; commands: TripCommand[]; clarificationQuestion?: string; acknowledgement?: string; expects?: PendingConfirmation }
+  | { kind: 'reply'; message: OutboundMessage; expects?: PendingConfirmation }
   | { kind: 'ignored'; reason: string };
 
 export interface ConversationContext {
-  pendingConfirmation?: { field: 'budget'; valueCents: number };
+  pendingConfirmation?: PendingConfirmation;
   tripId: TripId;
   revision: number;
   status: TripState['status'];

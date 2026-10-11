@@ -156,6 +156,7 @@ export function createParser(deps: ConversationDependencies) {
     const asks: string[] = [];
     let private_ = false;
     let hedgedBudget: number | undefined;
+    let hedgedDates: Array<{ start: string; end: string }> | undefined;
     const acks: string[] = [];
 
     for (const item of items) {
@@ -183,7 +184,8 @@ export function createParser(deps: ConversationDependencies) {
           hedgedBudget = v.value;
         } else {
           const heard = v.field === 'availability' ? v.value.filter((w): w is { start: string; end: string } => 'start' in w).map(formatWindow).join(' or ') : '';
-          asks.push(`I want to get the dates right. ${heard ? `Can you actually do ${heard}? Say "free ${heard}" and I'll lock it in, or tell me which dates you can do.` : 'Which ones can you actually do? Something like "free Oct 17-19" works.'}`);
+          if (heard) { hedgedDates = v.value.filter((w): w is { start: string; end: string } => 'start' in w); private_ = true; }
+          asks.push(`I want to get the dates right. ${heard ? `Can you actually do ${heard}? Say "yes" or "free ${heard}" and I'll lock it in, or tell me which dates you can do.` : 'Which ones can you actually do? Something like "free Oct 17-19" works.'}`);
         }
         continue;
       }
@@ -202,7 +204,8 @@ export function createParser(deps: ConversationDependencies) {
     }
 
     const clarification = asks.length ? replyMessage(msg, asks.join('\n'), 'clarify', private_) : undefined;
-    const expects = hedgedBudget !== undefined ? { expects: { field: 'budget' as const, valueCents: hedgedBudget } } : {};
+    const expects = hedgedBudget !== undefined ? { expects: { field: 'budget' as const, valueCents: hedgedBudget } }
+      : hedgedDates?.length ? { expects: { field: 'availability' as const, windows: hedgedDates } } : {};
     if (commands.length === 0) return clarification ? { kind: 'reply', message: clarification, ...expects } : { kind: 'ignored', reason: 'nothing to record' };
     if (commands.length === 1 && !clarification && !acknowledgement) return { kind: 'command', command: commands[0]! };
     return { kind: 'commands', commands, ...(clarification ? { clarification } : {}), ...(acknowledgement ? { acknowledgement } : {}), ...expects };
@@ -234,6 +237,13 @@ export function createParser(deps: ConversationDependencies) {
 
   function resolveAnswer(msg: InboundMessage, ctx: TripConversationContext, yes: boolean): ParseResult {
     const pending = ctx.pendingConfirmation;
+    if (pending?.field === 'availability') {
+      if (ctx.actionable.length > 0) return reply(msg, `Quick check, I've got two things open: are you free ${pending.windows.map(formatWindow).join(' or ')}, and the plan waiting on you? Say "free ${pending.windows.map(formatWindow).join(' or ')}" for the dates, or "accept <id> v<n>" / "pick <id>" for the plan.`, 'which', true);
+      if (!yes) return reply(msg, 'No problem! Which dates can you actually do? Something like "free Oct 17-19" works.', 'dates-no', true);
+      const heard = pending.windows.map(formatWindow).join(' or ');
+      const locked = updateCommand(msg, ctx, { field: 'availability', value: pending.windows } as ConstraintValue, false);
+      return { kind: 'commands', commands: [locked], acknowledgement: replyMessage(msg, `Locked in, you're free ${heard}. Tell me if I got anything wrong.`, 'locked', true) };
+    }
     if (pending && ctx.actionable.length > 0) {
       // A bare yes/no could answer either question. Never guess: a plan acceptance is a financial commitment.
       return reply(msg, `Quick check, I've got two things open: is ${formatCents(pending.valueCents).replace(/\.00$/, '')} your firm max, and the plan waiting on you? Say "my max is $X" for the budget, or "accept <id> v<n>" / "pick <id>" for the plan.`, 'which2', true);
