@@ -73,6 +73,9 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     try { url = new URL(env.NESSIE_BASE_URL); }
     catch { throw new AppConfigError('NESSIE_BASE_URL must be a valid HTTPS URL.'); }
     if (url.protocol !== 'https:') throw new AppConfigError('NESSIE_BASE_URL must use HTTPS.');
+    required(env.NESSIE_ACCOUNT_ID, 'NESSIE_ACCOUNT_ID');
+    required(env.NESSIE_PLAN_REVISION, 'NESSIE_PLAN_REVISION');
+    if (!Number.isSafeInteger(Number(env.NESSIE_PLAN_REVISION)) || Number(env.NESSIE_PLAN_REVISION) < 0) throw new AppConfigError('NESSIE_PLAN_REVISION must be a nonnegative integer.');
   }
 
   return {

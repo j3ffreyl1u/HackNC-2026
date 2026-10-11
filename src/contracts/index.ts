@@ -196,6 +196,8 @@ export interface PendingQuestion {
 }
 
 export interface TripState {
+  /** Internal warning keys by approved revision; never part of the public snapshot. */
+  fundingNoticeKeys?: Record<string, string[]>;
   pendingConfirmations?: Record<MemberId, { field: 'budget'; valueCents: number }>;
   costConfirmations?: Array<{ actorId: MemberId; candidateId: string; costId: string; revision: number; sourceMessageId: string; confirmedAt: string }>;
   itineraryConfirmations?: Array<{ actorId: MemberId; candidateId: string; itemId: string; revision: number; sourceMessageId: string; confirmedAt: string }>;
@@ -292,6 +294,7 @@ export interface TripEnrollment {
 }
 
 export interface PublicTripSnapshot {
+  nature?: { summaries: Array<{ candidateId: string; title: string; outdoorStops: Array<{ label: string; location: string }>; drivingMinutes: number; unknownLegs: number }>; comparison?: string };
   tripId: TripId;
   revision: number;
   status: TripState['status'];

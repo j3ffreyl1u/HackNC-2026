@@ -3,11 +3,15 @@ import { readFile } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 import type { Repository } from '../contracts/index.js';
 import type { LiveResearchDisplay } from './live-research.js';
+import type { FundService } from '../funding/service.js';
+import { toPlanningCandidate } from './planning-adapter.js';
+import { outdoorSummary, drivingComparison } from '../planning/nature.js';
 
 export interface HttpServerOptions {
   repository: Repository;
   webRoot?: string;
   researchDisplay?: LiveResearchDisplay;
+  fundService?: FundService;
 }
 
 export interface LocalHttpServer {
@@ -73,10 +77,28 @@ async function route(request: IncomingMessage, response: ServerResponse, options
     await sendFile(response, resolve(webRoot, name), name.endsWith('.png') ? 'image/png' : name.endsWith('.js') ? 'text/javascript; charset=utf-8' : 'text/css; charset=utf-8');
     return;
   }
+  const fundMatch = /^\/api\/trips\/([^/]+)\/fund$/.exec(url.pathname);
+  if (request.method === 'GET' && fundMatch) {
+    const tripId = decodeURIComponent(fundMatch[1]);
+    const state = await options.repository.loadTrip(tripId);
+    if (!state) { sendJson(response, 404, { error: 'Trip not found.' }); return; }
+    if (!options.fundService) { sendJson(response, 200, { status: 'disabled', revision: state.revision }); return; }
+    try {
+      const fund = await options.fundService.publicView(state);
+      const current = await options.repository.loadTrip(tripId);
+      if (current?.revision !== state.revision) { sendJson(response, 409, { error: 'Plan changed. Refresh the fund.' }); return; }
+      sendJson(response, 200, fund);
+    } catch { sendJson(response, 503, { status: 'unknown', error: 'Fund unavailable. No simulated data was substituted.' }); }
+    return;
+  }
   const match = /^\/api\/trips\/([^/]+)\/snapshot$/.exec(url.pathname);
   if (request.method === 'GET' && match) {
     const tripId = decodeURIComponent(match[1]);
     const snapshot = await options.repository.getPublicSnapshot(tripId);
+    if (snapshot) {
+      const candidates = snapshot.candidates.map(toPlanningCandidate);
+      snapshot.nature = { summaries: candidates.map(outdoorSummary), comparison: drivingComparison(candidates)?.text };
+    }
     sendJson(response, snapshot ? 200 : 404, snapshot ?? { error: 'Trip not found.' });
     return;
   }
