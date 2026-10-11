@@ -535,3 +535,18 @@ describe('splitting the shared questions between two people', () => {
     expect(region('4 hours tops')).toMatchObject({ field: 'region', maxTravelMinutes: 240 });
   });
 });
+
+describe('the screenshot from the phone run', () => {
+  it('the same place twice is not a disagreement, asking for help keeps you moving, and "what do you need from me" lists what is missing', async () => {
+    const t = await live();
+    await t.say(MASON, 'lets plan a trip. leaving from chapel hill, driving, 3 nights, going to washington dc, free all of november, my max is 900, i like food');
+    await t.say(JEFF, 'hey');
+    const asked = await t.say(JEFF, 'Can you ask Mason if he has a car');
+    expect(asked.jeff.join(' ')).toMatch(/Done, I asked Mason\..*Meanwhile, /);
+    const needs = await t.say(JEFF, 'Okay great what other information do you need from me');
+    expect(needs.jeff.join(' ')).toMatch(/I still need .*your free dates.*your budget/);
+    const same = await t.say(JEFF, "I'm free all of November and I also want to go to Washington DC");
+    expect([...same.jeff, ...same.mason].join(' ')).not.toMatch(/both thinking|Which sounds better|changed the place/);
+    await t.stop();
+  });
+});

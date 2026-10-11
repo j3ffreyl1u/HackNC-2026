@@ -4,6 +4,7 @@ import { categoryOfPurchase, describeCoverage, describePurchaseCheck, describeWr
 import { Q } from '../planning/wording.js';
 import { formatMinutes, outdoorSummary } from '../planning/nature.js';
 import { tripDates } from '../planning/generate.js';
+import { outstandingFor } from '../planning/readiness.js';
 import { accumulatePreferences } from '../planning/constraints.js';
 import { toPlanningState } from './planning-adapter.js';
 import type {
@@ -401,7 +402,9 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
                 : `Hey ${toTarget}! ${asker} wanted you to know: "${relay.text}"`;
           nextState = { ...nextState, relayLog: [...(nextState.relayLog ?? []), { fromId: member.memberId, toId: target.memberId, kind: relay.mode, text: relay.text, at: message.occurredAt }].slice(-30) };
           replies.push(makeMessage(tripId, `relay:${message.eventId}:${index}`, { audience: { kind: 'private', memberId: target.memberId }, text: body }));
-          replies.push(toAsker(relay.mode === 'ask' ? `Done, I asked ${target.displayName}. I'll tell you what they say.` : relay.mode === 'invite' ? `Done, I messaged ${target.displayName} to get them started.` : `Done, I let ${target.displayName} know.`));
+          let meanwhile: string | undefined;
+          try { meanwhile = state.status === 'gathering' ? outstandingFor(toPlanningState(state), member.memberId).question : undefined; } catch { meanwhile = undefined; }   // a damaged saved trip must not stop the relay
+          replies.push(toAsker(relay.mode === 'ask' ? `Done, I asked ${target.displayName}. I'll tell you what they say.${meanwhile ? ` Meanwhile, ${meanwhile.charAt(0).toLowerCase()}${meanwhile.slice(1)}` : ''}` : relay.mode === 'invite' ? `Done, I messaged ${target.displayName} to get them started.` : `Done, I let ${target.displayName} know.`));
           if (relay.mode === 'ask') relayAsks.set(target.memberId, { askerId: member.memberId, ...(relay.field ? { field: relay.field } : {}) });
           continue;
         }
@@ -747,6 +750,7 @@ async function conversationContext(repository: Repository, state: TripState, mes
     actionable,
     ...(confirmBasics.length > 0 ? { confirmBasics } : {}),
     ...(openFields.length > 1 ? { openFields } : {}),
+    ...(state.status === 'gathering' ? (() => { try { return { stillNeeded: outstandingFor(toPlanningState(state), actorId) }; } catch { return {}; } })() : {}),
     others: othersShared(state, actorId),
     ...(relays.length > 0 ? { relays } : {}),
     ...(approval ? { approval } : {}),
@@ -884,6 +888,7 @@ function basicsChangeNotes(before: TripState, after: TripState, actorId: string)
     const ask = " Let me know if that doesn't work for you.";
     if (b.field === 'origin') notes.push(`${who} changed the starting point to ${b.value}.${ask}`);
     else if (b.field === 'duration') notes.push(`${who} changed the trip to ${b.value} night${b.value === 1 ? '' : 's'}.${ask}`);
+    else if (b.field === 'region' && a.field === 'region' && a.value.toLowerCase().replace(/[.,]/g, '') === b.value.toLowerCase().replace(/[.,]/g, '')) continue;
     else if (b.field === 'region') notes.push(`${who} changed the place to ${b.value}.${ask}`);
     else if (b.field === 'transport' && b.value === 'plane') notes.push(`${who} changed the plan to flying.${ask}`);
     else if (b.field === 'transport' && b.vehicleAvailable === false) notes.push(`Heads up, ${who} says there isn't a car after all.${ask}`);

@@ -270,6 +270,8 @@ export interface ConversationContext {
   confirmBasics?: SharedConstraintValue[];
   openFields?: ConstraintField[];
   others?: Array<{ memberId: string; name: string; shared: string[]; missing: string[] }>;
+  /** What this person still owes and the next question to ask them (for "what else do you need from me?"). */
+  stillNeeded?: { items: string[]; question?: string };
   relays?: Array<{ withName: string; byMe: boolean; kind: 'ask' | 'tell' | 'request' | 'invite' | 'answer'; text: string }>;
   approval?: { title: string; inNames: string[]; waitingNames: string[]; youIn: boolean };
   /** The last few messages with this person, oldest first, so follow-ups like "the second one" or "how much was that?" make sense. */

@@ -88,7 +88,7 @@ function ackPart(v: ConstraintValue, tentative: boolean): string {
   }
 }
 /** "chapel hill" -> "Chapel Hill": only words typed in lower case, so "NC" and "DC" stay as written. */
-const titleCase = (text: string) => text.replace(/\b([a-z])([a-z.']*)/g, (word, first: string, rest: string) => (['of', 'the', 'and', 'in', 'on', 'by'].includes(word) ? word : first.toUpperCase() + rest));
+const titleCase = (text: string) => text.replace(/\b([a-z])([a-z.']*)/g, (word, first: string, rest: string) => (['of', 'the', 'and', 'in', 'on', 'by'].includes(word) ? word : /^(?:dc|nc|sc|va|ny|nyc|ga|fl|tn|md|pa|wv)$/.test(word) ? word.toUpperCase() : first.toUpperCase() + rest));
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** Plain facts the model may use to answer a casual question. Only what is already fine to repeat: never a budget amount. */
@@ -101,7 +101,7 @@ function chatFacts(ctx: TripConversationContext): string[] {
     const missing = o.missing.map((m) => word[m] ?? m);
     facts.push(`${o.name} has said: ${o.shared.length ? o.shared.join(' and ') : 'nothing yet'}. ${o.name} ${missing.length ? `has not given: ${missing.join(', ')}` : 'has given everything needed (the budget stays private)'}.`);
   }
-  const needed = [...new Set([...(ctx.pendingQuestion ? [ctx.pendingQuestion.field] : []), ...(ctx.openFields ?? [])].map((f) => word[f] ?? f))];
+  const needed = ctx.stillNeeded ? ctx.stillNeeded.items : [...new Set([...(ctx.pendingQuestion ? [ctx.pendingQuestion.field] : []), ...(ctx.openFields ?? [])].map((f) => word[f] ?? f))];
   facts.push(needed.length ? `Still needed from the person asking: ${needed.join(', ')}.` : 'Nothing else is needed from the person asking right now.');
   if (ctx.actionable.length) facts.push('There are options waiting for the person asking to pick or approve.');
   if (ctx.optionFacts?.length) facts.push(`${ctx.status === 'approved' ? 'The approved plan' : 'Options on offer'}: ${ctx.optionFacts.join(' | ')}.`);
@@ -561,6 +561,11 @@ export function createParser(deps: ConversationDependencies) {
     if (talkativeChat && wantsCalendar) return reply(msg, ctx.status === 'approved' ? 'Here is a calendar file for the trip, tap it to add the dates: {{CALENDAR_LINK}}' : "I can send a calendar file once everyone has agreed on a plan. Until then the dates aren't final.", 'calendar-link', true);
     // "link", "where's the page", "send me the plan": the trip page holds the day-by-day, costs and sources.
     if (talkativeChat && /^(?:(?:send|give|text|share)\s+(?:me\s+)?)?(?:(?:the|a|that|our|my)\s+)?(?:link|url|page|website|site|trip page|plan link|itinerary)(?:\s+(?:please|pls))?[?!.\s]*$|^(?:where(?:'s| is)|wheres|what(?:'s| is)|whats)\s+(?:the\s+)?(?:link|page|url|website|itinerary)\b|^(?:send|give|show)\s+(?:me\s+)?(?:the\s+)?(?:plan|itinerary)\b/i.test(lean)) return reply(msg, ctx.status === 'gathering' ? "There isn't a plan page yet. Once I have everyone's dates, budget and preferences I'll look up options and send the link." : ctx.status === 'researching' ? "I'm still looking up options. I'll send the link as soon as they're ready." : 'The full plan with the day-by-day, costs and sources is here: {{PLAN_LINK}}', 'plan-link', true);
+    // "what else do you need from me?": say exactly what is still missing from them, and ask the next thing.
+    if (talkativeChat && ctx.stillNeeded && /^(?:(?:ok(?:ay)?|great|cool|so|alright)[\s,!.]+)*(?:what\s+(?:else|other\s+(?:info(?:rmation)?|details?|things?|stuff))|what\s+(?:info(?:rmation)?|details?)|anything\s+else|is\s+there\s+anything\s+else|do\s+you\s+need\s+anything)\b.*\b(?:need|want|missing|from\s+me)\b|^what\s+do\s+you\s+(?:still\s+)?need(?:\s+from\s+me)?/i.test(lean)) {
+      const { items, question } = ctx.stillNeeded;
+      return reply(msg, items.length === 0 ? "Nothing else from you right now. I'll text you when there's something to look at." : `I still need ${list(items)} from you.${question ? ` ${question}` : ''}`, 'still-needed', true);
+    }
     // "can we fly there?" is a question about the plan: both are fine, and saying which is how it gets saved.
     if (talkativeChat && /^(?:(?:can|could|should|shall|would)\s+(?:we|i)|what about|how about|do we|are we)\b.*\b(?:fly|flying|flight|flights|plane)\b/i.test(lean) && !/\bfly[- ]?fishing\b/i.test(lean)) {
       return reply(msg, 'We can plan it either way. Say "flying" or "driving" and I\'ll plan around it.', 'fly-or-drive', true);

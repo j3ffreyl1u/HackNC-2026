@@ -74,7 +74,7 @@ function describeBasics(origin: ConstraintValues['origin'], duration: Constraint
 
 /** "chapel hill" -> "Chapel Hill". Only touches words typed in lower case, so "NC" and "DC" stay as written. */
 function titleCase(text: string): string {
-  return text.replace(/\b([a-z])([a-z.']*)/g, (word, first: string, rest: string) => (['of', 'the', 'and', 'in', 'on', 'by'].includes(word) ? word : first.toUpperCase() + rest));
+  return text.replace(/\b([a-z])([a-z.']*)/g, (word, first: string, rest: string) => (['of', 'the', 'and', 'in', 'on', 'by'].includes(word) ? word : /^(?:dc|nc|sc|va|ny|nyc|ga|fl|tn|md|pa|wv)$/.test(word) ? word.toUpperCase() : first.toUpperCase() + rest));
 }
 
 const nightsText = (n: number) => `${n} night${n === 1 ? '' : 's'}`;
@@ -326,6 +326,20 @@ function settledBasics(state: TripState): string {
   }
   if (transport.status === 'agreed' && travelSorted(transport.value as ConstraintValues['transport'])) parts.push((transport.value as ConstraintValues['transport']).mode === 'plane' ? 'flying' : 'a car');
   return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : parts.join('');
+}
+
+/** What this person still owes (their own details and any shared basic nobody has answered), and the next question to ask them. */
+export function outstandingFor(state: TripState, memberId: string): { items: string[]; question?: string } {
+  const { missing, candidates } = evaluate(state);
+  const shared: Record<string, string> = { origin: "where you're leaving from", transport: "whether you're driving or flying", vehicle: "whose car we're taking", duration: 'how many nights', region: 'where you want to go' };
+  const own: Record<string, string> = { availability: 'your free dates', budget: 'your budget', preferences: "what you're into", confirm_basics: 'your OK on the plan so far' };
+  const items = [
+    ...missing.filter((m) => m in shared).map((m) => shared[m]!),
+    ...missing.filter((m) => m.endsWith(`:${memberId}`)).map((m) => own[m.split(':')[0]!]).filter((x): x is string => x !== undefined),
+  ];
+  const mine = candidates.filter((c) => (c.question.audience.kind === 'private' && c.question.audience.memberId === memberId) || (c.question.audience.kind === 'group' && !c.question.key.startsWith('conflict:')))
+    .sort((a, b) => TOPIC_ORDER.indexOf(a.topic) - TOPIC_ORDER.indexOf(b.topic));
+  return { items: [...new Set(items)], ...(mine[0] ? { question: mine[0].question.text } : {}) };
 }
 
 /** What each other person still owes, in a few words, with the one question to ask them next. Used to nudge them. */

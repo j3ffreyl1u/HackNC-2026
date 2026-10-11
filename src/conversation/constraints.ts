@@ -48,7 +48,7 @@ const NOT_DESTINATION = /\b(?:don'?t|do not|doesn'?t|not|never|won'?t|no way)\b[
 const LOWER_NOT_PLACE = /^(?:the\s+)?(?:bed|sleep|work|school|class|town|be|get|see|do|have|try|make|take|visit|say|ask|check|stay|eat|drink|hike|find|look|plan|my|our|your|his|her|that|this|it|them|us|you|one|some|any|every|all|more|just|really|somewhere|anywhere|something|there|here|home|a|an|the)\b/i;
 /** "boone" -> "Boone", "washington dc" -> "Washington DC": only text typed in lower case; two-letter words are abbreviations. */
 export const properCase = (text: string): string => (text === text.toLowerCase()
-  ? text.replace(/\b([a-z])([a-z.'-]*)/g, (w, f: string, r: string) => (['of', 'the', 'and', 'in', 'on', 'by'].includes(w) ? w : r.length === 1 ? w.toUpperCase() : f.toUpperCase() + r))
+  ? text.replace(/\b([a-z])([a-z.'-]*)/g, (w, f: string, r: string) => (['of', 'the', 'and', 'in', 'on', 'by'].includes(w) ? w : r.length === 1 || /^(?:nyc|d\.?c\.?)$/.test(w) ? w.toUpperCase() : f.toUpperCase() + r))
   : text);
 /** A sentence that opens by correcting the one before: "wait no, 2 nights", "actually $300", "I mean Durham". */
 const CORRECTION = /^(?:oh\s+|um+\s+|hmm+\s+)?(?:wait\b|actually\b|scratch that|i mean\b|sorry\b|oops\b|correction\b|make that\b|no,?\s+(?:wait|make|i mean|actually))/i;

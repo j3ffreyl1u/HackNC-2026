@@ -70,6 +70,7 @@ export async function createChatAdapter(enrollment: C.TripEnrollment, timeZone: 
         status: context.status,
         ...(context.others ? { others: context.others } : {}),
         ...(context.relays?.length ? { relays: context.relays } : {}),
+        ...(context.stillNeeded ? { stillNeeded: context.stillNeeded } : {}),
         ...(context.approval ? { approval: context.approval } : {}),
         ...(context.own ? { own: context.own } : {}),
         ...(context.recent?.length ? { recent: context.recent } : {}),

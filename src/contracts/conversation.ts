@@ -143,6 +143,8 @@ export interface TripConversationContext {
   /** What each OTHER person has told the bot that is fine to repeat (dates, car, tastes; never a budget), so "what did Mason say?" can be answered. */
   others?: Array<{ memberId: string; name: string; shared: string[]; missing: string[] }>;
   /** What the bot passed on between this person and others at their request, so "did you tell Mason that I have a car?" can be answered. */
+  /** What this person still owes and the next question to ask them (for "what else do you need from me?"). */
+  stillNeeded?: { items: string[]; question?: string };
   relays?: Array<{ withName: string; byMe: boolean; kind: 'ask' | 'tell' | 'request' | 'invite' | 'answer'; text: string }>;
   /** What this person has told the bot about themselves, so "what's my budget?" and "what dates did I give you?" are answered (to them only). */
   own?: { budgetDollars?: number; dates?: string; likes?: string[] };
