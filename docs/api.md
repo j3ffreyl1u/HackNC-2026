@@ -81,7 +81,8 @@ Any member's budget or limit, calendar details, who a budget violation belongs t
 ```
 npm run demo:web                         # http://127.0.0.1:3000/?trip=chapel-hill-weekend, approved demo trip, SIMULATED ledger
 DEMO_LEDGER=empty|sample|uneven|even npm run demo:web     # what the pretend banks report
+DEMO_STATE=gathering|researching|proposed|awaiting_acceptance|approved npm run demo:web   # the trip at an earlier stage (own database file per stage)
 DEMO_FUND=off npm run demo:web           # tracking disabled: the fund panel must be hidden
 PORT=3100 DATABASE_PATH=data/other.sqlite npm run demo:web   # another port / another saved trip
 ```
-`demo:web` only serves the page. It has no chat, no research and no keys. To see other trip states (gathering, proposed, awaiting acceptance), ask backend for a `DEMO_STATE` option in `docs/frontend-requests.md`.
+`demo:web` only serves the page. It has no chat, no research and no keys. Use `DEMO_STATE` to see the other trip stages. The fund panel shows "not ready" before approval.
