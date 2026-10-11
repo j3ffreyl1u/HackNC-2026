@@ -8,8 +8,8 @@ import { ResearchError, type PerPersonCostTemplate, type ResearchOption, type Re
 //   POST {baseUrl}/v1beta/interactions   header x-goog-api-key   body { model, input, tools: [{ type: 'google_search' }] }
 // The response's `steps` hold `model_output` text blocks whose `annotations` are `url_citation`s
 // ({ url, title, start_index, end_index }) and a `google_search_result` with `search_suggestions` HTML.
-// This follows https://ai.google.dev/gemini-api/docs/google-search as read on 2026-10-10. It has NOT been run
-// against the live service from this repository (no API key was available); see docs/research.md.
+// This follows https://ai.google.dev/gemini-api/docs/google-search as read on 2026-10-10, and has been run against
+// the live service during the hackathon. Grounded results are still treated as untrusted data.
 
 export const DEFAULT_MODEL = 'gemini-3.8-flash';
 export const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com';
