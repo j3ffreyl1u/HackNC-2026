@@ -11,12 +11,12 @@
     "seed": "node --env-file=.env --import tsx scripts/seed.ts",
     "demo": "npm run seed && npm run dev",
     "demo:chat": "node --import tsx scripts/demo-chat.ts",
+    "demo:web": "node --import tsx scripts/demo-web.ts",
     "diagnose:trip": "node --import tsx scripts/diagnose-trip.ts",
     "simulate:fund": "node --env-file=.env --import tsx scripts/simulate-fund.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "build": "tsc --project tsconfig.build.json",
-    "fund:sim": "node --env-file=.env --import tsx scripts/fund-sim.ts"
+    "build": "tsc --project tsconfig.build.json"
   },
   "dependencies": {
     "better-sqlite3": "^11.10.0",

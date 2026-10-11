@@ -156,7 +156,7 @@ export interface TripCandidate {
 // ---- state ---------------------------------------------------------------------------------------
 
 export type TripStatus = 'gathering' | 'researching' | 'proposed' | 'awaiting_acceptance' | 'approved';
-export type FundingStatus = 'disabled' | 'requesting' | 'partially_funded' | 'funded' | 'unknown' | 'failed';
+export type FundingStatus = 'disabled' | 'tracking' | 'settled' | 'requesting' | 'partially_funded' | 'funded' | 'unknown' | 'failed';
 
 /** PROPOSAL: the design document's state omits the roster and consent record it relies on. */
 export interface RosterMember {
@@ -222,9 +222,7 @@ export type TripAction =
   | { kind: 'accept_candidate'; candidateId: string; revision: number }
   | { kind: 'ask_guide'; question: string }
   | { kind: 'request_funding'; topic?: 'status' | 'remind' | 'wrap_up' }
-  | { kind: 'relay'; to: string; mode: 'ask' | 'tell' | 'request' | 'invite'; text: string; field?: string }
-  | { kind: 'fund_pay'; dollars?: number; forName?: string }
-  | { kind: 'fund_spend'; dollars: number; category: string };
+  | { kind: 'relay'; to: string; mode: 'ask' | 'tell' | 'request' | 'invite'; text: string; field?: string };
 
 export interface TripCommand {
   commandId: string;

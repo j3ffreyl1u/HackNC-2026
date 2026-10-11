@@ -2,9 +2,9 @@ import { extractText } from './gemini.js';
 
 /**
  * The "voice" of the organizer: takes a message the bot already decided to send and rewords it so it reads like a
- * friend texting, not a form. It never decides anything. It can see a message that contains a dollar amount (for example a private
- * "your max is $250" confirmation), so that text is sent to Gemini; its answer must keep every amount exactly as written
- * and is checked against the original. If anything looks off, the original text is sent unchanged.
+ * friend texting, not a form. It never decides anything. A message with a dollar amount is never sent to it: a private
+ * "your max is $250" confirmation is exactly the kind of limit that must not leave the planner for a third party.
+ * Its answer is checked against the original, and if anything looks off, the original text is sent unchanged.
  */
 export interface Voice {
   polish(text: string): Promise<string>;
@@ -23,10 +23,10 @@ const STYLE = [
   'Return only the rewritten message text.',
 ].join('\n');
 
-/** Messages with links, tokens, lists or several lines are never reworded. A message with a dollar amount may be, but only if the exact amount survives. */
+/** Messages with links, tokens, lists, several lines or any dollar amount are never reworded (a private limit stays out of the model's hands). */
 export function shouldPolish(text: string): boolean {
   if (text.length < 8 || text.length > 260) return false;
-  if (/https?:|\{\{|•|\n/.test(text)) return false;
+  if (/https?:|\{\{|•|\n|\$/.test(text)) return false;
   return true;
 }
 

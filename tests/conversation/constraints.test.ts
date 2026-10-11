@@ -29,8 +29,11 @@ describe('budget', () => {
     expect(one('250', 'budget', 'budget')).toMatchObject({ value: { value: 25000 } });
     expect(one('$250 maybe', 'budget', 'budget')?.hedged).toBe(true);
   });
-  it('keeps only the first value per field', () => {
-    expect(ex('budget $200. actually budget $300').filter((e) => e.value.field === 'budget')).toHaveLength(1);
+  it('keeps only one value per field, and a sentence that opens with a correction replaces the earlier one', () => {
+    const budgets = ex('budget $200. actually budget $300').filter((e) => e.value.field === 'budget');
+    expect(budgets).toHaveLength(1);
+    expect(budgets[0]!.value).toMatchObject({ value: 30000 });
+    expect(ex('budget $200. also budget $300').filter((e) => e.value.field === 'budget')[0]!.value).toMatchObject({ value: 20000 });   // no correction cue: first wins
   });
 });
 

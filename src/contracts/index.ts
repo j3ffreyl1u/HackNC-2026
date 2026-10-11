@@ -85,9 +85,7 @@ export type TripAction =
   | { kind: 'confirm_cost'; candidateId: string; revision: number; costId: string; lowCents: number; highCents: number; sourceMessageId: string }
   | { kind: 'confirm_stop'; candidateId: string; revision: number; item: ItineraryItem; sourceMessageId: string }
   | { kind: 'request_funding'; topic?: 'status' | 'remind' | 'wrap_up' }
-  | { kind: 'relay'; to: string; mode: 'ask' | 'tell' | 'request' | 'invite'; text: string; field?: string }
-  | { kind: 'fund_pay'; dollars?: number; forName?: string }
-  | { kind: 'fund_spend'; dollars: number; category: string };
+  | { kind: 'relay'; to: string; mode: 'ask' | 'tell' | 'request' | 'invite'; text: string; field?: string };
 
 export interface TripCommand {
   commandId: string;
@@ -218,7 +216,7 @@ export interface TripState {
   selectedCandidateId?: string;
   acceptances: Acceptance[];
   pendingQuestions: PendingQuestion[];
-  fundingStatus: 'disabled' | 'requesting' | 'partially_funded' | 'funded' | 'unknown' | 'failed';
+  fundingStatus: 'disabled' | 'tracking' | 'settled' | 'requesting' | 'partially_funded' | 'funded' | 'unknown' | 'failed';
 }
 
 export interface ReadinessResult {

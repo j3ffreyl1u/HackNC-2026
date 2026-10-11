@@ -277,8 +277,6 @@ export function applyCommand(state: TripState, command: TripCommand, options: Ap
       return acceptCandidate(state, command, action.candidateId, action.revision);
     case 'ask_guide':
     case 'relay':   // messages between people are sent by the app, not planned here
-    case 'fund_pay':
-    case 'fund_spend':
       return { state, replies: [], researchRequested: false };
     case 'request_funding':
       if (state.status !== 'approved') {

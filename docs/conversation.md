@@ -32,7 +32,7 @@ Pivoting is a config change (`mode: 'direct'`). In `direct`, `groupSpaceId` is o
 - **Confirming a hedged budget**: the reply carries `expects: { field: 'budget', valueCents }`. The app stores it per member and passes it back as `pendingConfirmation`; a later "yes" then records exactly that amount (confirmed), "no" asks again. With nothing pending, "yes" is ignored.
 - **Selection vs acceptance**: `pick 2` / `pick <id> [v<n>]` -> `select_candidate`; `accept <id> v<n>` or a "yes" -> `accept_candidate`, always bound to the revision in `actionable`. A stale revision, a plan not awaiting acceptance, or "yes" with nothing pending produces no command. "yes" with several pending asks which. "no" records nothing.
 - **Reactions**: only positive emoji; the app-resolved target must match an `actionable` item of the same kind, id and revision. Anything else is ignored. A `select` reaction is a preference, not an acceptance.
-- Explicit forms (no AI): `show options`, `plan the trip`, `guide: <question>`, `request contributions`.
+- Explicit forms (no AI): `show options`, `plan the trip`, `guide: <question>`, `who covered what?`.
 - Gemini sees: message text, date, channel, timezone, member names, pending field. Never budgets or other members' private history. Output is validated (`intent.ts`); invalid items are dropped. Certainty and hedging are decided by code, not the model. Gemini errors degrade to a clarification (shown only in DMs).
 
 ## One question at a time (changes in B's and C's files, proposed by A)

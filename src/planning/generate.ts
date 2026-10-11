@@ -203,7 +203,7 @@ function conflictReplies(state: TripState, excluded: readonly TripCandidate[], p
       'make it shorter',
     );
   }
-  if (provisional.length > 0) reasons.push("a couple others looked good, but I couldn't find all their prices, so I can't tell if they fit");
+  if (provisional.length > 0) reasons.push(provisional.length === 1 ? "one other looked good, but I couldn't find all its prices, so I can't tell if it fits" : "a couple others looked good, but I couldn't find all their prices, so I can't tell if they fit");
   if (kinds.has('availability')) { reasons.push(`some fell outside the days ${participantIds(state).length > 2 ? 'everyone is' : 'you\'re both'} free`); ideas.push('open up a few more dates'); }
   if (kinds.has('must_do')) { reasons.push("some missed a must-have"); ideas.push('relax a must-have'); }
   if (unpricedCount > 0 && excluded.length === 0 && provisional.length === 0) {

@@ -1,9 +1,27 @@
 import type { TripState } from '../contracts/index.js';
 import { toPlanningState } from '../app/planning-adapter.js';
-import { planContributions, checkFunding, spendVsPlan } from '../planning/funding.js';
+import { ledgerStatus, planContributions, trackCoverage } from '../planning/funding.js';
 import type { FundReader, FundLedger } from './nessie-reader.js';
 
-export function createFundService(reader: FundReader, mode: 'mock' | 'nessie', boundRevision?: number, options: { now?: () => number; cacheMs?: number } = {}) {
+const DAY_MS = 86_400_000;
+/** Purchases a little after the trip (a last tank of gas, checkout fees) still belong to it. */
+const GRACE_DAYS = 2;
+
+/**
+ * The period whose purchases belong to this trip: from the day everyone agreed to the plan (bookings made before the
+ * trip count) until a couple of days after it ends. Spending outside it is somebody's normal life, not the trip.
+ */
+export function tripPeriod(state: TripState): { from?: string; to?: string } {
+  const chosen = state.candidates.find((c) => c.candidateId === state.selectedCandidateId && c.revision === state.revision);
+  const agreed = state.acceptances.filter((a) => a.candidateId === state.selectedCandidateId && a.revision === state.revision).map((a) => Date.parse(a.acceptedAt)).filter(Number.isFinite);
+  const end = chosen ? Date.parse(chosen.endAt) : Number.NaN;
+  return {
+    ...(agreed.length > 0 ? { from: new Date(Math.max(...agreed)).toISOString().slice(0, 10) } : {}),
+    ...(Number.isFinite(end) ? { to: new Date(end + GRACE_DAYS * DAY_MS).toISOString().slice(0, 10) } : {}),
+  };
+}
+
+export function createFundService(reader: FundReader, mode: 'mock' | 'nessie', options: { now?: () => number; cacheMs?: number } = {}) {
   const now = options.now ?? Date.now;
   const cacheMs = options.cacheMs ?? 30_000;
   if (!Number.isFinite(cacheMs) || cacheMs < 0) throw new Error('Fund cache duration must be nonnegative.');
@@ -18,20 +36,33 @@ export function createFundService(reader: FundReader, mode: 'mock' | 'nessie', b
     return pending;
   };
   return {
-    /** Full member report is for private chat routing; never serialize it to the public viewer. */
+    /** Everything, including who covered what, for private chat routing. */
     async inspect(state: TripState) {
       const plan = planContributions(toPlanningState(state));
       if (!plan.ok) return { status: 'not_ready' as const, reason: plan.reason, mode, revision: state.revision };
-      if (mode === 'nessie' && boundRevision !== plan.revision) return { status: 'not_ready' as const, reason: 'Bind a dedicated sandbox account to this approved revision before reading the fund.', mode, revision: state.revision };
       const ledger = await readLedger();
-      const funding = checkFunding(plan, ledger.deposits);
-      const spending = spendVsPlan(plan, ledger.purchases);
-      return { status: funding.status, mode, revision: plan.revision, plan, funding, spending, remainingDollars: funding.collectedDollars - spending.totalSpentDollars };
+      const coverage = trackCoverage(plan, ledger.purchases, tripPeriod(state));
+      return { status: ledgerStatus(coverage), mode, revision: plan.revision, plan, coverage };
     },
+    /**
+     * What the shared page may show: first names, what each person covered in the shared categories, who owes whom, and
+     * the plan's budget by category. Never a limit, and never personal spending.
+     */
     async publicView(state: TripState) {
       const result = await this.inspect(state);
-      if (!result.funding) return result;
-      return { status: result.status, mode, revision: result.revision, neededDollars: result.funding.neededDollars, collectedDollars: result.funding.collectedDollars, remainingDollars: result.remainingDollars, missingCount: result.funding.missingMemberIds.length, staleDollars: result.funding.staleDollars, unattributedDollars: result.funding.unattributedDollars, spending: result.spending };
+      if (!result.coverage) return result;
+      const { coverage, plan } = result;
+      const name = (id: string) => state.roster?.find((m) => m.memberId === id)?.displayName ?? id;
+      return {
+        status: result.status, mode, revision: result.revision,
+        expectedEachDollars: plan.requests[0]?.dollars ?? 0,
+        sharedSpentDollars: coverage.sharedSpentDollars,
+        members: coverage.perMember.map((m) => ({ memberId: m.memberId, name: name(m.memberId), coveredDollars: m.coveredDollars, fairShareDollars: m.fairShareDollars, netDollars: m.netDollars, byCategory: m.byCategory })),
+        transfers: coverage.transfers.map((t) => ({ from: name(t.fromMemberId), to: name(t.toMemberId), dollars: t.dollars })),
+        spending: coverage.spend,
+        unclassifiedDollars: coverage.unclassifiedDollars,
+        unattributedDollars: coverage.unattributedDollars,
+      };
     },
   };
 }

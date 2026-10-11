@@ -91,3 +91,39 @@ describe('local HTTP server', () => {
     }
   });
 });
+
+describe('GET /api/trips/:id/fund (who covered what)', () => {
+  it('is disabled without a fund service, 404 for an unknown trip, and 503 (not made-up data) when the bank cannot be read', async () => {
+    const { repository, enrollment, state } = setup();
+    await repository.bootstrapTrip(enrollment, state);
+    const plain = createHttpServer({ repository }); const plainPort = await plain.listen(0);
+    const broken = createHttpServer({ repository, fundService: { inspect: async () => { throw new Error('bank down'); }, publicView: async () => { throw new Error('bank down'); } } as never }); const brokenPort = await broken.listen(0);
+    try {
+      expect(await (await fetch(`http://127.0.0.1:${plainPort}/api/trips/trip-http/fund`)).json()).toMatchObject({ status: 'disabled' });
+      expect((await fetch(`http://127.0.0.1:${plainPort}/api/trips/nope/fund`)).status).toBe(404);
+      const down = await fetch(`http://127.0.0.1:${brokenPort}/api/trips/trip-http/fund`);
+      expect(down.status).toBe(503); expect(JSON.stringify(await down.json())).toMatch(/No simulated data was substituted/);
+    } finally { await plain.close(); await broken.close(); }
+  });
+
+  it('shows names, what each person covered and who owes whom, and nothing private', async () => {
+    const { repository, enrollment } = setup();
+    const { loadDemoTrip } = await import('../../src/app/fixture.js');
+    const { approved } = await import('../funding/fixture.js');
+    const { createFundService } = await import('../../src/funding/service.js');
+    const demo = await loadDemoTrip('tests/fixtures/trip.json');
+    const state = await approved();
+    await repository.bootstrapTrip(demo.enrollment, state);
+    void enrollment;
+    const fundService = createFundService({ read: async () => ({ purchases: [{ id: 'a', memberId: 'mason', amountDollars: 90, category: 'hotel', status: 'completed' }, { id: 'b', memberId: 'alex', amountDollars: 80, category: 'restaurant', status: 'completed' }] }) }, 'mock', { cacheMs: 0 });
+    const server = createHttpServer({ repository, fundService }); const port = await server.listen(0);
+    try {
+      const response = await fetch(`http://127.0.0.1:${port}/api/trips/${state.tripId}/fund`);
+      expect(response.status).toBe(200);
+      const view = await response.json() as any;
+      expect(view.members.map((m: any) => [m.name, m.coveredDollars])).toEqual([['Mason', 90], ['Alex', 0], ['Jordan', 0]]);
+      expect(view.transfers).toEqual([{ from: 'Alex', to: 'Mason', dollars: 30 }, { from: 'Jordan', to: 'Mason', dollars: 30 }]);
+      expect(JSON.stringify(view)).not.toMatch(/budget|memberConstraints|restaurant|"cap"/i);
+    } finally { await server.close(); }
+  });
+});

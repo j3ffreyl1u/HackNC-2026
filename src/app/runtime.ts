@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
-import type { PayableFundService } from '../funding/bound-service.js';
 import type { FundService } from '../funding/service.js';
 import { Q } from '../planning/wording.js';
 import { formatMinutes, outdoorSummary } from '../planning/nature.js';
 import { tripDates } from '../planning/generate.js';
-import { describeFund, describeSettlement, driftNotices, reminderFor, settleTrip } from '../planning/funding.js';
+import { describeCoverage, describeWrapUp, driftNotices, settleUpFor } from '../planning/funding.js';
+import { accumulatePreferences } from '../planning/constraints.js';
 import { toPlanningState } from './planning-adapter.js';
 import type {
   ConstraintValue,
@@ -47,9 +47,11 @@ export interface ApplicationRuntimeDependencies {
   planUrl?: string;
   /** Address of the approved plan as a calendar file. Without it, the line that offers the calendar is left out. */
   calendarUrl?: string;
-  fundService?: PayableFundService;
+  fundService?: FundService;
   /** If a search is still running after this long, the group gets one short "still looking" text (default 45 s, 0 turns it off). */
   stillLookingMs?: number;
+  /** How long `stop()` waits for work in flight (a search) before giving up on it. A search cut off here is resumed on the next start. Default 5 seconds. */
+  stopWaitMs?: number;
 }
 
 export interface ApplicationRuntime {
@@ -96,8 +98,6 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
     list.push({ from, text: text.replace(/\s+/g, ' ').trim().slice(0, 300) });
     recentTurns.set(memberId, list.slice(-8));
   };
-  /** A simulated payment waiting for a yes. In memory on purpose: it expires with the app, and any other message cancels it. */
-  const payPending = new Map<string, { targetId: string; dollars: number; revision: number; category?: string }>();
   /** This person was asked something through the bot: tell whoever asked what they just said (never anything about money). */
   const relayBack = (member: { memberId: string; displayName: string }, message: InboundMessage, before: TripState, after: TripState): OutboundMessage[] => {
     const asked = relayAsks.get(member.memberId);
@@ -131,7 +131,10 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
       stopped = true;
       clearInterval(retryTimer);
       await conversation.stop();
-      await Promise.allSettled(queued.splice(0));
+      // A hung search must not make a clean shutdown hang too: wait a little, then leave it (it resumes on the next start).
+      let timer: NodeJS.Timeout | undefined;
+      await Promise.race([Promise.allSettled(queued.splice(0)), new Promise<void>((resolve) => { timer = setTimeout(resolve, dependencies.stopWaitMs ?? 5_000); })]);
+      clearTimeout(timer);
       await runtime.drainOutbox();
     },
 
@@ -192,10 +195,8 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
 
       // "fresh restart": wipe the trip back to a blank slate for everyone (for testing and demos), and forget the sandbox fund account.
       if (!message.reaction && /^fresh restart[.!\s]*$/i.test((message.text ?? '').trim()) && (message.visibility === 'private' || enrollment.mode === 'direct')) {
-        payPending.clear();
         relayAsks.clear();
         relayReplies.clear();
-        try { await fundService?.forget?.(); } catch { /* the next approved plan gets its account either way */ }
         const { selectedCandidateId: _selected, relayLog: _relays, fundingNoticeKeys: _keys, pendingConfirmations: _confirmations, costConfirmations: _costs, itineraryConfirmations: _items, ...kept } = state;
         const blank: TripState = { ...kept, revision: state.revision + 1, status: 'gathering', memberConstraints: [], groupConstraints: [], candidates: [], acceptances: [], pendingQuestions: [], fundingStatus: fundService_disabled(fundService) ? 'disabled' : 'unknown' };
         const told = (state.roster ?? enrollment.participants.map((p) => ({ memberId: p.memberId, displayName: p.displayName, consented: true }))).filter((m) => m.consented)
@@ -204,47 +205,6 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
         if (result === 'stale') continue;
         if (result === 'committed') await runtime.drainOutbox();
         return;
-      }
-      // A simulated payment is waiting for a yes from this person. A yes adds it, a no drops it, and any other message just cancels it.
-      const waitingPay = payPending.get(member.memberId);
-      if (waitingPay && message.text && !message.reaction) {
-        payPending.delete(member.memberId);
-        const saidPay = message.text.trim().toLowerCase().replace(/[.!\s]+$/, '');
-        const toPerson = (id: string, text: string, tag: string) => makeMessage(tripId, tag, { audience: { kind: 'private', memberId: id }, text });
-        const isYes = /^(?:(?:yes|yep|yeah|yup|sure|ok(?:ay)?|confirm(?:ed)?|please|pls)(?:[ ,]+(?:please|pls|do it|go ahead|pay|go for it|thanks|thank you|that works|add it))*|do it|go ahead|go for it|pay|please do|sounds good|that works|add it|👍)$/.test(saidPay);
-        const isNo = /^(?:no|nope|nah|cancel|never ?mind|nvm|stop|don'?t|wait|not yet|hold on)$/.test(saidPay);
-        if (isYes || isNo) {
-          const out: OutboundMessage[] = [];
-          if (isNo) out.push(toPerson(member.memberId, "Okay, I didn't add anything.", `pay-cancel:${message.eventId}`));
-          else {
-            try {
-              const report = fundService ? await fundService.inspect(state) : undefined;
-              const target = (state.roster ?? []).find((m) => m.memberId === waitingPay.targetId);
-              if (!fundService || !(waitingPay.category ? fundService.purchase : fundService.deposit) || !report?.plan || !report.funding || !target) out.push(toPerson(member.memberId, "I couldn't add that: the fund isn't ready.", `pay-fail:${message.eventId}`));
-              else if (report.plan.revision !== waitingPay.revision) out.push(toPerson(member.memberId, "The plan changed while we were talking, so I didn't add anything. Ask again once it's approved.", `pay-stale:${message.eventId}`));
-              else {
-                if (waitingPay.category) {
-                  await fundService.purchase!(waitingPay.category, waitingPay.dollars, waitingPay.revision);
-                  out.push(toPerson(member.memberId, `Done, $${waitingPay.dollars} on ${CATEGORY_WORDS[waitingPay.category] ?? waitingPay.category} is logged against the trip fund. Ask "how's the fund?" to see what's left. (Simulated money.)`, `spend-done:${message.eventId}`));
-                  const result = await repository.commitEvent({ eventId: message.eventId, state, expectedRevision: state.revision, messages: out });
-                  if (result === 'stale') continue;
-                  if (result === 'committed') await runtime.drainOutbox();
-                  return;
-                }
-                await fundService.deposit!(waitingPay.targetId, waitingPay.dollars, waitingPay.revision);
-                const forSelf = waitingPay.targetId === member.memberId;
-                out.push(toPerson(member.memberId, forSelf ? `Done, $${waitingPay.dollars} is in the trip fund. Ask "how's the fund?" to see it. (Simulated money.)` : `Done, I put $${waitingPay.dollars} in for ${target.displayName}. (Simulated money.)`, `pay-done:${message.eventId}`));
-                if (!forSelf) out.push(toPerson(waitingPay.targetId, `${member.displayName} covered $${waitingPay.dollars} of your share of the trip fund. (Simulated money.)`, `pay-told:${message.eventId}`));
-              }
-            } catch {
-              out.push(toPerson(member.memberId, "I couldn't add that to the fund just now, so nothing was added. Try again in a moment.", `pay-error:${message.eventId}`));
-            }
-          }
-          const result = await repository.commitEvent({ eventId: message.eventId, state, expectedRevision: state.revision, messages: out });
-          if (result === 'stale') continue;
-          if (result === 'committed') await runtime.drainOutbox();
-          return;
-        }
       }
       const context = await conversationContext(repository, state, message, recentTurns.get(member.memberId) ?? [], relayReplies.get(member.memberId) ?? []);
       if (message.text && !message.reaction) remember(member.memberId, 'you', message.text);
@@ -282,8 +242,6 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
         replies.push(makeMessage(tripId, `ack:${message.eventId}`, { audience: { kind: 'private', memberId: member.memberId }, text: parsed.acknowledgement }));
       }
       let fundRequested = false;
-      let payRequest: { dollars?: number; forName?: string } | undefined;
-      let spendRequest: { dollars: number; category: string } | undefined;
       let fundTopic: 'status' | 'remind' | 'wrap_up' = 'status';
 
       for (const [index, parsedCommand] of commands.entries()) {
@@ -303,8 +261,6 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
           }
         }
         if (command.action.kind === 'request_funding') { fundRequested = true; fundTopic = command.action.topic ?? 'status'; continue; }
-        if (command.action.kind === 'fund_spend') { spendRequest = { dollars: command.action.dollars, category: command.action.category }; continue; }
-        if (command.action.kind === 'fund_pay') { payRequest = { ...(command.action.dollars !== undefined ? { dollars: command.action.dollars } : {}), ...(command.action.forName ? { forName: command.action.forName } : {}) }; continue; }
         if (command.action.kind === 'relay') {
           const relay = command.action;
           const target = (state.roster ?? []).find((m) => m.consented && m.memberId !== member.memberId && m.displayName.toLowerCase() === relay.to.toLowerCase());
@@ -437,87 +393,53 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
         else delete confirmations[member.memberId];
         nextState = { ...nextState, pendingConfirmations: confirmations };
       }
-      if (spendRequest) {
-        const toMe = (text: string) => makeMessage(tripId, `spend-ask:${message.eventId}`, { audience: { kind: 'private', memberId: member.memberId }, text });
-        if (!fundService) replies.push(toMe('The trip fund is switched off, so there is nothing to log spending against.'));
-        else {
-          try {
-            const report = await fundService.inspect(nextState);
-            if (!report.funding || !report.plan) replies.push(toMe(report.reason ?? 'The plan has to be approved before spending can be logged against the fund.'));
-            else if (typeof fundService.purchase !== 'function') replies.push(toMe("Logging spending isn't set up here, so I can't add that."));
-            else if (spendRequest.dollars > 10_000) replies.push(toMe("That's more than I'll log in one go. Try a smaller amount."));
-            else {
-              payPending.set(member.memberId, { targetId: member.memberId, dollars: spendRequest.dollars, revision: report.plan.revision, category: spendRequest.category });
-              replies.push(toMe(`Log $${spendRequest.dollars} on ${CATEGORY_WORDS[spendRequest.category] ?? spendRequest.category} against the trip fund? This is simulated sandbox money. Say "yes" to confirm.`));
-            }
-          } catch {
-            replies.push(toMe("I couldn't check the fund just now. Try again in a moment."));
-          }
-        }
-      }
-      if (payRequest) {
-        const toMe = (text: string) => makeMessage(tripId, `pay-ask:${message.eventId}`, { audience: { kind: 'private', memberId: member.memberId }, text });
-        if (!fundService) replies.push(toMe('The trip fund is switched off, so there is nothing to pay into.'));
-        else {
-          try {
-            const report = await fundService.inspect(nextState);
-            if (!report.funding || !report.plan) replies.push(toMe(report.reason ?? 'The plan has to be approved before anyone can pay into the fund.'));
-            else {
-              const target = payRequest.forName ? (nextState.roster ?? []).find((m) => m.consented && m.displayName.toLowerCase() === payRequest!.forName!.toLowerCase()) : member;
-              const owed = report.funding.perMember.find((m) => m.memberId === target?.memberId)?.outstandingDollars ?? 0;
-              const dollars = payRequest.dollars ?? owed;
-              if (!target) replies.push(toMe(`I'm not sure who ${payRequest.forName} is.`));
-              else if (typeof fundService.deposit !== 'function') replies.push(toMe("Paying into the fund isn't set up here, so I can't add that."));
-              else if (dollars <= 0) replies.push(toMe(target.memberId === member.memberId ? "You're all paid up, so there's nothing more to add." : `${target.displayName} is all paid up.`));
-              else if (dollars > 10_000) replies.push(toMe("That's more than I'll add in one go. Try a smaller amount."));
-              else {
-                payPending.set(member.memberId, { targetId: target.memberId, dollars, revision: report.plan.revision });
-                replies.push(toMe(`Add $${dollars}${target.memberId === member.memberId ? '' : ` for ${target.displayName}`} to the trip fund? This is simulated sandbox money. Say "yes" to confirm.`));
-              }
-            }
-          } catch {
-            replies.push(toMe("I couldn't check the fund just now. Try again in a moment."));
-          }
-        }
-      }
       if (fundService && nextState.status !== 'approved') nextState = { ...nextState, fundingStatus: 'unknown' };
       if (fundService && (fundRequested || nextState.status === 'approved')) {
         try {
           const report = await fundService.inspect(nextState);
-          if (report.funding && report.plan && report.spending) {
+          if (report.coverage && report.plan) {
             const keys = new Set(nextState.fundingNoticeKeys?.[String(nextState.revision)] ?? []);
             // One notice per message: more than one at once reads as a wall of warnings. The rest follow next time.
-            const notice = driftNotices(report.spending, keys)[0];
+            const notice = driftNotices(report.coverage.spend, keys)[0];
             if (notice) {
               keys.add(notice.key);
               replies.push(makeMessage(tripId, `fund-drift:${nextState.revision}:${notice.key}`, { audience: { kind: 'group', spaceId: enrollment.groupSpaceId }, text: `${notice.text} This is simulated sandbox money.` }));
             }
-            nextState = { ...nextState, fundingStatus: report.funding.status, fundingNoticeKeys: { ...nextState.fundingNoticeKeys, [String(nextState.revision)]: [...keys] } };
+            nextState = { ...nextState, fundingStatus: report.status, fundingNoticeKeys: { ...nextState.fundingNoticeKeys, [String(nextState.revision)]: [...keys] } };
             if (fundRequested) {
               const planning = toPlanningState(nextState);
               const privately = (id: string, text: string, tag: string) => makeMessage(tripId, tag, { audience: { kind: 'private', memberId: id }, text });
               if (fundTopic === 'wrap_up') {
-                replies.push(makeMessage(tripId, `fund-wrap:${message.eventId}`, { audience: { kind: 'group', spaceId: enrollment.groupSpaceId }, text: describeSettlement(planning, settleTrip(report.plan, report.funding, report.spending), { simulated: true }) }));
+                replies.push(makeMessage(tripId, `fund-wrap:${message.eventId}`, { audience: { kind: 'group', spaceId: enrollment.groupSpaceId }, text: describeWrapUp(planning, report.coverage, { simulated: true }) }));
               } else if (fundTopic === 'remind') {
-                const others = report.funding.missingMemberIds.filter((id) => id !== member.memberId);
-                for (const id of others) {
-                  const text = reminderFor(id, report.funding);
-                  if (text) replies.push(privately(id, text, `fund-remind:${message.eventId}:${id}`));
+                // Nobody is nudged more than once a day, however often someone asks: pressure helps no one.
+                const day = message.occurredAt.slice(0, 10);
+                const tag = (id: string) => `reminded:${id}:${day}`;
+                const debtors = [...new Set(report.coverage.transfers.map((t) => t.fromMemberId))].filter((id) => id !== member.memberId);
+                const due = debtors.filter((id) => !keys.has(tag(id)));
+                for (const id of due) {
+                  const text = settleUpFor(planning, id, report.coverage);
+                  if (text) { replies.push(privately(id, text, `fund-remind:${message.eventId}:${id}`)); keys.add(tag(id)); }
                 }
-                const nudged = others.map((id) => planning.roster.find((m) => m.memberId === id)?.displayName ?? id);
-                const own = reminderFor(member.memberId, report.funding);
-                const told = nudged.length > 0 ? `Reminded ${nudged.length > 1 ? `${nudged.slice(0, -1).join(', ')} and ${nudged.at(-1)}` : nudged[0]}.` : "Everyone else is covered, so there's nobody to remind.";
+                nextState = { ...nextState, fundingNoticeKeys: { ...nextState.fundingNoticeKeys, [String(nextState.revision)]: [...keys] } };
+                const nameOf = (id: string) => planning.roster.find((m) => m.memberId === id)?.displayName ?? id;
+                const nameList = (ids: string[]) => (ids.length > 1 ? `${ids.slice(0, -1).map(nameOf).join(', ')} and ${nameOf(ids.at(-1)!)}` : nameOf(ids[0]!));
+                const already = debtors.filter((id) => !due.includes(id));
+                const own = settleUpFor(planning, member.memberId, report.coverage);
+                const told = due.length > 0
+                  ? `Reminded ${nameList(due)}.${already.length > 0 ? ` ${nameList(already)} already got one today.` : ''}`
+                  : already.length > 0 ? `I already reminded ${nameList(already)} today, so I'll leave them alone until tomorrow.` : "Nobody else owes anything right now, so there's nobody to remind.";
                 replies.push(privately(member.memberId, own ? `${told}\n${own}` : told, `fund:${message.eventId}`));
               } else {
-                replies.push(privately(member.memberId, describeFund(planning, report.plan, report.funding, report.spending, { simulated: true }), `fund:${message.eventId}`));
+                replies.push(privately(member.memberId, describeCoverage(planning, report.plan, report.coverage, { simulated: true }), `fund:${message.eventId}`));
               }
             }
-          } else if (fundRequested) replies.push(makeMessage(tripId, `fund:${message.eventId}`, { audience: { kind: 'private', memberId: member.memberId }, text: report.reason ?? 'Approve the current plan before checking the fund.' }));
+          } else if (fundRequested) replies.push(makeMessage(tripId, `fund:${message.eventId}`, { audience: { kind: 'private', memberId: member.memberId }, text: report.reason ?? 'Approve the current plan before I track who covered what.' }));
         } catch {
           nextState = { ...nextState, fundingStatus: 'unknown' };
-          if (fundRequested) replies.push(makeMessage(tripId, `fund:${message.eventId}`, { audience: { kind: 'private', memberId: member.memberId }, text: 'The fund is unavailable. No simulated fallback was substituted.' }));
+          if (fundRequested) replies.push(makeMessage(tripId, `fund:${message.eventId}`, { audience: { kind: 'private', memberId: member.memberId }, text: "I can't reach the bank right now, so I can't tell who covered what. I haven't guessed." }));
         }
-      } else if (fundRequested) replies.push(makeMessage(tripId, `fund:${message.eventId}`, { audience: { kind: 'private', memberId: member.memberId }, text: 'The optional trip fund is disabled.' }));
+      } else if (fundRequested) replies.push(makeMessage(tripId, `fund:${message.eventId}`, { audience: { kind: 'private', memberId: member.memberId }, text: "Tracking who covered what isn't set up (it's an optional extra)." }));
       const result = await repository.commitEvent({
         eventId: message.eventId,
         state: nextState,
@@ -627,7 +549,8 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
     });
     const result = await repository.commitEvent({
       eventId: `research-failed:${tripId}:${revision}:${attempt}`,
-      state: current,
+      // Nothing is being looked up any more, so the trip must not keep saying "still looking".
+      state: current.status === 'researching' ? { ...current, status: 'gathering' } : current,
       expectedRevision: revision,
       messages: [message],
     });
@@ -719,7 +642,6 @@ function dayRange(startAt: string, endAt: string, timeZone: string): string {
 
 const fundService_disabled = (fund: unknown) => fund === undefined;
 
-const CATEGORY_WORDS: Record<string, string> = { accommodation: 'lodging', fuel_parking_tolls: 'gas, parking and tolls', food: 'food', activities: 'activities', taxes_fees: 'taxes and fees', other: 'other costs' };
 
 /** The options on offer in plain words: what is in each, rough cost each, and the drive. Group costs only, never a budget. */
 function describeOptions(state: TripState, detailed: boolean, onlyCandidateId?: string): string[] {
@@ -791,9 +713,10 @@ function othersShared(state: TripState, actorId: string): Array<{ memberId: stri
     const missing: string[] = [];
     const dates = latest('availability');
     if (dates && dates.field === 'availability') shared.push(`is free ${dates.value.map((w) => dayRange(w.startAt, w.endAt, w.timeZone)).join(' and ')}`); else missing.push('dates');
-    const prefs = latest('preferences');
-    const likes = prefs && prefs.field === 'preferences' ? prefs.value.filter((v) => !/\$|\d|\b(?:budget|max(?:imum)?)\b/i.test(v)) : [];   // never repeat anything that mentions money
-    if (prefs && prefs.field === 'preferences' && likes.length > 0) shared.push(likes.includes('no preference') ? 'has no strong preferences' : `is into ${likes.join(' and ')}`); else missing.push('preferences');
+    const prefRecords = state.memberConstraints.filter((c) => c.memberId === m.memberId && c.field === 'preferences' && c.certainty === 'confirmed');
+    const prefs = prefRecords.length > 0 ? prefRecords : undefined;
+    const likes = prefs ? accumulatePreferences(prefRecords.map((c) => (c.field === 'preferences' ? c.value : []))).filter((v) => !/\$|\d|\b(?:budget|max(?:imum)?)\b/i.test(v)) : [];   // never repeat anything that mentions money
+    if (prefs && likes.length > 0) shared.push(likes.includes('no preference') ? 'has no strong preferences' : `is into ${likes.join(' and ')}`); else missing.push('preferences');
     const must = latest('must_dos');
     if (must && must.field === 'must_dos' && must.value.length > 0) shared.push(`has must-haves: ${must.value.join(', ')}`);
     // What they said about the shared basics counts too ("I'd rather do 3 nights"), so "what did Mason say?" is not empty after they weighed in.

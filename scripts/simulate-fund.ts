@@ -1,9 +1,17 @@
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
-import { depositTag } from '../src/planning/funding.js';
 
-interface Simulation { revision: number; deposits: Array<{ memberId: string; dollars: number }>; purchases: Array<{ merchantId?: string; category?: string; dollars: number }> }
+/**
+ * Sets up the demo's money in the Nessie SANDBOX: one fake account per friend, and purchases on each friend's own account
+ * ("Mason paid $110 for the cabin"). The bot only ever reads these; this script is the only thing that writes.
+ */
+interface Simulation {
+  /** Trip member IDs, one fake account each. Defaults to everyone named in `purchases`. */
+  members?: string[];
+  purchases: Array<{ memberId: string; merchantId?: string; category?: string; dollars: number; note?: string }>;
+}
+
 /**
  * The body for creating a simulated merchant. `category` is a plain string: the live sandbox answers a list with
  * 400 "str type expected" (checked 2026-10-11), so it must not be wrapped in an array.
@@ -12,23 +20,32 @@ export function merchantBody(category: string, address: Record<string, string>) 
   return { name: `SIMULATED ${category}`, category, address, geocode: { lat: 35.9132, lng: -79.0558 } };
 }
 
+const PLACEHOLDER_MERCHANT = 'SIMULATED_MERCHANT_CREATED_ON_EXECUTE';
+const MEMBER_ID = /^[a-zA-Z0-9_-]+$/;
+
+export function membersOf(input: Simulation): string[] {
+  const named = input.members ?? [...new Set(input.purchases.map((p) => p.memberId))];
+  if (named.length === 0 || named.length > 12 || named.some((m) => typeof m !== 'string' || !MEMBER_ID.test(m))) throw new Error('Name between 1 and 12 trip members, using letters, numbers, - or _.');
+  return [...new Set(named)];
+}
+
 export function simulationPayloads(raw: unknown, date: string) {
   const input = raw as Simulation;
-  if (!input || !Number.isSafeInteger(input.revision) || input.revision < 0 || !Array.isArray(input.deposits) || !Array.isArray(input.purchases)) throw new Error('Invalid simulated fund manifest.');
+  if (!input || !Array.isArray(input.purchases)) throw new Error('Invalid simulated fund manifest.');
+  const members = new Set(membersOf(input));
   const amount = (value: number) => {
     if (!Number.isSafeInteger(value) || value <= 0) throw new Error('Simulated amounts must be positive whole dollars.');
     return value;
   };
-  return [
-    ...input.deposits.map(d => {
-      if (typeof d.memberId !== 'string' || !/^[a-zA-Z0-9_-]+$/.test(d.memberId)) throw new Error('Invalid simulated member ID.');
-      return { endpoint: 'deposits', body: { medium: 'balance', status: 'completed', transaction_date: date, amount: amount(d.dollars), description: depositTag(d.memberId, input.revision) } };
-    }),
-    ...input.purchases.map(p => {
-      if ((!p.merchantId || typeof p.merchantId !== 'string') && (!p.category || typeof p.category !== 'string')) throw new Error('Supply a sandbox merchant ID or a plain category for provisioning.');
-      return { endpoint: 'purchases', body: { merchant_id: p.merchantId ?? 'SIMULATED_MERCHANT_CREATED_ON_EXECUTE', medium: 'balance', status: 'completed', purchase_date: date, amount: amount(p.dollars), description: `SIMULATED trip purchase;rev=${input.revision}` } };
-    }),
-  ];
+  return input.purchases.map((p) => {
+    if (typeof p.memberId !== 'string' || !members.has(p.memberId)) throw new Error('Every purchase needs the ID of a trip member who has an account.');
+    if ((!p.merchantId || typeof p.merchantId !== 'string') && (!p.category || typeof p.category !== 'string')) throw new Error('Supply a sandbox merchant ID or a plain category for provisioning.');
+    return {
+      memberId: p.memberId,
+      endpoint: 'purchases' as const,
+      body: { merchant_id: p.merchantId ?? PLACEHOLDER_MERCHANT, medium: 'balance', status: 'completed', purchase_date: date, amount: amount(p.dollars), description: `SIMULATED trip purchase: ${p.note ?? p.category ?? 'purchase'}` },
+    };
+  });
 }
 
 async function run() {
@@ -36,21 +53,23 @@ async function run() {
   const file = args.find(a => !a.startsWith('--'));
   if (!file || args.some(a => a.startsWith('--') && !['--execute', '--provision'].includes(a))) throw new Error('Usage: npm run simulate:fund -- manifest.json [--provision] [--execute]');
   const input = JSON.parse(await readFile(file, 'utf8')) as Simulation;
+  const members = membersOf(input);
   const payloads = simulationPayloads(input, new Date().toISOString().slice(0, 10));
   console.log('SIMULATED NESSIE SANDBOX TRANSACTIONS. No real money.');
   const provision = args.includes('--provision');
   if (!provision && input.purchases.some(p => !p.merchantId)) throw new Error('Each purchase needs an existing merchant ID or --provision.');
   if (provision && input.purchases.some(p => !p.category || typeof p.category !== 'string')) throw new Error('Provisioning requires a plain merchant category on every purchase.');
   const address = { street_number: '1', street_name: 'Simulation Way', city: 'Chapel Hill', state: 'NC', zip: '27514' };
-  const customer = { first_name: 'SIMULATED', last_name: 'Trip Group', address };
-  const account = { type: 'Checking', nickname: `SIMULATED trip revision ${input.revision}`, rewards: 0, balance: 0 };
+  const categories = [...new Set(input.purchases.map(p => p.category).filter((c): c is string => typeof c === 'string'))];
   if (!args.includes('--execute')) {
-    console.log(JSON.stringify({ ...(provision ? { customer, account, merchants: input.purchases.map(p => merchantBody(p.category!, address)) } : {}), transactions: payloads }, null, 2));
-    console.log('Preview only. --execute posts once; rerunning creates duplicates.'); return;
+    console.log(JSON.stringify({
+      ...(provision ? { customersAndAccounts: members.map(m => ({ customer: { first_name: 'SIMULATED', last_name: m, address }, account: { type: 'Checking', nickname: `SIMULATED ${m}`, rewards: 0, balance: 0 } })), merchants: categories.map(c => merchantBody(c, address)) } : {}),
+      transactions: payloads,
+    }, null, 2));
+    console.log(`Preview only. --execute posts once${provision ? ` (${members.length} customers, ${members.length} accounts, ${categories.length} merchants, ${payloads.length} purchases)` : ''}; rerunning creates duplicates.`); return;
   }
   const env = process.env;
-  if (!env.NESSIE_API_KEY || !env.NESSIE_BASE_URL || (!provision && !env.NESSIE_ACCOUNT_ID)) throw new Error('Configure the Nessie sandbox key and HTTPS base URL, plus an existing account or --provision.');
-  if (!provision && Number(env.NESSIE_PLAN_REVISION) !== input.revision) throw new Error('Manifest revision must match NESSIE_PLAN_REVISION.');
+  if (!env.NESSIE_API_KEY || !env.NESSIE_BASE_URL || (!provision && !env.NESSIE_ACCOUNTS_PATH)) throw new Error('Configure the Nessie sandbox key and HTTPS base URL, plus NESSIE_ACCOUNTS_PATH or --provision.');
   const base = new URL(env.NESSIE_BASE_URL);
   if (base.protocol !== 'https:' || base.username || base.password || base.search || base.hash) throw new Error('Use a clean HTTPS Nessie sandbox URL.');
   const post = async (path: string, body: unknown) => {
@@ -67,25 +86,34 @@ async function run() {
     if (!id) throw new Error('Simulation created an object but no ID was returned; inspect the sandbox before rerunning.');
     return id;
   };
-  let accountId = env.NESSIE_ACCOUNT_ID!;
+  let accounts: Record<string, string> = {};
+  const merchantIds = new Map<string, string>();
   const merchantCategories: Record<string, string> = {};
   if (provision) {
-    const customerId = createdId(await post('customers', customer));
-    accountId = createdId(await post(`customers/${encodeURIComponent(customerId)}/accounts`, account));
-    for (const p of input.purchases) {
-      p.merchantId = createdId(await post('merchants', merchantBody(p.category!, address)));
-      merchantCategories[p.merchantId] = p.category!;
+    for (const member of members) {
+      const customerId = createdId(await post('customers', { first_name: 'SIMULATED', last_name: member, address }));
+      accounts[member] = createdId(await post(`customers/${encodeURIComponent(customerId)}/accounts`, { type: 'Checking', nickname: `SIMULATED ${member}`, rewards: 0, balance: 0 }));
+    }
+    for (const category of categories) {
+      const id = createdId(await post('merchants', merchantBody(category, address)));
+      merchantIds.set(category, id);
+      merchantCategories[id] = category;
     }
     await mkdir('data', { recursive: true });
-    await writeFile('data/simulated-fund-binding.json', JSON.stringify({ simulated: true, accountId, revision: input.revision }, null, 2));
+    await writeFile('data/simulated-accounts.json', JSON.stringify(accounts, null, 2));
     await writeFile('data/simulated-merchant-categories.json', JSON.stringify(merchantCategories, null, 2));
-    console.log('SIMULATED binding saved under data/. Configure account/revision and NESSIE_MERCHANTS_PATH from these files.');
+    console.log('SIMULATED accounts saved to data/simulated-accounts.json and merchants to data/simulated-merchant-categories.json. Point NESSIE_ACCOUNTS_PATH and NESSIE_MERCHANTS_PATH at them.');
+  } else {
+    accounts = JSON.parse(await readFile(env.NESSIE_ACCOUNTS_PATH!, 'utf8')) as Record<string, string>;
   }
-  const finalPayloads = simulationPayloads(input, new Date().toISOString().slice(0, 10));
-  for (const [index, payload] of finalPayloads.entries()) {
-    if ('merchant_id' in payload.body && payload.body.merchant_id === 'SIMULATED_MERCHANT_CREATED_ON_EXECUTE') throw new Error('Purchase needs --provision or an existing sandbox merchant ID.');
-    await post(`accounts/${encodeURIComponent(accountId)}/${payload.endpoint}`, payload.body);
-    console.log(`SIMULATED ${payload.endpoint} ${index + 1}/${finalPayloads.length} posted. Read back completed status before counting it.`);
+  for (const [index, payload] of payloads.entries()) {
+    const source = input.purchases[index]!;
+    const body = { ...payload.body, merchant_id: source.merchantId ?? merchantIds.get(source.category!) ?? payload.body.merchant_id };
+    if (body.merchant_id === PLACEHOLDER_MERCHANT) throw new Error('Purchase needs --provision or an existing sandbox merchant ID.');
+    const account = accounts[payload.memberId];
+    if (!account) throw new Error(`No account for ${payload.memberId}; provision or add it to NESSIE_ACCOUNTS_PATH.`);
+    await post(`accounts/${encodeURIComponent(account)}/${payload.endpoint}`, body);
+    console.log(`SIMULATED ${payload.memberId} purchase ${index + 1}/${payloads.length} posted. Read back completed status before counting it.`);
   }
 }
 if (process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url) void run().catch(error => { console.error(error instanceof Error ? error.message : 'Simulation failed.'); process.exitCode = 1; });

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { acceptPolished, createGeminiVoice, shouldPolish } from '../../src/conversation/voice.js';
 
 const reply = (text: string) => async () => new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text }] } }] }), { status: 200 });
@@ -53,9 +53,16 @@ describe('the Gemini voice', () => {
     expect(await failing.polish('Where are you all leaving from?')).toBe('Where are you all leaving from?');
     expect(errors).toHaveLength(1);
   });
-  it('may reword a private message with a dollar amount, but only if the exact amount survives', async () => {
+  it('never sends a message with a dollar amount to the model at all', async () => {
     const text = 'Got it: your max is $250 (just between us). Tell me if I got anything wrong.';
-    expect(await voice('Your max is $250, between us. Say so if that is off.').polish(text)).toBe('Your max is $250, between us. Say so if that is off.');
+    expect(shouldPolish(text)).toBe(false);
+    const spy = vi.fn(async () => new Response('{}', { status: 200 }));
+    expect(await createGeminiVoice({ apiKey: 'k', model: 'm', fetchImpl: spy as never }).polish(text)).toBe(text);
+    expect(spy).not.toHaveBeenCalled();
+  });
+  it('and as a second line of defence, a rewrite that changes an amount is rejected', async () => {
+    const text = 'Got it: your max is $250 (just between us). Tell me if I got anything wrong.';
+    expect(acceptPolished(text, 'Your max is $250, between us. Say so if that is off.')).toBe('Your max is $250, between us. Say so if that is off.');
     expect(await voice('Your max is $205, between us. Say so if that is off.').polish(text)).toBe(text);      // changed the amount
     expect(await voice('Your max is $250 or $300, between us. Say so if that is off.').polish(text)).toBe(text); // invented an amount
     expect(await voice('Your max is 250, between us. Say so if that is off.').polish(text)).toBe(text);        // dropped the dollar sign

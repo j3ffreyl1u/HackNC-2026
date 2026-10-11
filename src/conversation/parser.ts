@@ -34,9 +34,11 @@ const STATUS = /^(?:(?:so\s+)?(?:what'?s|whats|how'?s|hows)\s+(?:the\s+)?(?:stat
 const ABOUT_SOMEONE = /^(?:so\s+)?(?:what(?:'s|s| did| has| does| is)\s+(\w+)\s+(?:say|said|tell you|told you|put|give you|gave you|send|sent|want|think|thinking|saying)|(?:did|has)\s+(\w+)\s+(?:answer|reply|respond|text|say anything|send anything|tell you anything)|(?:any word from|have you heard from|heard from|anything from)\s+(\w+)|how(?:'s| is)\s+(\w+)\s+doing|how(?:'s| is)\s+(\w+?)(?:'s|s)?\s+(?:planning|progress)(?:\s+going)?|(?:is|has|did)\s+(\w+)\s+(?:still\s+)?(?:planning|done|finished|finish|ready|all set|set|in|on board|there|responded|replied)(?:\s+(?:planning|yet|so far))?)(?:\s+(?:yet|so far))?$/i;
 const GREETING = /^(?:hi|hey|hello|yo|hiya|good (?:morning|afternoon|evening))\b[,!.\s]*/i;
 const REQUEST_FUNDING = /^(?:request|start|set up|send)\s+(?:the\s+)?(?:contributions?|funding|contribution requests)$/i;
-const FUND_STATUS = /^(?:so\s+)?(?:how(?:'s| is)\s+(?:the\s+)?(?:trip\s+)?(?:fund|pot|money)(?:\s+(?:looking|going|doing|so far))?|(?:what'?s|what is|how much is)\s+(?:in\s+)?(?:the\s+)?(?:trip\s+)?(?:fund|pot)(?:\s+(?:at|now|status))?|who(?:'s| is)?\s*(?:still\s+)?owes?(?:\s+(?:money|anything|us|the fund))?|who\s+(?:still\s+)?(?:needs to pay|hasn'?t\s+(?:paid|chipped in|sent(?: their share)?))(?:\s+yet)?|(?:trip\s+)?fund\s+status|who(?:'s|s| has| have)?\s+(?:paid|chipped in|sent (?:their|the) (?:share|money))(?:\s+(?:yet|so far))?|(?:has|did|have)\s+(?:everyone|everybody|anyone|anybody|we all)\s+(?:paid|chipped in|sent (?:their|the) (?:share|money))(?:\s+(?:yet|so far))?|how much\s+(?:money\s+)?(?:do|have)\s+(?:we|we've)\s+(?:have|got|raised|collected|put in)(?:\s+(?:so far|in the (?:fund|pot)|yet|total))?|how much\s+(?:money\s+)?(?:do we have|is there)(?:\s+(?:in the (?:fund|pot)|so far|left))?)[?!.]*$/i;
+const FUND_STATUS = /^(?:so\s+)?(?:how(?:'s| is)\s+(?:the\s+)?(?:trip\s+)?(?:fund|pot|money)(?:\s+(?:looking|going|doing|so far))?|(?:what'?s|what is|how much is)\s+(?:in\s+)?(?:the\s+)?(?:trip\s+)?(?:fund|pot)(?:\s+(?:at|now|status))?|who(?:'s| is)?\s*(?:still\s+)?owes?(?:\s+(?:money|anything|us|the fund))?|who\s+(?:still\s+)?(?:needs to pay|hasn'?t\s+(?:paid|chipped in|sent(?: their share)?))(?:\s+yet)?|(?:trip\s+)?fund\s+status|who(?:'s|s| has| have)?\s+(?:paid|chipped in|sent (?:their|the) (?:share|money))(?:\s+(?:yet|so far))?|(?:has|did|have)\s+(?:everyone|everybody|anyone|anybody|we all)\s+(?:paid|chipped in|sent (?:their|the) (?:share|money))(?:\s+(?:yet|so far))?|how much\s+(?:money\s+)?(?:do|have)\s+(?:we|we've)\s+(?:have|got|raised|collected|put in)(?:\s+(?:so far|in the (?:fund|pot)|yet|total))?|how much\s+(?:money\s+)?(?:do we have|is there)(?:\s+(?:in the (?:fund|pot)|so far|left))?|who\s+(?:has\s+)?(?:paid|covered|bought)\s+(?:for\s+)?what(?:\s+so far)?|who\s+covered\s+(?:what|the\s+\w+)(?:\s+so far)?|what\s+(?:do|did)\s+(?:i|we)\s+owe(?:\s+(?:so far|now|right now))?|how much\s+do\s+(?:i|we)\s+owe(?:\s+(?:so far|now|right now))?|who\s+owes\s+(?:who|whom|what)(?:\s+(?:so far|now|right now))?|where\s+(?:do\s+)?(?:we|things)\s+stand\s+(?:on|with)\s+(?:the\s+)?(?:money|costs?|spending))[?!.]*$/i;
 const FUND_REMIND = /^(?:(?:please|pls|can you|could you)\s+)*(?:(?:remind|nudge|ping)\s+(?:everyone|everybody|them|the others|the rest|whoever(?:'s| is)?\s+(?:left|missing|late))(?:\s+(?:to pay|about (?:the\s+)?(?:fund|money|it)|to chip in|to send (?:their|the) (?:share|money)))?|send (?:out )?(?:payment )?reminders?)$/i;
 const FUND_WRAP = /^(?:(?:please|pls|can you|could you)\s+)*(?:wrap\s*-?\s*up|settle\s+up|close\s+out)(?:\s+(?:the\s+)?(?:trip|fund|money|pot|trip fund))?$|^(?:who gets what back|how much (?:do (?:i|we) get|(?:will|would) (?:i|we) get) back|what do we get back)$/i;
+/** Nobody pays or logs a purchase through the assistant: it only reads the simulated spending log. */
+const READ_ONLY_MONEY = 'I can\'t pay or log spending from here. I only read the trip\'s simulated spending log. Ask "who covered what?" to see it, or "wrap up the trip" for who owes whom.';
 const GUIDE = /^(?:guide|ask guide|\/guide)\s*[:\-]?\s+(.{3,500})$/is;
 const SELECT = new RegExp(`^(?:pick|choose|select|go with|vote(?: for)?|i vote(?: for)?)\\s+(?:option\\s+|plan\\s+)?${ID}(?:\\s+v(\\d+))?$`, 'i');
 /**
@@ -72,7 +74,8 @@ function ackPart(v: ConstraintValue, tentative: boolean): string {
     case 'origin': return `leaving from ${titleCase(v.value)}`;
     case 'region': return /^(?:within|any)\b/.test(v.value) ? v.value : /\b(?:beach(?:es)?|coast|mountains?|lakes?|shore|countryside)\b/i.test(v.value) ? (/^the\b/i.test(v.value) ? v.value : `the ${v.value}`) : titleCase(v.value);
     case 'transport': return v.vehicleAvailable === true ? "there's a car" : v.vehicleAvailable === false ? 'no car for you' : `transport: ${v.value}`;
-    case 'preferences': return v.value.includes('no preference') ? 'no strong preferences' : `you ${tentative ? 'might be' : "'re"} into ${list(v.value)}`.replace("you 're", "you're");
+    case 'preferences': if (v.value.length > 0 && v.value.every((x) => x.startsWith('not:'))) return `I'll drop ${list(v.value.map((x) => x.slice(4)))} from what you're into`;
+      return v.value.includes('no preference') ? 'no strong preferences' : `you ${tentative ? 'might be' : "'re"} into ${list(v.value)}`.replace("you 're", "you're");
     case 'must_dos': return v.value.length ? `must-haves: ${list(v.value)}` : 'no must-haves';
   }
 }
@@ -547,15 +550,15 @@ export function createParser(deps: ConversationDependencies) {
       const amount = spendFormA ? spendFormA[1]! : spendFormB![2]!;
       const dollars = Math.ceil(Number(amount.replace(/,/g, '')));
       const category = spendCategory(thing);
-      if (Number.isFinite(dollars) && dollars > 0 && category) return one(msg, ctx, { kind: 'fund_spend', dollars, category });
-      if (Number.isFinite(dollars) && dollars > 0 && ctx.status === 'approved') return reply(msg, `What was the $${dollars} for? I can log it as lodging, gas, food, activities or fees. Try "I spent $${dollars} on food".`, 'spend-what', true);
+      if (Number.isFinite(dollars) && dollars > 0 && category) return reply(msg, READ_ONLY_MONEY, 'read-only-money', true);
+      if (Number.isFinite(dollars) && dollars > 0 && ctx.status === 'approved') return reply(msg, READ_ONLY_MONEY, 'read-only-money', true);
     }
     // "I spent money", "log a purchase": there is no amount or purpose yet, so ask for both.
     if (talkativeChat && ctx.status === 'approved' && /^(?:(?:please|pls|ok(?:ay)?|so)\s+)*(?:(?:i|we)\s+)?(?:(?:'ve|have|just|also)\s+)*(?:spent|paid|bought|purchased)\s+(?:some\s+|a\s+bit\s+of\s+|more\s+)?(?:money|cash|something|stuff|things)(?:\s+(?:on\s+the\s+trip|today|too))?$|^(?:(?:please|pls)\s+)*(?:log|record|add|enter|track)\s+(?:a\s+|an\s+|some\s+)?(?:purchase|expense|spending|spend|cost)$|^(?:i|we)\s+made\s+(?:a\s+)?purchase$|^(?:i|we)\s+need\s+to\s+(?:log|record|add)\s+(?:a\s+|some\s+)?(?:purchase|expense|spending)$/i.test(lean)) {
-      return reply(msg, 'How much was it, and what was it for? Try "I spent $60 on gas", "we paid $297 for the hotel" or "bought food for $40".', 'spend-what', true);
+      return reply(msg, READ_ONLY_MONEY, 'read-only-money', true);
     }
     const spentBare = /^(?:i|we)?\s*(?:'ve|have|just)?\s*(?:spent|paid)\s+\$?\s*([\d,]+(?:\.\d{1,2})?)(?:\s*(?:dollars|bucks|usd))?$/i.exec(lean);
-    if (spentBare && talkativeChat && ctx.status === 'approved') return reply(msg, `What was the $${amountOf(spentBare[1]!) ?? ''} for? I can log it as lodging, gas, food, activities or fees. Try "I spent $${amountOf(spentBare[1]!) ?? 50} on food".`, 'spend-what', true);
+    if (spentBare && talkativeChat && ctx.status === 'approved') return reply(msg, READ_ONLY_MONEY, 'read-only-money', true);
     // Paying into the simulated fund: "pay my share", "let me chip in $50", "cover Mason's share", "put in $60 for Jeffrey". The app asks for a yes before anything is added.
     const lead = "(?:(?:please|pls|ok(?:ay)?|so)\\s+)*(?:(?:can|could|may|should|shall|would)\\s+(?:i|we)\\s+|let\\s*me\\s+|lemme\\s+|time\\s+to\\s+|(?:i|we)(?:'ll|\\s+will|'d like to|\\s+would like to|\\s+want to|\\s+wanna|\\s+should|\\s+can|\\s+gotta|\\s+need to|\\s+have to)?\\s+)?";
     const tail = "(?:\\s+(?:now|please|pls|today|too|as well|also|real quick|right now))*[?!.]*$";
@@ -563,22 +566,22 @@ export function createParser(deps: ConversationDependencies) {
     const fundWord = "(?:\\s+(?:to|into|in)\\s+(?:the\\s+)?(?:fund|pot|trip(?:\\s+fund)?|kitty))?";
     const payOther = new RegExp(`^${lead}(?:pay|cover|chip\\s+in\\s+for|put\\s+in\\s+for|contribute\\s+for)\\s+(?:for\\s+)?(\\w+?)(?:'s|s)?(?:\\s+(?:share|part|portion|half))?${tail}`, 'i').exec(plain);
     const payOtherTo = payOther ? ctx.others?.find((o) => o.name.toLowerCase() === payOther[1]!.toLowerCase()) : undefined;
-    if (payOther && payOtherTo) return one(msg, ctx, { kind: 'fund_pay', forName: payOtherTo.name });
+    if (payOther && payOtherTo) return reply(msg, READ_ONLY_MONEY, 'read-only-money', true);
     const payAmountFor = new RegExp(`^${lead}(?:pay|put\\s+in|chip\\s+in|send|add|cover|put)\\s+\\$?\\s*(\\d{1,9})(?:\\s*(?:dollars|bucks|usd))?\\s+(?:for|toward|towards)\\s+(\\w+?)(?:'s\\s+share)?${tail}`, 'i').exec(plain);
     const payAmountTo = payAmountFor ? ctx.others?.find((o) => o.name.toLowerCase() === payAmountFor[2]!.toLowerCase()) : undefined;
-    if (payAmountFor && payAmountTo) return one(msg, ctx, { kind: 'fund_pay', dollars: Number(payAmountFor[1]), forName: payAmountTo.name });
+    if (payAmountFor && payAmountTo) return reply(msg, READ_ONLY_MONEY, 'read-only-money', true);
     const payMine = new RegExp(`^${lead}(?:pay(?:\\s+up)?|chip\\s+in|contribute|put\\s+in|send|add|cover)\\s+${share}${fundWord}${tail}`, 'i').exec(plain);
-    if (payMine) return one(msg, ctx, { kind: 'fund_pay', ...(payMine[1] ? { dollars: Number(payMine[1]) } : {}) });
-    if (new RegExp(`^${lead}(?:pay(?:\\s+up)?|contribute|chip\\s+in)${tail}`, 'i').test(plain)) return one(msg, ctx, { kind: 'fund_pay' });
-    if (/^how\s+(?:do|can|would|should)\s+(?:i|we)\s+(?:pay|chip in|contribute|put (?:money )?in|get my money in)\??$/i.test(plain)) return reply(msg, 'Just say "pay my share" and I\'ll add it to the simulated trip fund. You can also say "chip in $50" or "pay Mason\'s share".', 'how-to-pay', true);
-    if (/^(?:i(?:'ve| have)?\s+)?(?:already\s+)?paid(?:\s+(?:my\s+)?(?:share|part|up|already|it))?$/i.test(plain)) return reply(msg, 'I can only count money that goes into the trip fund. Say "pay my share" and I\'ll add it (simulated).', 'paid-elsewhere', true);
+    if (payMine) return reply(msg, READ_ONLY_MONEY, 'read-only-money', true);
+    if (new RegExp(`^${lead}(?:pay(?:\\s+up)?|contribute|chip\\s+in)${tail}`, 'i').test(plain)) return reply(msg, READ_ONLY_MONEY, 'read-only-money', true);
+    if (/^how\s+(?:do|can|would|should)\s+(?:i|we)\s+(?:pay|chip in|contribute|put (?:money )?in|get my money in)\??$/i.test(plain)) return reply(msg, READ_ONLY_MONEY, 'read-only-money', true);
+    if (/^(?:i(?:'ve| have)?\s+)?(?:already\s+)?paid(?:\s+(?:my\s+)?(?:share|part|up|already|it))?$/i.test(plain)) return reply(msg, READ_ONLY_MONEY, 'read-only-money', true);
     if (FUND_REMIND.test(plain)) return one(msg, ctx, { kind: 'request_funding', topic: 'remind' });
     if (FUND_WRAP.test(plain)) return one(msg, ctx, { kind: 'request_funding', topic: 'wrap_up' });
     if (FUND_STATUS.test(plain)) return one(msg, ctx, { kind: 'request_funding', topic: 'status' });
     if (STATUS.test(plain)) {
       // Where things stand: while still gathering the planner recaps what is missing; after that, say what is happening.
       if (ctx.status === 'researching') return reply(msg, "I'm still looking up options for everyone. Give me a minute and I'll send them over.", 'status-researching', true);
-      if (ctx.status === 'proposed' || ctx.status === 'awaiting_acceptance') return reply(msg, ctx.actionable.length ? `The options are above. ${ctx.actionable.map((a, i) => `${i + 1}. ${a.description}`).join('; ')}. Reply "pick 1" or "pick 2" when you've decided.` : "The options are above. Take a look and tell me which one you like.", 'status-proposed', true);
+      if (ctx.status === 'proposed' || ctx.status === 'awaiting_acceptance') return reply(msg, ctx.actionable.length ? `The options are above. ${ctx.actionable.map((a, i) => `${i + 1}. ${a.description}`).join('; ')}. ${ctx.actionable[0]!.kind === 'accept' ? 'Say "I\'m in" to lock it in.' : ctx.actionable.length === 1 ? 'Reply "pick 1" when you\'ve decided.' : 'Reply "pick 1" or "pick 2" when you\'ve decided.'}` : "The options are above. Take a look and tell me which one you like.", 'status-proposed', true);
       if (ctx.status === 'approved') return reply(msg, "The plan is approved, so you're all set!", 'status-approved', true);
       // Still gathering: say who is missing, privately. Asking where things stand must not message anyone else.
       const waiting = (ctx.others ?? []).filter((o) => o.missing.length > 0).map((o) => `${o.name}'s ${list(o.missing)}`);
@@ -775,7 +778,13 @@ export function createParser(deps: ConversationDependencies) {
       } else if (intent.intent === 'request_plans') extra.push({ kind: 'request_plans' });
       else if (intent.intent === 'ask_guide') extra.push({ kind: 'ask_guide', question: intent.question });
       else if (intent.intent === 'request_funding' && !hedged) extra.push({ kind: 'request_funding' });
-      return fromConstraints(msg, ctx, text, items, extra);
+      const result = fromConstraints(msg, ctx, text, items, extra);
+      // The rules saved part of the message and the model could not read the rest: say so, instead of dropping that part in silence.
+      if (intent.intent === 'unavailable' && talkative && result.kind === 'commands' && result.acknowledgement) {
+        const rest = unmatched.join(' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+        return { ...result, acknowledgement: { ...result.acknowledgement, text: `${result.acknowledgement.text.replace(/ Tell me if I got anything wrong\.$/, '')} My language helper isn't answering, so I couldn't read "${rest}". Say that part again in a minute, or in plain words like "my max is $200".` } };
+      }
+      return result;
     }
     switch (intent.intent) {
       case 'none':
