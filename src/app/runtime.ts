@@ -41,6 +41,8 @@ export interface ApplicationRuntimeDependencies {
   voice?: { polish(text: string): Promise<string> };
   /** Address of the trip page, put into messages that point at the full plan. Defaults to the words "the trip page". */
   planUrl?: string;
+  /** Address of the approved plan as a calendar file. Without it, the line that offers the calendar is left out. */
+  calendarUrl?: string;
   fundService?: FundService;
 }
 
@@ -62,7 +64,14 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
     return Promise.all(messages.map(async (m) => (m.proposalRef ? m : { ...m, text: await voice.polish(m.text).catch(() => m.text) })));
   };
   /** Messages from the planner point at the trip page with a token; this puts the real address in. */
-  const withPlanLink = (text: string) => text.replaceAll('{{PLAN_LINK}}', dependencies.planUrl ?? 'the trip page');
+  const withPlanLink = (text: string) => {
+    const planned = text.replaceAll('{{PLAN_LINK}}', dependencies.planUrl ?? 'the trip page');
+    if (!planned.includes('{{CALENDAR_LINK}}')) return planned;
+    // No address means no calendar offer at all, rather than a line pointing nowhere.
+    return dependencies.calendarUrl
+      ? planned.replaceAll('{{CALENDAR_LINK}}', dependencies.calendarUrl)
+      : planned.split('\n').filter((line) => !line.includes('{{CALENDAR_LINK}}')).join('\n').trimEnd();
+  };
   const queued: Promise<void>[] = [];
   let processQueue: Promise<void> = Promise.resolve();
   let outboxDrain: Promise<void> | undefined;
@@ -105,12 +114,18 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
     async drainOutbox() {
       if (outboxDrain) return outboxDrain;
       outboxDrain = (async () => {
+        // A message the phone line refuses stays in the outbox, and nothing later for the same recipient is sent past it,
+        // so people never read the second message before the first. Other recipients are not held up.
+        const blocked = new Set<string>();
         for (const message of await repository.pendingMessages()) {
+          const recipient = message.audience.kind === 'private' ? `private:${message.audience.memberId}` : `group:${message.audience.spaceId}`;
+          if (blocked.has(recipient)) continue;
           try {
             const receipts = await conversation.sendMessage(message);
             await repository.recordDelivery(message.deliveryId, receipts.map(({ providerMessageId }) => providerMessageId));
           } catch {
             // Leave failed or uncertain sends in the durable outbox for operator inspection/retry.
+            blocked.add(recipient);
           }
         }
       })();
@@ -203,7 +218,7 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
           throw new Error('Planner returned a state for another trip or an invalid revision step.');
         }
         nextState = applied.state;
-        replies.push(...applied.replies.map((reply, replyIndex) => planner.install ? makeMessage(tripId, `${message.eventId}:${index}:${replyIndex}`, { ...reply, proposalRef: reply.proposalRef ? { ...reply.proposalRef, kind: applied.state.status === 'awaiting_acceptance' || applied.state.status === 'approved' ? 'accept' : 'select' } : undefined }) : reply));
+        replies.push(...applied.replies.map((reply) => ({ ...reply, text: withPlanLink(reply.text) })).map((reply, replyIndex) => planner.install ? makeMessage(tripId, `${message.eventId}:${index}:${replyIndex}`, { ...reply, proposalRef: reply.proposalRef ? { ...reply.proposalRef, kind: applied.state.status === 'awaiting_acceptance' || applied.state.status === 'approved' ? 'accept' : 'select' } : undefined }) : reply));
         researchRequested = applied.researchRequested;
         // Asked for options too early? Message whoever is holding things up, so it is not left to the requester to chase them.
         if (command.action.kind === 'request_plans' && applied.rejection?.code === 'NOT_READY' && planner.nudgeMissing) {
@@ -400,12 +415,14 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
     const current = await repository.loadTrip(tripId);
     const enrollment = await repository.getEnrollment(tripId);
     if (!current || current.revision !== revision || !enrollment) return;
-    const message = makeMessage(tripId, `research-failed:${revision}`, {
+    // Each failed attempt gets its own notice: a fixed id would swallow the second failure and leave people waiting in silence.
+    const attempt = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+    const message = makeMessage(tripId, `research-failed:${revision}:${attempt}`, {
       audience: { kind: 'group', spaceId: enrollment.groupSpaceId },
-      text: 'I could not verify trip research for the current plan. The existing plan is unchanged; please retry when research is available.',
+      text: 'Sorry, I couldn\'t look up options just now. Nothing about your plan changed. Say "show us some options" to try again.',
     });
     const result = await repository.commitEvent({
-      eventId: `research-failed:${tripId}:${revision}`,
+      eventId: `research-failed:${tripId}:${revision}:${attempt}`,
       state: current,
       expectedRevision: revision,
       messages: [message],

@@ -92,28 +92,35 @@ export function createGeminiIntentModel(opts: GeminiOptions): IntentModel {
   return {
     async interpret(input): Promise<RawIntent> {
       const attempt = async (retried: boolean): Promise<RawIntent> => {
-      try {
-        const res = await doFetch(`${BASE}/${encodeURIComponent(opts.model)}:generateContent`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json', 'x-goog-api-key': opts.apiKey },
-          body: JSON.stringify({
-            contents: [{ role: 'user', parts: [{ text: buildPrompt(input) }] }],
-            generationConfig: { responseMimeType: 'application/json', responseJsonSchema: INTENT_SCHEMA, temperature: 0 },
-          }),
-          signal: AbortSignal.timeout(opts.timeoutMs ?? 20_000),
-        });
-        if (!res.ok) throw new Error(`Gemini HTTP ${res.status}`);
-        const text = extractText(await res.json());
-        if (!text) throw new Error('Gemini response had no text');
-        const parsed = JSON.parse(text) as unknown;
-        // The model is occasionally inconsistent: if it says "clarify", ask once more before giving up.
-        if (retried === false && (parsed as { intent?: unknown } | null)?.intent === 'clarify') return attempt(true);
-        return parsed;
-      } catch (err) {
-        opts.onError?.(err); // never includes the API key or message text
-        // Degrade to a clarification so the user can fall back to manual commands.
-        return { intent: 'clarify' };
-      }
+        let res: Response;
+        try {
+          res = await doFetch(`${BASE}/${encodeURIComponent(opts.model)}:generateContent`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-goog-api-key': opts.apiKey },
+            body: JSON.stringify({
+              contents: [{ role: 'user', parts: [{ text: buildPrompt(input) }] }],
+              generationConfig: { responseMimeType: 'application/json', responseJsonSchema: INTENT_SCHEMA, temperature: 0 },
+            }),
+            signal: AbortSignal.timeout(opts.timeoutMs ?? 20_000),
+          });
+          if (!res.ok) throw new Error(`Gemini HTTP ${res.status}`);
+        } catch (err) {
+          opts.onError?.(err); // never includes the API key or message text
+          // The service itself did not answer (quota, outage, network, timeout). Say so, rather than blaming the message.
+          return { intent: 'unavailable' };
+        }
+        try {
+          const text = extractText(await res.json());
+          if (!text) throw new Error('Gemini response had no text');
+          const parsed = JSON.parse(text) as unknown;
+          // The model is occasionally inconsistent: if it says "clarify", ask once more before giving up.
+          if (retried === false && (parsed as { intent?: unknown } | null)?.intent === 'clarify') return attempt(true);
+          return parsed;
+        } catch (err) {
+          opts.onError?.(err);
+          // It answered, but not usably: degrade to a clarification so the user can fall back to plain phrases.
+          return { intent: 'clarify' };
+        }
       };
       return attempt(false);
     },
