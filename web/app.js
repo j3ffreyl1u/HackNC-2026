@@ -10,6 +10,13 @@ let fundRequestId = 0;
 let fundDisabled = false;
 let outdoorOnly = false;
 const expandedDetails = new Map();
+const PLAN_STATES = {
+  gathering: { title: 'Gathering trip details', text: 'Keep sharing dates, preferences and private limits with the assistant in your iMessage DMs. Options appear once the details fit.', empty: 'No options yet. The assistant is gathering the details needed to plan.' },
+  researching: { title: 'Researching trip options', text: 'The assistant is looking up places, prices and sources. New options will arrive in your DMs; saved options may change.', empty: 'Research is in progress. New options will appear here when they are saved.' },
+  proposed: { title: 'Compare the options', text: 'Tell the assistant which option you prefer in your DM. Picking an option does not mean accepting its costs.', empty: 'No options are saved for this revision. Ask the assistant to try looking again.' },
+  awaiting_acceptance: { title: 'Waiting for everyone’s “I’m in”', text: 'Each friend needs to accept the chosen plan in their own DM. Acceptance applies to this exact revision.', empty: 'The selected option is unavailable in this view. Ask the assistant for the current plan before accepting.' },
+  approved: { title: 'Everyone’s in', text: 'Everyone accepted this revision. Estimates are not bookings or guaranteed availability; a material change needs fresh acceptance.', empty: 'The approved option is unavailable in this view. Ask the assistant for the current saved plan.' },
+};
 
 function disclosure(key, title, initiallyOpen = false) {
   const details = element('details', 'costs plan-disclosure');
@@ -40,9 +47,18 @@ function render(snapshot) {
   displayedRevision = snapshot.revision;
   root.replaceChildren();
   const heading = element('div', 'trip-heading');
-  heading.append(element('h2', '', "The group's plan"));
-  heading.append(element('span', 'revision', `Revision ${snapshot.revision} | ${snapshot.status.replaceAll('_', ' ')}`));
+  heading.append(element('h2', '', 'Your shared plan'));
+  heading.append(element('span', 'revision', `Revision ${snapshot.revision}`));
   root.append(heading);
+  const planState = PLAN_STATES[snapshot.status] ?? { title: 'Saved plan', text: 'Ask the assistant in your DM for the latest details.', empty: 'No saved options are available in this view.' };
+  const summary = element('section', 'plan-state');
+  summary.append(element('h3', '', planState.title), element('p', '', planState.text));
+  root.append(summary);
+  if (snapshot.status === 'approved') {
+    const calendar = element('a', 'calendar-link', 'Add this plan to your calendar (.ics)');
+    calendar.href = `/api/trips/${encodeURIComponent(tripId)}/plan.ics`;
+    root.append(calendar);
+  }
 
   const people = element('div', 'people');
   for (const person of snapshot.participants) people.append(element('span', 'person', person.displayName));
@@ -55,13 +71,19 @@ function render(snapshot) {
     if (!outdoorOnly || hasOutdoor) candidates.append(renderCandidate(candidate, snapshot));
   }
   if (candidates.childElementCount) root.append(candidates);
-  else root.append(element('div', 'empty', outdoorOnly && snapshot.candidates.length ? 'No current plans have tagged outdoor stops. Choose All plans to see the other options.' : 'Your group is gathering dates, budgets, and ideas. Plan options will appear here when they are ready.'));
+  else root.append(element('div', 'empty', outdoorOnly && snapshot.candidates.length ? 'No current plans have tagged outdoor stops. Choose All plans to see the other options.' : planState.empty));
 }
 
 function renderCandidate(candidate, snapshot) {
   const card = element('article', 'candidate');
   card.append(element('h3', '', candidate.title));
-  card.append(element('p', '', `Plan ${candidate.candidateId} | revision ${candidate.revision} | ${candidate.dataSource === 'fixture' ? 'Synthetic fixture' : 'Live/manual estimates'}`));
+  if (snapshot.selectedCandidate?.candidateId === candidate.candidateId && snapshot.selectedCandidate.revision === candidate.revision) {
+    card.append(element('p', 'selected-plan', snapshot.status === 'approved' ? 'Approved plan' : 'Selected plan · awaiting everyone’s acceptance'));
+  }
+  const dataLabel = candidate.dataSource === 'fixture' ? 'Demo data · prices made up'
+    : candidate.dataSource === 'live' ? 'Estimates from web search · availability not confirmed'
+    : 'Planning estimates · availability not confirmed';
+  card.append(element('p', '', `Plan ${candidate.candidateId} | revision ${candidate.revision} | ${dataLabel}`));
   card.append(element('div', 'date', dateRange(candidate.startAt, candidate.endAt)));
   const nature = snapshot.nature?.summaries.find(item => item.candidateId === candidate.candidateId);
   if (nature) {
@@ -97,8 +119,9 @@ function renderCandidate(candidate, snapshot) {
     const costs = disclosure(`${candidate.candidateId}:${candidate.revision}:costs`, 'Explore the cost breakdown');
     for (const item of candidate.costs) {
       const row = element('div', 'cost-row');
-      row.append(element('span', '', `${item.label} (${item.costId}) | ${item.priceStatus}`));
-      row.append(element('strong', '', item.priceStatus === 'unknown' ? 'Price not confirmed' : `${money(item.lowCents)} to ${money(item.highCents)}`));
+      const priceLabel = item.priceStatus === 'unknown' ? 'price not found' : 'estimate';
+      row.append(element('span', '', `${item.label} (${item.costId}) | ${priceLabel}`));
+      row.append(element('strong', '', item.priceStatus === 'unknown' ? 'Price not found' : `${money(item.lowCents)} to ${money(item.highCents)}`));
       costs.append(row);
     }
     card.append(costs);
@@ -110,7 +133,7 @@ function renderCandidate(candidate, snapshot) {
     const name = snapshot.participants.find((person) => person.memberId === total.memberId)?.displayName ?? 'Participant';
     const row = element('div', 'cost-row');
     row.append(element('span', '', name));
-    row.append(element('strong', '', money(total.highCents)));
+    row.append(element('strong', '', candidate.feasibility.unknownEssentials.length && total.highCents === 0 ? 'No priced costs yet' : money(total.highCents)));
     personCosts.append(row);
   }
   card.append(personCosts);
@@ -118,7 +141,9 @@ function renderCandidate(candidate, snapshot) {
   const accepted = snapshot.acceptances.filter((item) => item.candidateId === candidate.candidateId && item.revision === candidate.revision);
   const approved = snapshot.participants.length > 0 && accepted.length === snapshot.participants.length;
   const feasible = candidate.feasibility.feasible && candidate.feasibility.unknownEssentials.length === 0;
-  card.append(element('span', `feasibility${feasible ? '' : ' blocked'}`, feasible ? 'Within known limits' : 'Needs review'));
+  const feasibilityText = candidate.feasibility.unknownEssentials.length ? 'Maybe · essential prices missing'
+    : feasible ? 'Fits stated limits · estimated costs' : 'Does not fit current constraints';
+  card.append(element('span', `feasibility${feasible ? '' : ' blocked'}`, feasibilityText));
   card.append(element('p', '', `Acceptance: ${accepted.length} of ${snapshot.participants.length} for this exact revision${approved ? ' | all accepted' : ''}.`));
   if (candidate.feasibility.unknownEssentials.length) {
     card.append(element('p', '', `Unverified essentials: ${candidate.feasibility.unknownEssentials.join(', ')}`));
@@ -126,18 +151,24 @@ function renderCandidate(candidate, snapshot) {
 
   const sources = disclosure(`${candidate.candidateId}:${candidate.revision}:sources`, `Research sources (${candidate.evidence.length})`);
   for (const evidence of candidate.evidence) {
-    const link = document.createElement('a');
-    link.className = 'source';
-    link.textContent = `${evidence.title} | ${evidence.kind}${evidence.uncertainty ? ' | uncertain' : ''}`;
+    const source = element('div', 'source-record');
+    let safeUrl;
     try {
       const parsed = new URL(evidence.url);
-      if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
-        link.href = parsed.href;
-        link.target = '_blank';
-        link.rel = 'noopener noreferrer';
-      }
-    } catch { /* Keep unsupported source URLs visible as plain text. */ }
-    sources.append(link);
+      if (parsed.protocol === 'https:') safeUrl = parsed.href;
+    } catch { /* Unsupported URLs remain plain text. */ }
+    const link = element(safeUrl ? 'a' : 'span', 'source', evidence.title);
+    if (safeUrl) {
+      link.href = safeUrl;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+    }
+    const kind = evidence.kind === 'community' ? "One person's experience"
+      : evidence.kind === 'official' ? 'Official source' : evidence.kind === 'estimate' ? 'Estimate' : 'Web source';
+    source.append(link, element('p', 'source-kind', kind), element('p', 'source-url', evidence.url));
+    if (evidence.claim) source.append(element('p', 'source-claim', evidence.claim));
+    if (evidence.uncertainty) source.append(element('p', 'source-uncertainty', `Uncertainty: ${evidence.uncertainty}`));
+    sources.append(source);
   }
   card.append(sources);
   return card;

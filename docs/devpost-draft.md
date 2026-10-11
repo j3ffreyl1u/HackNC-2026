@@ -1,34 +1,44 @@
-﻿# Devpost draft and two-minute walkthrough
+# Devpost draft
+
+Draft only. Nothing has been submitted or published by the frontend agent.
 
 ## Project description
 
-Weekend, together is an iMessage trip-planning agent that helps friends turn a group conversation into a weekend everyone can attend and afford. It gathers private constraints, compares plans, and requires every participant to accept the same revision. Changing a material constraint cancels the old approvals.
+Weekend, together is an iMessage trip-planning assistant that helps friends agree on a weekend they can attend and afford. Each friend texts the same assistant in their own private DM. It gathers their dates, private spending limit and preferences, asks for what is missing, and compares options. Everyone must say “I’m in” for the same plan revision. Changing a material detail invalidates the earlier approvals.
 
-The read-only companion page brings the plan into a Frutiger Aero landscape: luminous skies, reflective water, glass bubbles and glossy desktop controls. Outdoor stops and recorded driving comparisons make the nature connection visible in the actual plan. Unknown drive legs stay unknown; driving home is excluded, and the app does not estimate emissions.
+The read-only companion page shows the saved itinerary, map links, cost estimates, sources and acceptance status. Plans with missing essential prices are labelled “maybe”. Demo prices are made up; live prices are estimates from web search. Outdoor stops and recorded driving comparisons connect the plan to the reef-themed Frutiger Aero interface. Unknown drive legs stay unknown, the drive home is excluded, and we do not claim emissions savings. An approved plan can be downloaded as a calendar file; that does not book anything.
 
-The optional Capital One Nessie sandbox tracker reads each friend's own simulated account, adds up what each person covered in shared categories (lodging, gas, activities), compares it with the approved plan, and shows who would owe whom, so nobody splits a bill on the spot. The agent only reads transactions. A separate, explicitly simulated script provisions demo objects and transactions. All funding is simulated, and nothing is booked or paid with real money.
+The optional Capital One Nessie sandbox tracker reads each friend’s own simulated account, adds up the shared purchases they covered, and shows who would owe whom. Food stays personal. The page compares shared spending by category with the plan’s estimates, so nobody has to split a bill on the spot. The bot only reads and calculates. It never moves money, holds funds or connects to a real bank. A separate simulator can create fake sandbox accounts and purchases; the offline page demo uses a local pretend ledger.
 
-## Track descriptions to adapt in Devpost
+## How we built it
 
-- Frutiger Aero Tech: nature-oriented trip planning with a deliberately glossy blue/green interface, visible outdoor stops, and comparisons of recorded driving time.
-- Capital One / Nessie: read-only "who covered what" tracking across one simulated Nessie account per friend, plan-versus-actual spending by category, and a settle-up calculation (the bot never moves money), plus an isolated simulator. Include a live sandbox screenshot only after combined verification.
-- Photon: Spectrum-powered iMessage conversation. Current coordinated live demonstrations are direct-message mode; do not claim verified group delivery.
-- Gemini: language interpretation and the private grounded research display. State exactly which mode the recorded demonstration uses. Mock plans and prices are explicitly synthetic.
+The app uses TypeScript, Node and SQLite. Spectrum carries the individual iMessage DMs. Rules handle clear messages, with Gemini used for language interpretation. Deterministic code checks readiness, allocates costs in integer cents and compares each person’s upper estimate with their own limit, including personal costs and contingency. A limit is not a contribution promise. SQLite saves revisions, source evidence, acceptances and the message outbox; duplicate events and stale research results cannot replace the current plan.
 
-These are submission drafts, not a confirmation of track eligibility. Choose the organizer's actual track names in Devpost. The Frutiger Aero prizes supplied by the organizer are Ocean Mechanical Keyboard and JBL Go 5 Speaker for first; Jellyfish Lamp, Aqua Mouse and Ocean Lamp for second. Prizes are event details, not app features.
+Gemini research looks up destinations and estimates prices. `RESEARCH_MODE=live` enables the priced research path; `gemini` uses a private original-answer display and manual planning worksheet; `mock` uses explicitly labelled fixtures. When `SERPAPI_API_KEY` is set, Google Hotels via SerpApi supplies listed hotel rates. The team documented one real Boone search returning properties and rates. That is evidence for one search, not a guarantee of bookable inventory, checkout prices or a verified final end-to-end live flow. The research docs mark live grounding as experimental; do not describe it as production-ready.
 
-## Two-minute video outline
+## Proposed tracks
 
-0:00–0:15: State the problem: coordinating dates, individual limits and agreement among friends in chat.
+- **General:** base entry, subject to the organizer’s current submission rules.
+- **Photon / Spectrum:** the assistant receives and replies to individual iMessage DMs. The final combined phone flow still needs a coordinated check.
+- **Gemini:** language interpretation and destination research. Name the mode used in the recording; the offline backup uses synthetic research.
+- **Capital One / Nessie:** per-friend sandbox purchase reads, shared-cost accounting and calculated settle-up amounts. Everything is fake sandbox money; the bot has no payment action.
+- **Frutiger Aero:** a code-drawn reef scene, glass controls, outdoor itinerary stops and comparisons of recorded driving time. These comparisons exclude the drive home and are not emissions estimates.
 
-0:15–0:45: Show a multi-fact DM and the bot gathering only the remaining details. Keep phone numbers, keys and private budget values off screen unless every participant explicitly consents.
+These are proposed entries, not a declaration of eligibility. Confirm the current track names and rules before submitting. Community connection/impact has not been demonstrated, so do not claim that track on ordinary tourism alone.
 
-0:45–1:10: Show two synthetic options, the Aero page, outdoor stops and the recorded driving comparison. Clearly label fixture data.
+## Verification to preserve in the submission
 
-1:10–1:30: Show a changed constraint invalidating prior acceptance, then all participants accepting the current revision.
+| Checked | Evidence and limits |
+| --- | --- |
+| Offline three-person trip lifecycle | Real conversation, planning and SQLite modules produce $190/$180 synthetic options; lowering one private cap to $180 invalidates acceptance and removes the expensive option; revision 12 is approved. All costs, dates and research sources are fixtures. |
+| Shared-spending page logic | Actual offline `empty`, `sample`, `uneven`, `even` and tracking-off API responses checked against the page renderer using a DOM boundary harness. An actual stopped-server network failure clears stale amounts. This is not browser layout verification. |
+| Calendar download | Approved offline endpoint returns HTTP 200, `text/calendar` and three events. Link visibility checked for every status. Import into a phone calendar is unverified. |
+| Live integration evidence reported by teammates | `docs/conversation.md` records separate DM, reaction and Gemini probes. `docs/research.md` records separate Gemini and one SerpApi Boone search. These are not verification of the final combined build. |
 
-1:30–1:50: Show the sandbox fund's collected/needed, completed spending and remaining amount. Mention the bot has no write path. Use an offline labeled fund view if the live sandbox has not been verified; never present invented data as a provider response.
+**Still unverified:** the final flow on real phones; per-friend Nessie provisioning, readback and page/chat together; the changed page at 1440x1000 and 390x844 or on a real phone; a tunnel opened on a phone; calendar-app import; live booking availability and checkout prices; an actual community-source result. Do not replace these gaps with a mocked success claim.
 
-1:50–2:00: Summarize: friends agree in chat, the page displays the shared plan, outdoor choices are visible, and the fund is simulated.
+## Recording and judging
 
-Jeffrey coordinates the only Photon listener, records the video, checks repository visibility and submits. The local backup `data/backup-combined-demo.txt` is a successful offline transcript, not a video. No submission or external publication was performed by C.
+Use the two-minute storyboard and offline fallback in [demo-script.md](demo-script.md). It shows the approved plan and “Who covered what”, not deposits into a pooled pot. The local ledger must remain labelled simulated. There is no booking, payment or custody feature.
+
+The team’s brief gives four minutes per judge: two minutes for the demo and two for questions. Jeffrey coordinates the Photon listener, real-phone checks, recording, repository visibility and submission. This file is copy for review; it is not a submitted entry or a recorded video.

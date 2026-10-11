@@ -28,26 +28,27 @@ const ledger = () => ({
   spending: { byCategory: [], overCategories: [], unclassifiedDollars: 0, totalSpentDollars: 200, contingencyDollars: 30 },
   unclassifiedDollars: 0, unattributedDollars: 0,
 });
-async function page(initialFund = ledger(), fetchPage) {
+async function page(initialFund = ledger(), fetchPage, options = {}) {
   const elements = new Map();
   const query = (selector) => {
     if (!elements.has(selector)) elements.set(selector, new Element());
     return elements.get(selector);
   };
   let fund = initialFund;
+  let currentSnapshot = options.snapshot ?? snapshot;
   let snapshotFailed = false;
   let fundStatus = 200;
   let pendingFund;
   const context = createContext({
     URL, URLSearchParams, Intl,
     document: { querySelector: query, createElement: () => new Element(), body: { dataset: {} } },
-    window: { location: { search: '' }, setInterval() {}, matchMedia: () => ({ matches: false, addEventListener() {} }) },
+    window: { location: { search: options.search ?? '' }, setInterval() {}, matchMedia: () => ({ matches: false, addEventListener() {} }) },
     localStorage: { getItem: () => null },
     fetch: async (url) => {
       if (fetchPage) return fetchPage(url);
       if (url.endsWith('/snapshot')) {
         if (snapshotFailed) throw new Error('Offline');
-        return { ok: true, json: async () => snapshot };
+        return { ok: true, json: async () => currentSnapshot };
       }
       if (pendingFund) return pendingFund;
       return { ok: fundStatus === 200, status: fundStatus, json: async () => fund };
@@ -60,6 +61,8 @@ async function page(initialFund = ledger(), fetchPage) {
   await context.initialRefresh;
   return {
     fund: query('#fund'),
+    trip: query('#trip'),
+    setSnapshot(value) { currentSnapshot = value; },
     refresh: () => runInContext('refresh()', context),
     refreshFund: () => runInContext('refreshFund(12)', context),
     setFund(value) { fund = value; },
@@ -150,5 +153,106 @@ describe('Who covered what page', () => {
     await inFlight;
     expect(text(p.fund)).toMatch(/tracking is unavailable/i);
     expect(text(p.fund)).not.toContain('$');
+  });
+});
+
+
+const descendants = (node) => node.children.flatMap(child => [child, ...descendants(child)]);
+const calendarLinks = (node) => descendants(node).filter(child => child.href?.endsWith('/plan.ics'));
+
+describe('Approved-plan calendar link', () => {
+  it('offers a relative calendar download for an approved plan', async () => {
+    const p = await page();
+    const links = calendarLinks(p.trip);
+    expect(links).toHaveLength(1);
+    expect(links[0].href).toBe('/api/trips/chapel-hill-weekend/plan.ics');
+    expect(links[0].textContent).toMatch(/Add this plan to your calendar.*\.ics/);
+  });
+  it.each(['gathering', 'researching', 'proposed', 'awaiting_acceptance'])(
+    'has no calendar link while the trip is %s', async status => {
+      const p = await page(undefined, undefined, { snapshot: { ...snapshot, status } });
+      expect(calendarLinks(p.trip)).toHaveLength(0);
+    });
+  it('removes the download after approval is invalidated', async () => {
+    const p = await page();
+    expect(calendarLinks(p.trip)).toHaveLength(1);
+    p.setSnapshot({ ...snapshot, status: 'proposed', revision: 13 });
+    await p.refresh();
+    expect(calendarLinks(p.trip)).toHaveLength(0);
+  });
+  it('encodes the trip from the page URL into a same-origin path', async () => {
+    const p = await page(undefined, undefined, { search: '?trip=weekend%2Ffriends%3Fview' });
+    expect(calendarLinks(p.trip)[0]?.href).toBe('/api/trips/weekend%2Ffriends%3Fview/plan.ics');
+  });
+});
+
+
+const candidate = (overrides = {}) => ({
+  candidateId: 'park', revision: 12, title: 'Park weekend', startAt: '2026-11-14T09:00:00-05:00', endAt: '2026-11-16T09:00:00-05:00',
+  dataSource: 'fixture', itinerary: [], costs: [], contingencyCents: 3000, perPersonTotals: [],
+  evidence: [], tradeoffs: [], feasibility: { feasible: true, unknownEssentials: [], violatedConstraints: [] }, ...overrides,
+});
+
+describe('Plan states and evidence honesty', () => {
+  it.each([
+    ['gathering', /Gathering trip details/i],
+    ['researching', /Researching trip options/i],
+    ['proposed', /Compare the options/i],
+    ['awaiting_acceptance', /Waiting for everyone/i],
+    ['approved', /Everyone.*in/i],
+  ])('explains the %s state even with no candidates', async (status, expected) => {
+    const p = await page(undefined, undefined, { snapshot: { ...snapshot, status } });
+    expect(text(p.trip)).toMatch(expected);
+    if (status !== 'gathering') expect(text(p.trip)).not.toMatch(/Your group is gathering/);
+  });
+  it('labels fixture prices as made-up demo data and live prices as web-search estimates', async () => {
+    const p = await page(undefined, undefined, { snapshot: { ...snapshot, candidates: [candidate(), candidate({ candidateId: 'live', dataSource: 'live' })] } });
+    expect(text(p.trip)).toMatch(/demo data.*prices made up/i);
+    expect(text(p.trip)).toMatch(/estimates from web search/i);
+  });
+  it('shows an essential unknown as a maybe and never displays its missing price as zero', async () => {
+    const c = candidate({
+      costs: [{ costId: 'hotel', category: 'lodging', label: 'Hotel', lowCents: 0, highCents: 0, allocation: 'equal_shared', priceStatus: 'unknown', evidenceIds: [] }],
+      feasibility: { feasible: false, unknownEssentials: ['Hotel'], violatedConstraints: [] },
+    });
+    const p = await page(undefined, undefined, { snapshot: { ...snapshot, candidates: [c] } });
+    expect(text(p.trip)).toMatch(/price not found/i);
+    expect(text(p.trip)).toMatch(/Maybe/i);
+    expect(text(p.trip)).not.toContain('$0');
+    expect(text(p.trip)).not.toContain('Within known limits');
+  });
+  it('shows source claims and uncertainty with community attribution', async () => {
+    const c = candidate({ evidence: [{ evidenceId: 's1', url: 'https://example.com/trip', title: 'A traveler report', kind: 'community', retrievedAt: '2026-10-11T09:00:00Z', claim: 'One traveler found the trail crowded.', uncertainty: 'One account; conditions may differ.' }] });
+    const p = await page(undefined, undefined, { snapshot: { ...snapshot, candidates: [c] } });
+    expect(text(p.trip)).toContain('One traveler found the trail crowded.');
+    expect(text(p.trip)).toContain('One account; conditions may differ.');
+    expect(text(p.trip)).toMatch(/one person.s experience/i);
+    const link = descendants(p.trip).find(node => node.href === 'https://example.com/trip');
+    expect(link.rel).toBe('noopener noreferrer');
+    expect(link.target).toBe('_blank');
+  });
+  it.each(['http://example.com/trip', 'javascript:alert(1)', 'invalid'])('keeps unsafe source URL %s as plain text', async url => {
+    const c = candidate({ evidence: [{ evidenceId: 's1', url, title: '<img onerror=alert(1)>', kind: 'web', retrievedAt: '2026-10-11T09:00:00Z', claim: '<script>untrusted</script>' }] });
+    const p = await page(undefined, undefined, { snapshot: { ...snapshot, candidates: [c] } });
+    expect(descendants(p.trip).some(node => node.href === url)).toBe(false);
+    expect(text(p.trip)).toContain(url);
+    expect(text(p.trip)).toContain('<script>untrusted</script>');
+  });
+  it('marks the selected current-revision plan as approved without calling it booked', async () => {
+    const c = candidate();
+    const p = await page(undefined, undefined, { snapshot: { ...snapshot, candidates: [c], selectedCandidate: c } });
+    expect(text(p.trip)).toContain('Approved plan');
+    expect(text(p.trip)).toMatch(/not bookings|nothing is booked/i);
+  });
+});
+
+
+describe('Live price presentation', () => {
+  it('keeps a found live price labelled as an estimate instead of verified inventory', async () => {
+    const c = candidate({ dataSource: 'live', costs: [{ costId: 'hotel', category: 'lodging', label: 'Hotel', lowCents: 9000, highCents: 11000, allocation: 'equal_shared', priceStatus: 'verified', evidenceIds: [] }] });
+    const p = await page(undefined, undefined, { snapshot: { ...snapshot, candidates: [c] } });
+    expect(text(p.trip)).toContain('$90.00 to $110.00');
+    expect(text(p.trip)).toMatch(/Hotel.*estimate/);
+    expect(text(p.trip)).not.toMatch(/\bverified\b/i);
   });
 });

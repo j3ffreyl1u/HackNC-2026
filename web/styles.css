@@ -55,7 +55,7 @@ footer { margin:36px 4px 0; color:#345d60; font-size:.78rem; line-height:1.8; te
 @media(max-width:620px) { .topbar { height:74px; padding:0 18px; }.brand { font-size:.95rem; }.live-pill { padding:7px 10px; }.hero { min-height:470px; padding:30px 25px 110px; }.hero::after { background:linear-gradient(180deg,#efffffef 0%,#e5faffed 50%,#e4faff10 100%); }.hero-orb { width:80px; height:80px; right:7%; top:auto; bottom:25px; font-size:2rem; }.landscape { object-position:right; } main { padding:0 16px; }.trip-heading { align-items:start; flex-direction:column; gap:8px; }.candidate { padding:23px; }.cost-row { flex-wrap:wrap; }.cost-row strong { margin-left:auto; }.eyebrow { font-size:.65rem; letter-spacing:.08em; } }
 @media(prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } }
 /* Aero Explorer: luminous scenery, reflective chrome, and layered desktop glass. */
-body { background:linear-gradient(#007acb33,#047eba22 65%,#175f492b),url('/aero-ocean.jpg') center top / cover fixed; }
+body { background:linear-gradient(#007acb33,#047eba22 65%,#175f492b),url('./aero-ocean.jpg') center top / cover fixed; }
 .topbar { height:92px; }
 .brand { color:white; font-size:1.25rem; text-shadow:0 2px 3px #004c83; }
 .brand-mark { width:44px; height:44px; border-radius:50%; font-size:1.4rem; }
@@ -64,7 +64,7 @@ main { border:1px solid #e0faffb3; border-radius:18px; padding:9px; background:l
 .explorer-icon { font-size:1.6rem; color:#007bcb; text-shadow:0 1px white; }
 .explorer-bar a { color:#12486a; text-decoration:none; padding:7px 12px; border:1px solid #ffffff7a; border-radius:5px; background:linear-gradient(#ffffff90,#e1f4ff2a); }
 .explorer-bar a:first-of-type { margin-left:auto; }
-.hero { border-radius:8px; min-height:490px; padding:44px 55px; background:url('/aero-ocean.jpg') center 48% / cover; box-shadow:inset 0 0 0 1px #00598766,0 2px 4px #04517333; }
+.hero { border-radius:8px; min-height:490px; padding:44px 55px; background:url('./aero-ocean.jpg') center 48% / cover; box-shadow:inset 0 0 0 1px #00598766,0 2px 4px #04517333; }
 .landscape,.hero-orb { display:none; }
 .hero::after { background:linear-gradient(90deg,#e9ffffd9,#e8ffffa6 30%,#d8faff15 65%); }
 h1 { font-size:clamp(3.8rem,7vw,6rem); font-weight:700; letter-spacing:-.065em; line-height:.96; color:#064d88; text-shadow:0 2px 0 white,0 4px 8px #0d76b32e; }
@@ -100,9 +100,9 @@ footer { margin:0; padding:22px; background:#e5f9ffd4; border-top:1px solid #fff
 @media(max-width:760px) { #fund:not(:empty) { margin:0 9px 20px; padding:18px; } }
 .nature-summary { margin:18px 0; padding:14px; border:1px solid #a6cf8d; border-radius:9px; background:linear-gradient(#f7ffec,#e2f4d3); box-shadow:inset 0 1px white; }.nature-summary h4 { margin:0 0 8px; color:#326b32; font-size:.88rem; }.nature-summary p { margin:7px 0; }.nature-comparison { padding:14px 18px; border:1px solid #b7d990; border-radius:8px; background:#f1ffdfd9; color:#325e2a; line-height:1.6; font-size:.9rem; }
 /* Stock-art composition: preserve the globe and water, put copy in a small glass pane. */
-body { background:linear-gradient(#00458225,#03557935),url('/aero-meadow.webp') center top / cover fixed; }
+body { background:linear-gradient(#00458225,#03557935),url('./aero-meadow.webp') center top / cover fixed; }
 main { max-width:1180px; background:linear-gradient(135deg,#defaff78,#66a8d34a); backdrop-filter:blur(8px); }
-.hero { min-height:600px; justify-content:flex-end; align-items:flex-start; padding:32px; background:url('/aero-ocean.jpg') center / cover; }
+.hero { min-height:600px; justify-content:flex-end; align-items:flex-start; padding:32px; background:url('./aero-ocean.jpg') center / cover; }
 .hero::after { display:none; }
 .hero-copy { max-width:390px; padding:25px 28px 28px; border:1px solid #e6ffffef; border-radius:12px; background:linear-gradient(135deg,#f4ffffdd,#e4faffba); box-shadow:inset 0 1px 0 white,inset 0 0 0 1px #669fc659,0 10px 30px #064b7933; backdrop-filter:blur(5px); }
 .hero .eyebrow { padding:0; margin:0 0 8px; background:none; border:0; border-radius:0; color:#2b6688; letter-spacing:0; text-transform:none; font-size:.83rem; font-weight:600; }
@@ -112,7 +112,7 @@ main { max-width:1180px; background:linear-gradient(135deg,#defaff78,#66a8d34a);
 .hero .aero-button { font-size:.86rem; gap:12px; margin-top:21px; }
 .candidate h3 { background:linear-gradient(#f6ffff,#d5f1ff 48%,#b6daee 51%,#d5f0ff); }
 .sky-bubbles { opacity:.5; }
-@media(max-width:760px) { body { background-attachment:scroll; } .hero { min-height:660px; align-items:flex-end; justify-content:center; padding:220px 16px 20px; background:#118fc1 url('/aero-ocean.jpg') left top / auto 370px no-repeat; }.hero-copy { width:100%; max-width:none; padding:22px; background:linear-gradient(#f2ffffef,#d5f2ffeb); }.hero h1 { font-size:3.5rem; }.hero .eyebrow { font-size:.8rem; } }
+@media(max-width:760px) { body { background-attachment:scroll; } .hero { min-height:660px; align-items:flex-end; justify-content:center; padding:220px 16px 20px; background:#118fc1 url('./aero-ocean.jpg') left top / auto 370px no-repeat; }.hero-copy { width:100%; max-width:none; padding:22px; background:linear-gradient(#f2ffffef,#d5f2ffeb); }.hero h1 { font-size:3.5rem; }.hero .eyebrow { font-size:.8rem; } }
 /* Interactions feel like glass objects, with motion following the user's hand. */
 .hero,.candidate { transform-origin:center; transition:transform 180ms ease-out,box-shadow 180ms ease-out; }
 body[data-motion="on"] .hero,body[data-motion="on"] .candidate { transform:perspective(1600px) rotateX(var(--tilt-x,0deg)) rotateY(var(--tilt-y,0deg)); }
@@ -189,3 +189,15 @@ body { background:radial-gradient(ellipse at 45% 0%,#87fff4a8,transparent 45%),l
   .fund-person-row { gap:4px 12px; }
   #fund .fund-total { font-size:1.1rem !important; }
 }
+
+.calendar-link { display:inline-block; max-width:100%; margin:0 4px 18px; padding:12px 16px; border:1px solid #348879; border-radius:8px; background:linear-gradient(#e5fff7,#a5e3d2); color:#0b4a42; font-size:.9rem; font-weight:700; line-height:1.5; text-decoration:none; overflow-wrap:anywhere; }
+.calendar-link:hover { background:#c8f1e5; text-decoration:underline; }
+
+.plan-state { margin:0 4px 18px; padding:14px 16px; border:1px solid #bad5e1; border-radius:8px; background:#f6fcff; }
+.plan-state h3 { margin:0 0 7px; font-size:1.05rem; color:#104b77; }
+.plan-state p { margin:0; line-height:1.6; font-size:.9rem; }
+.selected-plan { display:inline-block; padding:7px 10px; border:1px solid #348879; border-radius:6px; background:#d8f4e9; color:#0b4a42; font-weight:700; }
+.source-record { padding:10px 0; border-top:1px solid #bad5e1; overflow-wrap:anywhere; }
+.source-record p { margin:5px 0; line-height:1.5; font-size:.83rem; }
+.source-kind,.source-url { color:#365970; }
+.source-uncertainty { color:#75490e; }
