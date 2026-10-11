@@ -124,7 +124,7 @@ function startNewRevision(state: TripState, changed: readonly string[]): { state
 
   const replies: TripReply[] = [];
   if (hadPlan || state.status === 'researching' || state.acceptances.length > 0) {
-    const lines = [`${describeChanges(state, changed)}, so the plan is now revision ${revision}.`];
+    const lines = [`${describeChanges(state, changed)}, so I'm updating the plan.`];
     if (state.acceptances.length > 0) lines.push('Earlier approvals no longer apply.');
     for (const c of candidates) {
       if (before.get(c.candidateId) && !c.feasibility.feasible) lines.push(`${c.title} no longer fits everyone's limits, so I've dropped it.`);
@@ -133,7 +133,7 @@ function startNewRevision(state: TripState, changed: readonly string[]): { state
       const chosen = candidates.find((c) => c.candidateId === next.selectedCandidateId) as TripCandidate;
       replies.push({ audience: GROUP, text: `${lines.join(' ')} Please accept ${chosen.title} again.`, proposalRef: { candidateId: chosen.candidateId, revision } });
     } else if (researchRequested) {
-      replies.push({ audience: GROUP, text: `${lines.join(' ')} I'm looking for options that fit.` });
+      replies.push({ audience: GROUP, text: `${lines.join(' ')} Give me a minute to look for options that fit.` });
     } else {
       replies.push({ audience: GROUP, text: lines.join(' ') });
     }

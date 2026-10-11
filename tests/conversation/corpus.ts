@@ -151,7 +151,7 @@ export const corpus: Case[] = [
   c('send options', { actions: ['request_plans'] }),
   c('can you pull together a couple options for us', { actions: ['request_plans'] }),
   c('any ideas?', { actions: ['request_plans'] }, false),
-  c("so what's the plan", { actions: ['request_plans'] }, false),
+  c("so what's the plan", { actions: ['request_plans'] }),
   c('ok what do you have for us', { actions: ['request_plans'] }, false),
   c("let's see what you got", { actions: ['request_plans'] }, false),
   c("Nah nothing is wrong, but can you show us some options?", { actions: ['request_plans'] }, false),

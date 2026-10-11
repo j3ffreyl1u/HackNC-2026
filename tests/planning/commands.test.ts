@@ -209,7 +209,7 @@ describe('the revision story: Mason lowers their cap', () => {
   it('never reveals the cap or who changed it in the group message', () => {
     const result = setCap(allAccept(proposed(), 'a'), 'mason', 18_000);
     const text = publicText(result);
-    expect(text).toMatch(/revision 2/);
+    expect(text).toMatch(/updating the plan/);
     expect(text).not.toMatch(/Mason|18,?000|\$/);
   });
 

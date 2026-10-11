@@ -389,3 +389,16 @@ describe('answering "does anyone have a car?"', () => {
     expect(r.kind === 'commands' ? r.acknowledgement?.text : '').toMatch(/there's a car/);
   });
 });
+
+describe('status questions are always answered', () => {
+  const ask = (status: any, actionable: ActionableItem[] = []) => setup({ status, actionable } as never).service.parseInbound(msg({ text: "what's the status?", visibility: 'private' }));
+  it('while gathering it asks the planner for a recap', async () => {
+    expect(cmds(await ask('gathering'))[0]?.action.kind).toBe('request_plans');
+  });
+  it('while researching it says it is still looking', async () => {
+    expect(text(await ask('researching'))).toMatch(/still looking up options/);
+  });
+  it('once options are out it points back to them', async () => {
+    expect(text(await ask('proposed', [pick1, pick2]))).toMatch(/The options are above.*pick 1/s);
+  });
+});
