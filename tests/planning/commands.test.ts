@@ -54,7 +54,8 @@ describe('request_plans', () => {
     const first = run(createTrip('trip-1', roster), 'mason', { kind: 'request_plans' });
     const second = run(first.state, 'alex', { kind: 'request_plans' });
     const asking = (r: { text: string }) => r.text.trim().endsWith('?');
-    const askedAgain = second.replies.filter(asking).some((r) => first.replies.filter(asking).some((f) => f.text === r.text));
+    // A different person who asks is told the open question themselves (privately), but it is never re-broadcast.
+    const askedAgain = second.replies.filter(asking).filter((r) => r.audience.kind === 'group').some((r) => first.replies.filter(asking).some((f) => f.text === r.text));
     expect(askedAgain).toBe(false);
   });
 
@@ -63,7 +64,7 @@ describe('request_plans', () => {
     expect(later.rejection?.code).toBe('NOT_READY');
     expect(later.replies.length).toBeGreaterThan(0);
     const text = later.replies.map((r) => r.text).join(' ');
-    expect(text).toMatch(/waiting on an answer to my last question/i);   // nothing said yet: no checklist, just a nudge
+    expect(text).toBe('Where are you all leaving from?');   // nothing said yet: no checklist, just the open question
     expect(text).not.toMatch(/budget|dates|Mason's/);
     expect(later.replies.every((r) => r.audience.kind === 'group' || r.audience.kind === 'private')).toBe(true);
   });
@@ -367,13 +368,10 @@ describe('purity', () => {
 });
 
 describe('the early-request summary', () => {
-  it('comes with the very first request, along with the questions', () => {
+  it('the very first request gets just the one question, with no checklist', () => {
     const result = run(createTrip('trip-1', roster), 'mason', { kind: 'request_plans' });
     expect(result.rejection?.code).toBe('NOT_READY');
-    const welcome = result.replies.find((r) => /one at a time/i.test(r.text));
-    expect(welcome).toBeDefined();
-    expect(result.replies[0]).toBe(welcome);                                  // a one-line welcome comes first, not a checklist
-    expect(welcome!.text).not.toMatch(/budget|dates|preferences/i);
+    expect(result.replies.some((r) => /what I need|one at a time|budget|dates|preferences/i.test(r.text))).toBe(false); // no checklist, no preamble
     const questions = result.replies.filter((r) => r.text.endsWith('?'));
     expect(questions.map((r) => r.text)).toEqual(['Where are you all leaving from?']); // then exactly one question
   });

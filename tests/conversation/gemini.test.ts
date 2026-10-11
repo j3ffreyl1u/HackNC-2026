@@ -45,7 +45,10 @@ describe('gemini intent model', () => {
     expect(v([{ field: 'region', text: 'within 2 hours' }])).toEqual([{ field: 'region', value: 'within 2 hours', maxTravelMinutes: 120 }]);
     expect(v([{ field: 'region', text: 'the mountains', maxTravelMinutes: 5 }])).toEqual([{ field: 'region', value: 'the mountains' }]);
     expect(v([{ field: 'transport', text: 'my car', vehicleAvailable: true }])).toEqual([{ field: 'transport', value: 'my car', vehicleAvailable: true }]);
-    expect(v([{ field: 'transport', text: 'my car', vehicleAvailable: 'yes' }])).toEqual([{ field: 'transport', value: 'my car' }]);
+    expect(v([{ field: 'transport', text: 'my car', vehicleAvailable: 'yes' }])).toEqual([{ field: 'transport', value: 'my car', vehicleAvailable: true }]); // a non-boolean is read from the words
+    expect(v([{ field: 'transport', text: 'Mason has one' }])).toEqual([{ field: 'transport', value: 'Mason has one', vehicleAvailable: true }]);
+    expect(v([{ field: 'transport', text: 'nobody has one' }])).toEqual([{ field: 'transport', value: 'nobody has one', vehicleAvailable: false }]);
+    expect(v([{ field: 'transport', text: 'maybe' }])).toEqual([{ field: 'transport', value: 'maybe' }]);
   });
   it('asks once more when the model answers "clarify", and uses the second answer', async () => {
     let calls = 0;

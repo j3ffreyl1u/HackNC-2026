@@ -122,8 +122,8 @@ describe('application runtime', () => {
       expect((await repository.loadTrip(state.tripId))?.pendingQuestions).toHaveLength(1);
       const count = conversation.sent.length;
       await conversation.emit(inbound('again'));
-      expect(conversation.sent.slice(count).some(m => /waiting on an answer to my last question/i.test(m.text))).toBe(true);
-      expect(conversation.sent.slice(count).filter(m => m.text.endsWith('?')).length).toBe(0);
+      expect(conversation.sent.slice(count).some(m => m.text === 'Where are you all leaving from?')).toBe(true);
+      expect(conversation.sent.slice(count).filter(m => m.text.endsWith('?')).length).toBe(1); // only the open question again, never a second one
     } finally { await runtime.stop(); repository.close(); }
   });
   it('reports missing legacy group authors privately without changing the saved trip', async () => {

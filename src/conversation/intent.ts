@@ -59,7 +59,9 @@ export function validateConstraintItem(raw: unknown): ConstraintValue | null {
     case 'transport': {
       const text = str(o.text, 60);
       if (!text) return null;
-      return { field: 'transport', value: text, ...(typeof o.vehicleAvailable === 'boolean' ? { vehicleAvailable: o.vehicleAvailable } : {}) };
+      // The model sometimes leaves the yes/no out ("Mason has one"); read it from the words rather than ask again.
+      const has = typeof o.vehicleAvailable === 'boolean' ? o.vehicleAvailable : /\b(?:no|nobody|none|don'?t|doesn'?t|without|neither)\b/i.test(text) ? false : /\b(?:has|have|got|own|owns|car|truck|suv|van|vehicle|drive|ride|one)\b/i.test(text) ? true : undefined;
+      return { field: 'transport', value: text, ...(has !== undefined ? { vehicleAvailable: has } : {}) };
     }
     case 'duration': {
       const n = o.nights;

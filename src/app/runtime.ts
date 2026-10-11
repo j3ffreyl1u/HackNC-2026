@@ -184,7 +184,9 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
       if (planner.finalizeTurn && !(parsed.kind === 'commands' && parsed.clarificationQuestion) && commands.some(c => c.action.kind === 'update_constraint' || c.action.kind === 'request_plans')) {
         const final = planner.finalizeTurn(nextState, message.occurredAt);
         nextState = final.state;
-        replies.push(...final.replies.map((reply, index) => makeMessage(tripId, `questions:${message.eventId}:${index}`, reply)));
+        // In a one-on-one chat a shared question is asked of the person talking, not copied to everyone else's phone.
+        replies.push(...final.replies.map((reply, index) => makeMessage(tripId, `questions:${message.eventId}:${index}`,
+          message.visibility === 'private' && reply.audience.kind === 'group' ? { ...reply, audience: { kind: 'private', memberId: member.memberId } } : reply)));
       }
       if (parsed.kind === 'commands' && parsed.clarificationQuestion) {
         replies.push(makeMessage(tripId, `clarification:${message.eventId}`, {

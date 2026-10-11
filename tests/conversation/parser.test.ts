@@ -375,3 +375,17 @@ describe('confirming a hedged budget', () => {
     expect((await service.parseInbound(msg({ text: 'yes it is' }))).kind).toBe('ignored');
   });
 });
+
+describe('answering "does anyone have a car?"', () => {
+  const car = (t: string) => setup({ pendingQuestion: { field: 'transport' } }).service.parseInbound(msg({ text: t }));
+  it.each(['Mason has one', 'mason has a car', 'Yes', 'yeah', 'I do', 'my friend does', 'we do'])('"%s" means there is a car', async (t) => {
+    expect(updates(await car(t))[0]).toMatchObject({ field: 'transport', vehicleAvailable: true });
+  });
+  it.each(['No', 'nope', 'nobody does', 'none of us', "I don't have one"])('"%s" means there is no car', async (t) => {
+    expect(updates(await car(t))[0]).toMatchObject({ field: 'transport', vehicleAvailable: false });
+  });
+  it('acknowledges it as "there\'s a car", not as raw text', async () => {
+    const r = await setup({ pendingQuestion: { field: 'transport' } }).service.parseInbound(msg({ text: 'Mason has one', visibility: 'private' }));
+    expect(r.kind === 'commands' ? r.acknowledgement?.text : '').toMatch(/there's a car/);
+  });
+});

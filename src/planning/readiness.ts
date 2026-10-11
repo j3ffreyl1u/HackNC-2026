@@ -208,6 +208,7 @@ export function describeGaps(state: TripState, result: Pick<ReadinessResult, 'mi
   if (parts === '') return tail === '' ? "I'm not ready to plan yet." : `I'm not ready to plan yet. ${tail}`;
   // Nothing has been told to the assistant yet: "still waiting" would be wrong, so say what the plan needs instead.
   const fresh = Object.values(state.memberConstraints).every((list) => list.length === 0) && state.groupConstraints.length === 0;
-  if (fresh) return "Happy to help plan this! I'm waiting on an answer to my last question, then I'll ask the next one.";
+  // Nothing answered yet: no checklist, just the question that is already open.
+  if (fresh) return [...state.pendingQuestions].sort((a, b) => b.askedAt.localeCompare(a.askedAt))[0]?.text ?? "Happy to help! Where are you all leaving from?";
   return `I'm still waiting on ${parts}.${tail === '' ? '' : ` ${tail}`}`;
 }

@@ -249,8 +249,13 @@ export function createParser(deps: ConversationDependencies) {
         ? reply(msg, `Sorry about that! What should I fix? Tell me the right detail, like "my max is $300", "free Nov 21-23" or "leaving from Raleigh".`, 'sorry')
         : { kind: 'ignored', reason: 'nothing to correct' };
     }
-    if (YES.test(text) || YES.test(plain)) return resolveAnswer(msg, ctx, true);
-    if (NO.test(text) || NO.test(plain)) return resolveAnswer(msg, ctx, false);
+    // A bare yes/no to "does anyone have a car?" is the answer, not a confirmation of something else.
+    const carYes = YES.test(text) || YES.test(plain), carNo = NO.test(text) || NO.test(plain);
+    if (ctx.pendingQuestion?.field === 'transport' && !ctx.pendingConfirmation && ctx.actionable.length === 0 && (carYes || carNo)) {
+      return fromConstraints(msg, ctx, text, [{ value: { field: 'transport', value: carYes ? 'own_vehicle' : 'no_vehicle', vehicleAvailable: carYes }, hedged: false }]);
+    }
+    if (carYes) return resolveAnswer(msg, ctx, true);
+    if (carNo) return resolveAnswer(msg, ctx, false);
 
     // Rules first (fast, exact). Anything the rules did not recognize is handed to the language model automatically,
     // and its (validated) answer is merged with what the rules found.
