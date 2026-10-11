@@ -5,10 +5,12 @@ import {
   checkFunding,
   depositTag,
   describeFund,
+  describeSettlement,
   driftNotices,
   parseDepositTag,
   planContributions,
   reminderFor,
+  settleTrip,
   spendVsPlan,
 } from '../../src/planning/funding.js';
 import type { TripState } from '../../src/planning/types.js';
@@ -295,5 +297,107 @@ describe('driftNotices', () => {
     expect(notices[0].text).toMatch(/didn't budget/i);
     expect(notices[1].text).toMatch(/\$40/);
     expect(driftNotices(report, new Set(notices.map((n) => n.key)))).toEqual([]);
+  });
+});
+
+describe('settleTrip', () => {
+  const plan = () => {
+    const p = planContributions(approved());
+    if (!p.ok) throw new Error(p.reason);
+    return p;
+  };
+  const paidIn = (dollars: Record<string, number>, revision = 1) =>
+    Object.entries(dollars).map(([id, amountDollars], i) => ({ id: `d${i}-${revision}`, amountDollars, description: depositTag(id, revision) }));
+
+  it('returns what is left to the people who put it in, in proportion', () => {
+    const p = plan();
+    const funding = checkFunding(p, paidIn({ mason: 160, alex: 160, jordan: 160 }));
+    const spend = spendVsPlan(p, [{ id: 'a', amountDollars: 330, category: 'accommodation' }]);
+    const s = settleTrip(p, funding, spend);
+    expect(s.collectedDollars).toBe(480);
+    expect(s.spentDollars).toBe(330);
+    expect(s.leftoverDollars).toBe(150);
+    expect(s.refunds).toEqual([{ memberId: 'mason', dollars: 50 }, { memberId: 'alex', dollars: 50 }, { memberId: 'jordan', dollars: 50 }]);
+    expect(s.shortfall).toBeUndefined();
+  });
+
+  it('refunds always add up exactly to the leftover, and larger contributions get at least as much back', () => {
+    const p = plan();
+    const funding = checkFunding(p, paidIn({ mason: 160, alex: 160, jordan: 170 }));
+    const spend = spendVsPlan(p, [{ id: 'a', amountDollars: 331, category: 'accommodation' }]);
+    const s = settleTrip(p, funding, spend);
+    expect(s.leftoverDollars).toBe(159);
+    expect(s.refunds.reduce((t, r) => t + r.dollars, 0)).toBe(159);
+    const get = (id: string) => s.refunds.find((r) => r.memberId === id)!.dollars;
+    expect(get('jordan')).toBeGreaterThanOrEqual(get('mason'));
+  });
+
+  it('gives the extra dollars to the largest remainders, not just the first people on the list', () => {
+    const p = plan();
+    const funding = checkFunding(p, paidIn({ mason: 170, alex: 160, jordan: 160 }));
+    const s = settleTrip(p, funding, spendVsPlan(p, [{ id: 'a', amountDollars: 331, category: 'accommodation' }]));
+    // 159 left over 490 in: shares 55.2, 51.9, 51.9. The two spare dollars go to alex and jordan, not mason.
+    expect(s.refunds).toEqual([{ memberId: 'mason', dollars: 55 }, { memberId: 'alex', dollars: 52 }, { memberId: 'jordan', dollars: 52 }]);
+  });
+
+  it('reports a shortfall and a whole-dollar equal split of it when the fund was overspent', () => {
+    const p = plan();
+    const funding = checkFunding(p, paidIn({ mason: 160, alex: 160, jordan: 160 }));
+    const spend = spendVsPlan(p, [{ id: 'a', amountDollars: 500, category: 'accommodation' }]);
+    const s = settleTrip(p, funding, spend);
+    expect(s.leftoverDollars).toBe(-20);
+    expect(s.refunds).toEqual([]);
+    expect(s.shortfall?.dollars).toBe(20);
+    expect(s.shortfall?.perMember).toEqual(ids.map((memberId) => ({ memberId, dollars: 7 })));
+  });
+
+  it('returns deposits made for an older plan revision to the person who sent them', () => {
+    const p = plan();
+    const funding = checkFunding(p, [...paidIn({ mason: 160, alex: 160, jordan: 160 }), ...paidIn({ alex: 90 }, 0)]);
+    const s = settleTrip(p, funding, spendVsPlan(p, []));
+    expect(s.staleReturns).toEqual([{ memberId: 'alex', dollars: 90 }]);
+    expect(s.leftoverDollars).toBe(480);
+  });
+
+  it('keeps unattributed money apart for someone to claim', () => {
+    const p = plan();
+    const funding = checkFunding(p, [{ id: 'm', amountDollars: 75, description: 'cash' }]);
+    const s = settleTrip(p, funding, spendVsPlan(p, []));
+    expect(s.unattributedDollars).toBe(75);
+    expect(s.refunds).toEqual([]);
+  });
+
+  it('has nothing to return when nobody paid in', () => {
+    const p = plan();
+    const s = settleTrip(p, checkFunding(p, []), spendVsPlan(p, []));
+    expect(s.refunds).toEqual([]);
+    expect(s.leftoverDollars).toBe(0);
+  });
+});
+
+describe('describeSettlement', () => {
+  it('says what came in, what went out and who gets what back, and that the bot moves nothing', () => {
+    const state = approved();
+    const p = planContributions(state);
+    if (!p.ok) throw new Error(p.reason);
+    const funding = checkFunding(p, ids.map((id, i) => ({ id: `d${i}`, amountDollars: 160, description: depositTag(id, 1) })));
+    const text = describeSettlement(state, settleTrip(p, funding, spendVsPlan(p, [{ id: 'a', amountDollars: 330, category: 'accommodation' }])), { simulated: true });
+    expect(text).toMatch(/\$480 in/);
+    expect(text).toMatch(/\$330 spent/);
+    expect(text).toMatch(/\$150 left/);
+    expect(text).toMatch(/Mason \$50/);
+    expect(text).toMatch(/send|return/i);
+    expect(text).toMatch(/I don't move any money/i);
+    expect(text).toMatch(/simulated/i);
+  });
+
+  it('explains a shortfall without blaming anyone', () => {
+    const state = approved();
+    const p = planContributions(state);
+    if (!p.ok) throw new Error(p.reason);
+    const funding = checkFunding(p, ids.map((id, i) => ({ id: `d${i}`, amountDollars: 160, description: depositTag(id, 1) })));
+    const text = describeSettlement(state, settleTrip(p, funding, spendVsPlan(p, [{ id: 'a', amountDollars: 500, category: 'accommodation' }])));
+    expect(text).toMatch(/\$20 short/);
+    expect(text).toMatch(/\$7 each/);
   });
 });

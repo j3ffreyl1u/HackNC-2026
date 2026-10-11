@@ -113,6 +113,8 @@ export interface FundingReport {
   missingMemberIds: MemberId[];
   /** Deposits for an earlier revision of the plan. Their request was voided, so they don't count. */
   staleDollars: number;
+  /** The same stale deposits per person, so each can be returned to whoever sent them. */
+  staleByMember: { memberId: MemberId; dollars: number }[];
   /** Deposits that name nobody on the trip. They are held apart and never credited to a person. */
   unattributedDollars: number;
 }
@@ -127,6 +129,7 @@ export function checkFunding(plan: Extract<ContributionPlan, { ok: true }>, depo
   const paid = new Map<MemberId, number>(plan.requests.map((r) => [r.memberId, 0]));
   const seen = new Set<string>();
   let stale = 0;
+  const staleBy = new Map<MemberId, number>();
   let unattributed = 0;
   for (const deposit of deposits) {
     if (deposit.id !== undefined) {
@@ -140,6 +143,7 @@ export function checkFunding(plan: Extract<ContributionPlan, { ok: true }>, depo
       unattributed += deposit.amountDollars;
     } else if (tag.revision !== plan.revision) {
       stale += deposit.amountDollars;
+      staleBy.set(tag.memberId, (staleBy.get(tag.memberId) ?? 0) + deposit.amountDollars);
     } else {
       paid.set(tag.memberId, (paid.get(tag.memberId) ?? 0) + deposit.amountDollars);
     }
@@ -151,7 +155,7 @@ export function checkFunding(plan: Extract<ContributionPlan, { ok: true }>, depo
   const collectedDollars = perMember.reduce((total, m) => total + m.paidDollars, 0);
   const missingMemberIds = perMember.filter((m) => m.outstandingDollars > 0).map((m) => m.memberId);
   const status = missingMemberIds.length === 0 ? 'funded' : collectedDollars > 0 ? 'partially_funded' : 'requesting';
-  return { status, neededDollars: plan.neededDollars, collectedDollars, perMember, missingMemberIds, staleDollars: stale, unattributedDollars: unattributed };
+  return { status, neededDollars: plan.neededDollars, collectedDollars, perMember, missingMemberIds, staleDollars: stale, staleByMember: plan.requests.filter((r) => staleBy.has(r.memberId)).map((r) => ({ memberId: r.memberId, dollars: staleBy.get(r.memberId)! })), unattributedDollars: unattributed };
 }
 
 // ---- spending ----------------------------------------------------------------------------------------------
@@ -310,4 +314,76 @@ export function driftNotices(report: SpendReport, announced: ReadonlySet<string>
     notices.push({ key: 'unclassified', text: `${money(report.unclassifiedDollars)} of spending doesn't match any category in the plan, so I'm not counting it against a budget.` });
   }
   return notices;
+}
+
+// ---- wrap-up ------------------------------------------------------------------------------------------------
+
+export interface Settlement {
+  collectedDollars: number;
+  spentDollars: number;
+  /** Collected minus spent. Negative means the fund was overspent. */
+  leftoverDollars: number;
+  /** What is left, back to the people who put it in, in proportion to what each put in. Adds up exactly. */
+  refunds: { memberId: MemberId; dollars: number }[];
+  /** Only when overspent: how much, and an equal whole-dollar split of it (rounded up so it is covered). */
+  shortfall?: { dollars: number; perMember: { memberId: MemberId; dollars: number }[] };
+  /** Money sent for an older plan revision, to go back to whoever sent it in full. */
+  staleReturns: { memberId: MemberId; dollars: number }[];
+  /** Money that named nobody on the trip. Held apart until someone claims it. */
+  unattributedDollars: number;
+}
+
+/**
+ * Work out the end of the trip from the same two reports the fund view uses. It only calculates: the bot tells
+ * people who gets what back and never moves money. Refunds use the largest-remainder method on whole dollars so
+ * they always add up to the leftover exactly, and a person who put in more never gets less back.
+ */
+export function settleTrip(plan: Extract<ContributionPlan, { ok: true }>, funding: FundingReport, spend: SpendReport): Settlement {
+  const collected = funding.collectedDollars;
+  const spent = spend.totalSpentDollars;
+  const leftover = collected - spent;
+  const base = {
+    collectedDollars: collected,
+    spentDollars: spent,
+    leftoverDollars: leftover,
+    staleReturns: funding.staleByMember,
+    unattributedDollars: funding.unattributedDollars,
+  };
+  if (leftover < 0) {
+    const each = Math.ceil(-leftover / plan.requests.length);
+    return { ...base, refunds: [], shortfall: { dollars: -leftover, perMember: plan.requests.map((r) => ({ memberId: r.memberId, dollars: each })) } };
+  }
+  if (leftover === 0 || collected === 0) return { ...base, refunds: [] };
+
+  const shares = funding.perMember.map((m, order) => {
+    const numerator = leftover * m.paidDollars;
+    return { memberId: m.memberId, order, dollars: Math.floor(numerator / collected), remainder: numerator % collected };
+  });
+  let extra = leftover - shares.reduce((total, share) => total + share.dollars, 0);
+  for (const share of [...shares].sort((a, b) => b.remainder - a.remainder || a.order - b.order)) {
+    if (extra === 0) break;
+    share.dollars += 1;
+    extra -= 1;
+  }
+  return { ...base, refunds: shares.filter((s) => s.dollars > 0).map(({ memberId, dollars }) => ({ memberId, dollars })) };
+}
+
+/** The wrap-up message: what came in, what went out, who gets what back, and that the bot moves nothing. */
+export function describeSettlement(state: TripState, settlement: Settlement, options: { simulated?: boolean } = {}): string {
+  const name = (id: MemberId) => state.roster.find((m) => m.memberId === id)?.displayName ?? id;
+  const lines: string[] = [];
+  if (settlement.shortfall) {
+    const each = settlement.shortfall.perMember[0]?.dollars ?? 0;
+    lines.push(`Trip fund wrap-up: ${money(settlement.collectedDollars)} in, ${money(settlement.spentDollars)} spent, so the fund is ${money(settlement.shortfall.dollars)} short. Splitting that evenly would be ${money(each)} each.`);
+  } else {
+    lines.push(`Trip fund wrap-up: ${money(settlement.collectedDollars)} in, ${money(settlement.spentDollars)} spent, ${money(settlement.leftoverDollars)} left.`);
+    if (settlement.refunds.length > 0) lines.push(`To send back: ${settlement.refunds.map((r) => `${name(r.memberId)} ${money(r.dollars)}`).join(', ')}.`);
+  }
+  if (settlement.staleReturns.length > 0) {
+    lines.push(`Also return what was sent for an earlier version of the plan: ${settlement.staleReturns.map((r) => `${name(r.memberId)} ${money(r.dollars)}`).join(', ')}.`);
+  }
+  if (settlement.unattributedDollars > 0) lines.push(`${money(settlement.unattributedDollars)} didn't say who it was from, so someone needs to claim it.`);
+  lines.push("I don't move any money, so you'd send these yourselves.");
+  if (options.simulated) lines.push('This is simulated money in a demo account.');
+  return lines.join(' ');
 }
