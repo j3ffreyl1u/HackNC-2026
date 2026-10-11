@@ -86,9 +86,29 @@ describe('first live DM scenario, end to end (A parser + C runtime + B planner, 
     await t.stop();
   });
 
+  /**
+   * Regression for the live-trace bug: in direct mode, "Mason, which dates could you do for the trip?" was sent to
+   * Jeffrey as well. B currently marks it as a group question, which C fans out to everyone. EXPECTED TO FAIL until B emits
+   * it as a private question with Mason's memberId; when it starts passing, vitest fails this `it.fails`: change it to `it`.
+   */
+  it.fails("a question addressed to Mason ('Mason, which dates...') reaches only Mason's phone, never Jeffrey's", async () => {
+    const t = await live();
+    const steps = [
+      await t.say(JEFF, "Hi, let's plan a trip"),
+      await t.say(JEFF, "I'm leaving from Chapel Hill, 2 nights, I have a car, I'm free Nov 14-16, my max is $250"),
+      await t.say(JEFF, 'Can you show us some options?'),
+      await t.say(JEFF, 'Can you show us some options?'),
+    ];
+    const addressedToMason = /^Mason,/;
+    const sentToMason = steps.flatMap((r) => r.mason).filter((x) => addressedToMason.test(x));
+    const sentToJeffrey = steps.flatMap((r) => r.jeff).filter((x) => addressedToMason.test(x));
+    expect(sentToMason.length).toBeGreaterThan(0);   // Mason does get his question
+    expect(sentToJeffrey).toEqual([]);               // and Jeffrey does not
+    await t.stop();
+  });
+
   // Found in the live DM trace (2026-10-10). Owned by B (wording/summaries) and C (routing); not asserted until fixed.
   it.todo('the FIRST early options request also gets the "what is missing" summary, not just a question');
-  it.todo('in direct mode a question addressed to Mason ("Mason, which dates...") is sent to Mason only');
   it.todo('the missing-details summary says "your" to the person it is about instead of "Mason\'s"');
 
   it('later preferences add to earlier ones, and "no preference" resets them', async () => {
