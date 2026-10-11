@@ -34,3 +34,49 @@ describe('clueless first-timer', () => {
     expect(said(r)).not.toMatch(/didn't quite catch/); await h.stop();
   });
 });
+
+describe('clueless first-timer, round two', () => {
+  it('a bare "yes" while a question is still open puts the question back', async () => {
+    const h = await humans(); await h.say('mason', "let's plan a trip");
+    const r = await h.say('mason', 'yes'); expect(said(r)).toMatch(/leaving from/i); expect(said(r)).not.toMatch(/Anything else to add/); await h.stop();
+  });
+  it('dates that already passed this year say they mean next year', async () => {
+    const h = await humans(); await h.say('mason', "let's plan a trip"); await h.say('mason', 'from Chapel Hill'); await h.say('mason', '2 nights');
+    const r = await h.say('mason', 'free Oct 1-3'); expect(said(r)).toMatch(/2027/); await h.stop();
+  });
+  it('"this weekend" is dates, and on a Sunday it means the coming one', async () => {
+    const h = await humans(); await h.say('mason', "let's plan a trip");
+    const r = await h.say('mason', 'this weekend'); expect(said(r)).toMatch(/free Oct 16-18/); await h.stop();
+  });
+  it.each([['a couple hundred', /\$200/], ['200-250', /\$200/], ['2 hundred', /\$200/]])('"%s" is read as a budget', async (text, shown) => {
+    const h = await humans(); for (const t of ["let's plan a trip", 'from Chapel Hill', 'Nov 14-17']) await h.say('mason', t);
+    const r = await h.say('mason', text); expect(said(r)).toMatch(shown); await h.stop();
+  });
+  it('picking a number that does not exist says how many options there are', async () => {
+    const { reachOptions } = await import('./harness.js');
+    const h = await humans(); await reachOptions(h); const r = await h.say('alex', 'pick 5');
+    expect(said(r)).toMatch(/only 1 option/); expect(said(r)).not.toMatch(/Nothing's waiting/); await h.stop();
+  });
+  it('"pick 1" before any options says there is nothing to pick, not "nothing is waiting"', async () => {
+    const h = await humans(); const r = await h.say('alex', 'pick 1'); expect(said(r)).toMatch(/nothing to pick yet/i); await h.stop();
+  });
+  it('"link" gets the real trip page once there are options, and a plain answer before', async () => {
+    const { reachOptions } = await import('./harness.js');
+    const h = await humans(); expect(said(await h.say('alex', 'link'))).toMatch(/isn't a plan page yet/);
+    await reachOptions(h); const r = await h.say('alex', 'send me the link'); expect(said(r)).not.toMatch(/\{\{/); expect(said(r)).toMatch(/trip page|http/); await h.stop();
+  });
+  it('the calendar is offered only once the plan is approved, with no raw token', async () => {
+    const h = await humans(); const early = await h.say('alex', 'send me the calendar'); expect(said(early)).toMatch(/once everyone has agreed/); await h.stop();
+  });
+});
+
+describe('approved trip', () => {
+  it('asking for the calendar never sends an empty or raw-token message', async () => {
+    const { reachOptions } = await import('./harness.js');
+    const h = await humans(); await reachOptions(h);
+    for (const w of ['mason', 'alex', 'jordan'] as const) { await h.say(w, 'ok'); }
+    for (const w of ['mason', 'alex', 'jordan'] as const) { await h.say(w, "I'm in"); }
+    expect((await h.state()).status).toBe('approved');
+    const r = await h.say('alex', 'send me the calendar'); expect(said(r).length).toBeGreaterThan(10); expect(said(r)).not.toMatch(/\{\{/); await h.stop();
+  });
+});

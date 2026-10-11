@@ -5,8 +5,11 @@ const REF = '2026-10-11T12:00:00Z';
 const values = (text: string, pending?: Parameters<typeof extractConstraints>[2]) => extractConstraints(text, REF, pending).map((e) => e.value);
 
 describe('short replies while waiting for a place are not saved as one', () => {
-  it.each(['next weekend', 'cancel', 'never mind', 'nvm', 'mostly food', 'tomorrow', 'maybe later', 'historical monuments and food', 'hiking and museums'])('"%s" is not an origin', (t) => {
+  it.each(['cancel', 'never mind', 'nvm', 'mostly food', 'tomorrow', 'maybe later', 'historical monuments and food', 'hiking and museums'])('"%s" is not an origin', (t) => {
     expect(values(t, 'origin')).toEqual([]);
+  });
+  it('"next weekend" while waiting for a place is dates, not a place', () => {
+    expect(values('next weekend', 'origin').map((v) => v.field)).toEqual(['availability']);
   });
   it('reads "from Raleigh" as Raleigh', () => {
     expect(values('from Raleigh', 'origin')).toEqual([{ field: 'origin', value: 'Raleigh' }]);

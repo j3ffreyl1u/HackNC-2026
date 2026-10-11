@@ -122,7 +122,7 @@ function extractSentence(s: string, reference: string, pending: ConstraintField 
   }
   // A message that is only a date range ("11/14-11/16", "Nov 14th - 16th") answers "when are you free?" even without a cue word.
   const dateOnly = s.replace(/(?<=\d)(?:st|nd|rd|th)\b/gi, '').replace(/\b(?:also|plus|or|mon(?:day)?|tue(?:s|sday)?|wed(?:nesday)?|thu(?:r|rs|rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?|jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|to|through|thru|until|till|and|the|from|st|nd|rd|th)\b/gi, '').replace(/[\d/\-–—.,\s]+/g, '') === '';
-  if (windows.length && (AVAIL_WORDS.test(s) || pending === 'availability' || NEGATIVE.test(s) || dateOnly || mentionsWholeMonth(s))) {
+  if (windows.length && (AVAIL_WORDS.test(s) || pending === 'availability' || NEGATIVE.test(s) || dateOnly || mentionsWholeMonth(s) || /^(?:(?:the|on|for)\s+)?(?:this|next)\s+weekend[.!]*$/i.test(s.trim()))) {
     if (!mixedNegative && NEGATIVE.test(s) && !/\b(free|available)\b/i.test(s.replace(/\b(not|n't) (free|available)/gi, ''))) push({ field: 'availability', value: windows }, { negative: true });
     else push({ field: 'availability', value: windows });
   }
@@ -202,7 +202,14 @@ function pendingAnswer(text: string, reference: string, pending: ConstraintField
       const loose = /\b(?:about|around|roughly|approximately|approx|like|only|just|up to|at most|tops)\b|\b(?:i|we)(?:'ve| have)?(?: got)?\b|\bish\b/gi;
       const bare = t.replace(new RegExp(HEDGE.source, 'gi'), ' ').replace(/(?<=\d)ish\b/gi, '').replace(loose, ' ').replace(/\s+/g, ' ').trim();
       const k = /^\$?\s*(\d+(?:\.\d)?)\s*k[.!]*$/i.exec(bare);
-      const cents = k ? Math.round(Number(k[1]) * 1000) * 100 : (m = BARE_AMOUNT.exec(bare)) ? parseDollarsToCents(m[1]!) : null;
+      // "200-250" is a range: take the lower end, and ask. "two hundred", "a couple hundred": spelled-out amounts.
+      const range = /^\$?\s*(\d[\d,]*)\s*(?:-|–|to)\s*\$?\s*(\d[\d,]*)[.!]*$/i.exec(bare);
+      const NUM: Record<string, number> = { a: 1, one: 1, two: 2, couple: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+      const spelled = /^(\d{1,2}|a|one|two|three|four|five|six|seven|eight|nine|ten|a couple|couple)(?: of)?\s+(hundred|grand|thousand)(?:\s+(?:and\s+)?(fifty|twenty five))?[.!]*$/i.exec(bare);
+      const spelledDollars = spelled ? (NUM[spelled[1]!.toLowerCase().replace(/^a /, '')] ?? Number(spelled[1])) * (/hundred/i.test(spelled[2]!) ? 100 : 1000) + (spelled[3] ? (/fifty/i.test(spelled[3]) ? 50 : 25) : 0) : 0;
+      const cents = k ? Math.round(Number(k[1]) * 1000) * 100 : range ? parseDollarsToCents(range[1]!) : spelled && spelledDollars > 0 ? spelledDollars * 100 : (m = BARE_AMOUNT.exec(bare)) ? parseDollarsToCents(m[1]!) : null;
+      if (range && cents !== null) return { value: { field: 'budget', value: cents }, hedged: true };
+      if (spelled && /couple/i.test(spelled[1]!) && cents !== null) return { value: { field: 'budget', value: cents }, hedged: true };
       const looseHedge = hedged || bare !== t.replace(/\s+/g, ' ').trim() && /\b(?:about|around|roughly|approximately|approx|like|ish)\b|\d\s*ish/i.test(t);
       return cents === null ? null : { value: { field: 'budget', value: cents }, hedged: looseHedge };
     }

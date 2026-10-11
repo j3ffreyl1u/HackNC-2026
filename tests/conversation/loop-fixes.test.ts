@@ -62,7 +62,7 @@ describe('a few more everyday messages', () => {
     const { setup, msg } = await import('./helpers.js');
     const ask = async (text: string) => JSON.stringify(await setup({} as never, undefined, 'direct').service.parseInbound(msg({ text, visibility: 'private', spaceId: 'dm-mason' })));
     expect(await ask('hold on')).toMatch(/No rush/);
-    expect(await ask('add it to my calendar')).toMatch(/can't add things to a calendar/);
+    expect(await ask('add it to my calendar')).toMatch(/calendar file once everyone has agreed/);
   });
 });
 

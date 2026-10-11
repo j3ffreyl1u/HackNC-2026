@@ -206,7 +206,10 @@ export function createParser(deps: ConversationDependencies) {
       // Money and dates commit people, so a hedge there stays tentative. "Probably leaving from Durham" about the basics is fine as said.
       const firm = item.hedged && (v.field === 'budget' || v.field === 'availability' || v.field === 'preferences' || v.field === 'must_dos');
       commands.push(updateCommand(msg, ctx, v, firm));
-      acks.push(ackPart(v, firm));
+      // A date that already passed this year means next year. Say so, so "Oct 1-3" typed on Oct 11 is not quietly a year away.
+      const refYear = Number(localReference(msg.occurredAt, trip.timezone).slice(0, 4));
+      const later = v.field === 'availability' ? [...new Set(v.value.filter((w): w is { start: string; end: string } => 'start' in w).map((w) => Number(w.start.slice(0, 4))).filter((y) => y > refYear))] : [];
+      acks.push(ackPart(v, firm) + (later.length ? ` in ${later.join(' and ')}, since that has already passed this year` : ''));
     }
     for (const action of extra) commands.push(command(msg, ctx, action));
     // In a one-on-one chat, silence feels like being ignored: say what we noted. Groups stay quiet.
@@ -237,9 +240,11 @@ export function createParser(deps: ConversationDependencies) {
     let match = pool.find((a) => a.candidateId.toLowerCase() === lower);
     if (!match && /^\d{1,2}$/.test(token)) match = pool[Number(token) - 1];
     const verb = kind === 'accept' ? 'accept' : 'pick';
-    if (!match && kind === 'select' && pool.length === 0 && ctx.status === 'awaiting_acceptance') return alreadyPicked(msg, ctx);
+    if (!match && kind === 'select' && pool.length === 0 && ctx.status === 'awaiting_acceptance') return alreadyPicked(msg, ctx, /^\d{1,2}$/.test(token) ? Number(token) : undefined);
     if (!match) {
-      return reply(msg, `Hmm, I don't see "${token}" waiting on you to ${verb}. ${pool.length ? `Here's what's open: ${pool.map((a, i) => `${i + 1}. ${a.description}`).join('; ')}.` : "Nothing's waiting on you right now."}`, 'noplan');
+      if (pool.length === 0) return reply(msg, ctx.status === 'approved' ? 'The plan is already approved, so there is nothing left to pick.' : `There's nothing to ${verb} yet. Say "show us some options" when you're ready.`, 'noplan');
+      const open = pool.map((a, i) => `${i + 1}. ${a.description}`).join('; ');
+      return reply(msg, /^\d{1,2}$/.test(token) ? `There ${pool.length === 1 ? 'is only 1 option' : `are only ${pool.length} options`}, so there's no number ${token}. Here's what's open: ${open}.` : `Hmm, I don't see "${token}" waiting on you to ${verb}. Here's what's open: ${open}.`, 'noplan');
     }
     if (revision !== undefined && revision !== match.revision) {
       return reply(msg, `That's an older version (v${revision}), sorry! The latest is v${match.revision}. Take a look and reply "${kind === 'accept' ? 'accept' : 'pick'} ${match.candidateId} v${match.revision}" when you're ready.`, 'stale');
@@ -275,6 +280,9 @@ export function createParser(deps: ConversationDependencies) {
       if (msg.visibility !== 'private' && trip.mode !== 'direct') return { kind: 'ignored', reason: 'nothing to answer' };
       if (yes && ctx.approval?.youIn) return reply(msg, ctx.approval.waitingNames.length ? `You're already in on ${ctx.approval.title}. Still waiting on ${ctx.approval.waitingNames.join(" and ")}.` : `You're in, and so is everyone else. ${ctx.approval.title} is approved.`, 'already-in', true);
       if (ctx.status === 'approved') return reply(msg, yes ? 'Sounds good! The trip is all set. Ask me anything about it, or tell me if a detail changes.' : 'No worries. The trip is locked in. Tell me if a detail changes and I will look again.', yes ? 'approved-ok' : 'approved-no', true);
+      // Still waiting on an answer from this person: a bare "yes" is not the answer, so put the question back.
+      const openQ = ctx.pendingQuestion && ctx.status === 'gathering' ? REASK[ctx.pendingQuestion.field] : undefined;
+      if (yes && openQ) return reply(msg, `Thanks! I still need one thing: ${openQ}`, 'thanks-open', true);
       return yes
         ? reply(msg, `Great! Anything else to add? When you're ready, say "show us some options".`, 'thanks')
         : reply(msg, `No worries! If anything's off, just tell me the right detail, like "my max is $300" or "free Nov 21-23". Otherwise say "show us some options" when you're ready.`, 'neutral-no');
@@ -546,7 +554,10 @@ export function createParser(deps: ConversationDependencies) {
     }
     // Money talk that is not a question about the log: nothing is paid or recorded here.
     if (talkativeChat && (/^(?:i|we)\s+(?:just\s+)?(?:covered|paid\s+for|bought|treated|got)\s+(?:everyone|everybody|us|all of us|the\s+(?:group|table|whole\s+\w+)|everyone'?s|everybodys)\b/i.test(lean) || /\b(?:venmo|zelle|paypal|cash\s*app|apple\s*pay)\b/i.test(lean) && /^(?:(?:can|could|should|let)\b.*|(?:venmo|zelle|paypal|cash\s*app)\b.*)$/i.test(lean))) return reply(msg, READ_ONLY_MONEY, 'read-only-money', true);
-    if (talkativeChat && /\b(?:add|put|send|save|sync)\b.*\b(?:calendar|cal|invite|ics|reminder)\b/i.test(lean) && !/^(?:how|what|when|where|why|who|which|do|does|did|is|are)\b/i.test(lean)) return reply(msg, "I can't add things to a calendar yet. Ask me for the plan and I'll list the dates so you can add them yourself.", 'no-calendar', true);
+    const wantsCalendar = /\b(?:calendar|cal|invite|ics)\b/i.test(lean) && /\b(?:add|put|send|save|sync|get|give|need|want)\b/i.test(lean) && !/^(?:how|what|when|where|why|who|which|do|does|did|is|are)\b/i.test(lean);
+    if (talkativeChat && wantsCalendar) return reply(msg, ctx.status === 'approved' ? 'Here is a calendar file for the trip, tap it to add the dates: {{CALENDAR_LINK}}' : "I can send a calendar file once everyone has agreed on a plan. Until then the dates aren't final.", 'calendar-link', true);
+    // "link", "where's the page", "send me the plan": the trip page holds the day-by-day, costs and sources.
+    if (talkativeChat && /^(?:(?:send|give|text|share)\s+(?:me\s+)?)?(?:(?:the|a|that|our|my)\s+)?(?:link|url|page|website|site|trip page|plan link|itinerary)(?:\s+(?:please|pls))?[?!.\s]*$|^(?:where(?:'s| is)|wheres|what(?:'s| is)|whats)\s+(?:the\s+)?(?:link|page|url|website|itinerary)\b|^(?:send|give|show)\s+(?:me\s+)?(?:the\s+)?(?:plan|itinerary)\b/i.test(lean)) return reply(msg, ctx.status === 'gathering' ? "There isn't a plan page yet. Once I have everyone's dates, budget and preferences I'll look up options and send the link." : ctx.status === 'researching' ? "I'm still looking up options. I'll send the link as soon as they're ready." : 'The full plan with the day-by-day, costs and sources is here: {{PLAN_LINK}}', 'plan-link', true);
     // "can we do a day earlier": the dates are theirs to restate.
     if (talkativeChat && /^(?:(?:can|could|would)\s+we|let'?s|how about|what about)\s+(?:do\s+|go\s+|leave\s+|start\s+|make\s+it\s+)?(?:it\s+)?(?:a|one|1|two|2|a\s+couple\s+of)\s+days?\s+(?:earlier|later|before|after)$/i.test(lean)) return reply(msg, 'Tell me the exact dates you want and I\'ll update the plan, like "free Nov 13-15".', 'dates-shift', true);
     // Spending from the simulated fund: "I spent $60 on gas", "we paid 300 for the hotel", "bought food for $40", "log $20 for parking". The app asks for a yes first.
@@ -643,6 +654,10 @@ export function createParser(deps: ConversationDependencies) {
     const named = choice === undefined ? undefined : /^Option (\d+) is (.+?)(?:,|:|$)/.exec(ctx.optionFacts?.find((f) => f.startsWith(`Option ${choice} is `)) ?? '')?.[2];
     if (mine && named && !mine.description.toLowerCase().startsWith(named.toLowerCase()) && !named.toLowerCase().startsWith(mine.description.toLowerCase())) {
       return reply(msg, `${mine.description} is already the pick, so I can't switch to ${named}. To go a different way, change a detail like the dates or your max and I'll bring fresh options. Otherwise say "I'm in" to lock it in.`, 'already-picked-other', true);
+    }
+    const optionCount = (ctx.optionFacts ?? []).filter((f) => /^Option \d+ is /.test(f)).length;
+    if (mine && choice !== undefined && optionCount > 0 && choice > optionCount) {
+      return reply(msg, `There ${optionCount === 1 ? 'is only 1 option' : `are only ${optionCount} options`}, and ${mine.description} is the pick. Say "I'm in" to lock it in.`, 'already-picked-range', true);
     }
     return reply(msg, mine
       ? `${mine.description} is already the pick. Say "I'm in" to lock it in.`
