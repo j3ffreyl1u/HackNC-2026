@@ -14,7 +14,7 @@ import { LiveResearchDisplay, createLivePlanner } from './live-research.js';
 import { loadAppConfig, loadEnvironmentFile, planLinkWarning } from './config.js';
 import { createHttpServer } from './server.js';
 import { SqliteTripRepository } from '../storage/sqlite-repository.js';
-import { createNessieWriter } from '../funding/nessie-writer.js';
+import { createNessieWriter, runDemoSequence, type DemoRun } from '../funding/demo-sequence.js';
 import { createNessieReader } from '../funding/nessie-reader.js';
 import { createFundService } from '../funding/service.js';
 
@@ -44,10 +44,11 @@ export async function startApp(): Promise<() => Promise<void>> {
   await mkdir(dirname(config.databasePath), { recursive: true });
   const repository = SqliteTripRepository.open(config.databasePath);
   const display = config.researchMode === 'gemini' ? new LiveResearchDisplay(process.env.GEMINI_API_KEY!, process.env.GEMINI_MODEL || 'gemini-3.8-flash', `http://127.0.0.1:${config.port}`) : undefined;
+  const bankDemo = config.fundingMode === 'nessie' && process.env.DEMO_LEDGER === 'auto';
   // Demo only: "I just paid $60 for gas" posts a purchase to that person's own Nessie sandbox account (never real money).
   const logPurchases = config.fundingMode === 'nessie' && process.env.LOG_PURCHASES === 'on';
   const nessieReader = config.fundingMode === 'nessie' ? createNessieReader({ baseUrl: process.env.NESSIE_BASE_URL!, apiKey: process.env.NESSIE_API_KEY!, accounts, merchantCategories }) : undefined;
-  const fundService = config.fundingMode === 'disabled' ? undefined : createFundService(nessieReader ?? { read: async () => ({ purchases: [] }) }, config.fundingMode, logPurchases ? { cacheMs: 0 } : {});
+  const fundService = config.fundingMode === 'disabled' ? undefined : createFundService(nessieReader ?? { read: async () => ({ purchases: [] }) }, config.fundingMode, bankDemo || logPurchases ? { cacheMs: 0 } : {});
   const MERCHANT_FOR: Record<string, string> = { accommodation: 'hotel', fuel_parking_tolls: 'gas', food: 'restaurant', activities: 'parks', taxes_fees: 'fees', other: 'other' };
   const purchaseLogger = logPurchases ? {
     async log(memberId: string, category: string, dollars: number, what: string): Promise<string | undefined> {
@@ -64,6 +65,8 @@ export async function startApp(): Promise<() => Promise<void>> {
       return writer.postPurchase(account, merchant, dollars, `SIMULATED trip purchase: ${what}`, new Date().toISOString().slice(0, 10));
     },
   } : undefined;
+  // Demo only: after a plan is approved, walk through the bank accounts (see src/funding/demo-sequence.ts).
+  const demoLedger = bankDemo && nessieReader ? (run: DemoRun) => runDemoSequence({ writer: createNessieWriter({ baseUrl: process.env.NESSIE_BASE_URL!, apiKey: process.env.NESSIE_API_KEY! }), reader: nessieReader, accounts, merchantCategories }, run) : undefined;
   const server = createHttpServer({ repository, researchDisplay: display, fundService });
   let runtime: ReturnType<typeof createApplicationRuntime> | undefined;
   try {
@@ -80,7 +83,7 @@ export async function startApp(): Promise<() => Promise<void>> {
     // Phones can only open the trip page if this is an address they can reach (set PUBLIC_BASE_URL to a tunnel or LAN address).
     const planUrl = `${(process.env.PUBLIC_BASE_URL?.trim() || `http://127.0.0.1:${config.port}`).replace(/\/+$/, '')}/?trip=${encodeURIComponent(enrollment.tripId)}`;
     const calendarUrl = `${(process.env.PUBLIC_BASE_URL?.trim() || `http://127.0.0.1:${config.port}`).replace(/\/+$/, '')}/api/trips/${encodeURIComponent(enrollment.tripId)}/plan.ics`;
-    runtime = createApplicationRuntime({ repository, conversation: chat.conversation, planner, tripId: enrollment.tripId, fundService, ...(purchaseLogger ? { purchaseLogger } : {}), planUrl, calendarUrl,
+    runtime = createApplicationRuntime({ repository, conversation: chat.conversation, planner, tripId: enrollment.tripId, fundService, ...(demoLedger ? { demoLedger } : {}), ...(purchaseLogger ? { purchaseLogger } : {}), planUrl, calendarUrl,
       ...(config.voiceMode === 'gemini' ? { voice: createGeminiVoice({ apiKey: process.env.GEMINI_API_KEY!, model: process.env.GEMINI_VOICE_MODEL || process.env.GEMINI_INTENT_MODEL || process.env.GEMINI_MODEL || 'gemini-3.8-flash', onError: () => console.error('Voice rewrite failed; sent the original text.') }) } : {}) });
     await runtime.start();
     const port = await server.listen(config.port);

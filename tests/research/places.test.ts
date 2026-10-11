@@ -66,32 +66,6 @@ describe('an option always has a price to show', () => {
     expect(fuel.label).toMatch(/typical cost/i);
   });
 
-  it('flying swaps fuel and parking for an estimated airfare per person, and never looks up fuel', async () => {
-    const asked: string[] = [];
-    const spy = async (prompt: string) => { asked.push(prompt); return answer(['nothing here'], 0); };
-    const { option: priced } = await priceOption(option, { ...dc, travel: 'plane', maxTravelMinutes: 300 }, spy as never, new EvidenceStore(NOW), { typicalCosts: false });
-    const flights = priced.costs.find((c) => c.costId === 'flights')!;
-    expect(priced.costs.some((c) => c.costId === 'fuel' || c.costId === 'parking')).toBe(false);
-    expect(flights.priceStatus).toBe('estimate');
-    expect(flights.label).toMatch(/Round-trip flights.*typical cost, not a found price/);
-    expect(flights.lowCents).toBe((dc.groupSize ?? 1) * 18_000);
-    expect(flights.highCents).toBe((dc.groupSize ?? 1) * 45_000);
-    expect(priced.tradeoffs.join(' ')).toMatch(/Flights are a typical round-trip fare per person/);
-    expect(asked.some((p) => /FUEL \|/.test(p))).toBe(false);
-  });
-
-  it('driving still prices fuel and has no airfare', async () => {
-    const { option: priced } = await priceOption(option, { ...dc, travel: 'car' }, nothing, new EvidenceStore(NOW), { typicalCosts: true });
-    expect(priced.costs.some((c) => c.costId === 'fuel')).toBe(true);
-    expect(priced.costs.some((c) => c.costId === 'flights')).toBe(false);
-  });
-
-  it('the search prompt asks for trips reached by flying when the group flies', () => {
-    expect(buildPrompt({ ...dc, travel: 'plane' })).toMatch(/fly there/);
-    expect(buildPrompt({ ...dc, travel: 'plane' })).not.toMatch(/by car/);
-    expect(buildPrompt(dc)).toMatch(/drive there by car/);
-  });
-
   it('estimates fuel from a default drive when there is neither a drive time nor a limit', async () => {
     const { option: priced } = await priceOption(option, dc, nothing, new EvidenceStore(NOW), { typicalCosts: true });
     expect(priced.costs.find((c) => c.costId === 'fuel')!.priceStatus).toBe('estimate');

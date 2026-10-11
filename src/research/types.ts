@@ -18,8 +18,6 @@ export interface ResearchRequest {
   destination?: string;
   searchRegion?: string;
   maxTravelMinutes?: number;
-  /** How the group gets there: by car (the default) or by plane, which swaps fuel for an estimated airfare. */
-  travel?: 'car' | 'plane';
   /** The group's stated interests (never "no preference"). */
   interests: string[];
   /** Dates the trip could happen on, for seasonal and closure checks. */

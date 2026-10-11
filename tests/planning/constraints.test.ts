@@ -114,10 +114,9 @@ describe('value validation', () => {
     expect(rejection(() => check({ ...base, field: 'must_dos', value: { items: ['vegan\u0000'] } })).code).toBe('INVALID_CONSTRAINT');
   });
 
-  it('supports a trip by car or by plane, and a car needs a clear yes or no on the vehicle', () => {
+  it('only supports a road trip by car, and needs a clear yes or no on the vehicle', () => {
     expect(check({ ...base, field: 'transport', value: { mode: 'car', vehicleAvailable: true } }).value).toEqual({ mode: 'car', vehicleAvailable: true });
-    expect(check({ ...base, field: 'transport', value: { mode: 'plane', vehicleAvailable: false } }).value).toEqual({ mode: 'plane', vehicleAvailable: false });   // flying needs no car
-    expect(rejection(() => check({ ...base, field: 'transport', value: { mode: 'train' as 'car', vehicleAvailable: true } })).code).toBe('INVALID_CONSTRAINT');
+    expect(rejection(() => check({ ...base, field: 'transport', value: { mode: 'plane' as 'car', vehicleAvailable: true } })).code).toBe('INVALID_CONSTRAINT');
     expect(rejection(() => check({ ...base, field: 'transport', value: { mode: 'car', vehicleAvailable: 'yes' as unknown as boolean } })).code).toBe('INVALID_CONSTRAINT');
   });
 

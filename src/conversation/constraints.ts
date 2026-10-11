@@ -1,5 +1,5 @@
 import type { ConstraintField, ConstraintValue } from './contracts-local.js';
-import { mentionsWholeMonth, parseDateWindows } from './dates.js';
+import { parseDateWindows } from './dates.js';
 import { parseDollarsToCents } from './money.js';
 
 /** Tentative language never becomes a locked-in budget or date window. */
@@ -34,7 +34,7 @@ export function parseMaxTravelMinutes(text: string): number | undefined {
 }
 
 /** Short replies that are not a place even when a place was asked for: a change of subject, a date, or a liking. */
-const NOT_A_PLACE_ANSWER = /^(?:mine|my own|me|i do|i will|the first one|the second one|the first|the second|first one|second one|either|both|whichever|either one|start over|restart|reset|begin again|cancel|never ?mind|nvm|stop|quit|skip|idk|not sure|no idea|later|nothing|none|n\/a|ok(?:ay)?|sure|thanks|thank you|hello|hi|hey|bye|goodbye|good ?night|gn|ttyl|see ya|cya|yes|yep|yeah|no|nope|nah)$|\b(?:weekends?|weeks?|months?|days?|today|tomorrow|tonight|next|this|monday|tuesday|wednesday|thursday|friday|saturday|sunday|mostly|mainly|probably|maybe|just|only|really|kind of|whatever|anything|food|foods|nights?|monuments?|museums?|histor(?:y|ical)|hiking|nightlife|sightseeing|restaurants?|breweries|brewery|shopping|nature|outdoors?|relax(?:ing)?|looks?|sounds?|seems?|good|fine|perfect|awesome|lol|lmao|haha|ok(?:ay)?|yes|yeah|yep|thanks|everything|how|what|why|does|this|that)\b/i;
+const NOT_A_PLACE_ANSWER = /^(?:start over|restart|reset|begin again|cancel|never ?mind|nvm|stop|quit|skip|idk|not sure|no idea|later|nothing|none|n\/a|ok(?:ay)?|sure|thanks|thank you|hello|hi|hey|bye|goodbye|good ?night|gn|ttyl|see ya|cya|yes|yep|yeah|no|nope|nah)$|\b(?:weekends?|weeks?|months?|days?|today|tomorrow|tonight|next|this|monday|tuesday|wednesday|thursday|friday|saturday|sunday|mostly|mainly|probably|maybe|just|only|really|kind of|whatever|anything|food|foods|nights?|monuments?|museums?|histor(?:y|ical)|hiking|nightlife|sightseeing|restaurants?|breweries|brewery|shopping|nature|outdoors?|relax(?:ing)?|looks?|sounds?|seems?|good|fine|perfect|awesome|lol|lmao|haha|ok(?:ay)?|yes|yeah|yep|thanks|everything|how|what|why|does|this|that)\b/i;
 /** "I like the second one better" is about the options, not something the person likes doing. */
 const PICK_TALK = /\b(?:the\s+)?(?:first|second|third|1st|2nd|3rd|last|other)\s+(?:one|option|plan)\b|\b(?:option|plan)\s+\d\b|\bone\s+better\b/i;
 const NOT_A_PLACE = /\b(i|we|you|he|she|they|has|have|had|is|are|was|am|can|will|would|want|like|need|car|trip|my|our|it|not|but|with|for|please|thanks|yes|no|help|huh|menu|options?|wait|sorry|skip|later|stop|cancel|idk|dunno|what|why|how|nothing|never ?mind)\b/i;
@@ -48,16 +48,13 @@ const NOT_DESTINATION = /\b(?:don'?t|do not|doesn'?t|not|never|won'?t|no way)\b[
 const LOWER_NOT_PLACE = /^(?:the\s+)?(?:bed|sleep|work|school|class|town|be|get|see|do|have|try|make|take|visit|say|ask|check|stay|eat|drink|hike|find|look|plan|my|our|your|his|her|that|this|it|them|us|you|one|some|any|every|all|more|just|really|somewhere|anywhere|something|there|here|home|a|an|the)\b/i;
 /** "boone" -> "Boone", "washington dc" -> "Washington DC": only text typed in lower case; two-letter words are abbreviations. */
 export const properCase = (text: string): string => (text === text.toLowerCase()
-  ? text.replace(/\b([a-z])([a-z.'-]*)/g, (w, f: string, r: string) => (['of', 'the', 'and', 'in', 'on', 'by'].includes(w) ? w : r.length === 1 || /^(?:nyc|d\.?c\.?)$/.test(w) ? w.toUpperCase() : f.toUpperCase() + r))
+  ? text.replace(/\b([a-z])([a-z.'-]*)/g, (w, f: string, r: string) => (['of', 'the', 'and', 'in', 'on', 'by'].includes(w) ? w : r.length === 1 ? w.toUpperCase() : f.toUpperCase() + r))
   : text);
 /** A sentence that opens by correcting the one before: "wait no, 2 nights", "actually $300", "I mean Durham". */
 const CORRECTION = /^(?:oh\s+|um+\s+|hmm+\s+)?(?:wait\b|actually\b|scratch that|i mean\b|sorry\b|oops\b|correction\b|make that\b|no,?\s+(?:wait|make|i mean|actually))/i;
 /** "not into breweries anymore", "drop the museums", "take hiking off": the person is taking a liking back, not adding one. */
 const TAKE_BACK_PHRASE = /^(?:(?:actually|wait|oh|um|hmm|ok(?:ay)?|so)[,\s]+)*(?:(?:i(?:'m| am)\s+)?(?:not into|don'?t (?:like|want)|do not (?:like|want))\s+(.+?)\s+(?:anymore|any more|now)|(?:i(?:'m| am)\s+)?no longer (?:into|like|want|interested in)\s+(.+)|(?:drop|remove|forget|scratch|skip)\s+(?:the\s+)?(.+?)(?:\s+from (?:my|the) (?:list|likes))?|take\s+(.+?)\s+off(?:\s+(?:my|the) list)?|changed my mind about\s+(.+))[.!]*$/i;
-/** Flying: a statement about the trip, not a question about flights. */
-const PLANE = /\b(?:fly|flying|flight|flights|plane|airplane|by air|airfare)\b/i;
-const NOT_PLANE = /\b(?:don'?t|do not|won'?t|not|no)\s+(?:want\s+to\s+|going\s+to\s+|gonna\s+)?(?:fly|flying|flights?|plane)\b|\bhate\s+flying\b|\bflying\s+(?:is|isn'?t)\b/i;
-const NOT_ORIGIN = /^(?:there|here|home|it|that|this|them|where|somewhere|anywhere|nowhere|undo|back|redo|change|nothing|everywhere|wherever|nc|north carolina)$/i;
+const NOT_ORIGIN = /^(?:there|here|home|it|that|this|them|where|somewhere|anywhere)$/i;
 /** A sentence that is a question ("how long is the drive to Asheville") is not a statement of where we are going. */
 const QUESTION_START = /^(?:how|what|what's|whats|where|when|which|who|why|is|are|does|do|can|could|will|would|should)\b/i;
 
@@ -125,7 +122,7 @@ function extractSentence(s: string, reference: string, pending: ConstraintField 
   }
   // A message that is only a date range ("11/14-11/16", "Nov 14th - 16th") answers "when are you free?" even without a cue word.
   const dateOnly = s.replace(/(?<=\d)(?:st|nd|rd|th)\b/gi, '').replace(/\b(?:also|plus|or|mon(?:day)?|tue(?:s|sday)?|wed(?:nesday)?|thu(?:r|rs|rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?|jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|to|through|thru|until|till|and|the|from|st|nd|rd|th)\b/gi, '').replace(/[\d/\-–—.,\s]+/g, '') === '';
-  if (windows.length && (AVAIL_WORDS.test(s) || pending === 'availability' || NEGATIVE.test(s) || dateOnly || mentionsWholeMonth(s) || /^(?:(?:the|on|for)\s+)?(?:this|next)\s+weekend[.!]*$/i.test(s.trim()))) {
+  if (windows.length && (AVAIL_WORDS.test(s) || pending === 'availability' || NEGATIVE.test(s) || dateOnly)) {
     if (!mixedNegative && NEGATIVE.test(s) && !/\b(free|available)\b/i.test(s.replace(/\b(not|n't) (free|available)/gi, ''))) push({ field: 'availability', value: windows }, { negative: true });
     else push({ field: 'availability', value: windows });
   }
@@ -138,18 +135,14 @@ function extractSentence(s: string, reference: string, pending: ConstraintField 
   }
   else if (!s.includes('?') && /\blong weekend\b/i.test(s)) push({ field: 'duration', value: 3 });
   else if (!s.includes('?') && /\b(?:a|quick|short|just a|over a)\s+weekend(?!\s+of\b)|\bweekend\s+(?:trip|getaway)\b/i.test(s) && !windows.length) push({ field: 'duration', value: 2 });
-  if (!QUESTION_START.test(s) && !s.includes('?') && ((m = /\b(?:leav(?:e|ing)|depart(?:ing)?|start(?:ing)?|driv(?:e|ing)|coming|going|trip)\s+from\s+([A-Za-z][A-Za-z .'-]{1,40}?)(?=[,.;!?]|\s+(?:and|but|on|at|around|with|to|for|in|if|tomorrow|today|tonight|next|this|after|before|early|late|by|when|then|so|since|because|until|till|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b|$)/i.exec(s)) ?? (m = /\b(?:origin|departing city)\s*(?:is|:)\s*([A-Za-z][A-Za-z .'-]{1,40})/i.exec(s)))) {
+  if (!QUESTION_START.test(s) && !s.includes('?') && ((m = /\b(?:leav(?:e|ing)|depart(?:ing)?|start(?:ing)?|driv(?:e|ing)|coming|going)\s+from\s+([A-Za-z][A-Za-z .'-]{1,40}?)(?=[,.;!?]|\s+(?:and|but|on|at|around|with|to|for|in|if|tomorrow|today|tonight|next|this|after|before|early|late|by|when|then|so|since|because|until|till|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b|$)/i.exec(s)) ?? (m = /\b(?:origin|departing city)\s*(?:is|:)\s*([A-Za-z][A-Za-z .'-]{1,40})/i.exec(s)))) {
     const place = m![1]!.trim();
     if (!NOT_ORIGIN.test(place)) push({ field: 'origin', value: place === place.toLowerCase() ? properCase(place) : place });
   }
   else if (!pending && (m = /^from\s+([A-Za-z][A-Za-z '-]{1,30}?)\s*[.!,]*\s*$/i.exec(s.trim())) && !NOT_ORIGIN.test(m[1]!) && !NOT_A_PLACE_ANSWER.test(m[1]!)) {
     push({ field: 'origin', value: properCase(m[1]!.trim()) });
   }
-  if ((m = /\b(?:within|no more than|at most|up to|under|max(?:imum)? of)\s+(?:about\s+|around\s+)?(\d{1,2}(?:\.\d)?)\s*(?:hours?|hrs?|h)\b(?!\s*of\s+(?:sleep|work))/i.exec(s)) ?? (m = /\b(\d{1,2}(?:\.\d)?)\s*[- ]?(?:hours?|hrs?)\s+(?:drive|away|radius)\b/i.exec(s))
-    // "I'm fine driving for 10 hours maximum", "driving up to 4 hours", "10 hours tops", or a bare "10 hours" to the drive question.
-    ?? (m = /\bdriv(?:e|ing)\s+(?:for\s+)?(?:about\s+|around\s+|up\s+to\s+|at\s+most\s+)?(\d{1,2}(?:\.\d)?)\s*(?:hours?|hrs?)\b/i.exec(s))
-    ?? (m = /\b(\d{1,2}(?:\.\d)?)\s*(?:hours?|hrs?)\s*(?:max(?:imum)?|tops|at\s+most|or\s+less)\b/i.exec(s))
-    ?? (pending === 'region' ? (m = /^(?:about\s+|around\s+|like\s+|up\s+to\s+)?(\d{1,2}(?:\.\d)?)\s*(?:hours?|hrs?)[.!\s]*$/i.exec(s.trim())) : null)) {
+  if ((m = /\b(?:within|no more than|at most|up to|under|max(?:imum)? of)\s+(?:about\s+|around\s+)?(\d{1,2}(?:\.\d)?)\s*(?:hours?|hrs?|h)\b(?!\s*of\s+(?:sleep|work))/i.exec(s)) ?? (m = /\b(\d{1,2}(?:\.\d)?)\s*[- ]?(?:hours?|hrs?)\s+(?:drive|away|radius)\b/i.exec(s))) {
     push({ field: 'region', value: `within ${m![1]} hours by car`, maxTravelMinutes: Math.round(Number(m![1]) * 60) });
   } else if ((m = /\b(?:[Gg]o|[Tt]ravel|[Dd]rive|[Hh]ead|going|headed|heading|trip)\s+to\s+(?:the\s+)?((?:[A-Z][A-Za-z.'-]*)(?:\s+[A-Z][A-Za-z.'-]*){0,3})/.exec(s)) && !QUESTION_START.test(s) && !NOT_DESTINATION.test(s)) {
     push({ field: 'region', value: clean(m[1]!).replace(/^the\s+/i, '') });
@@ -162,9 +155,6 @@ function extractSentence(s: string, reference: string, pending: ConstraintField 
   } else if ((m = /\b(?:want|wanna|'d like|would like)\s+to\s+(?:visit|see)\s+((?:[A-Z][A-Za-z.'-]*)(?:\s+[A-Z][A-Za-z.'-]*){0,3})(?=[\s,.;!?]|$)/.exec(s)) && !QUESTION_START.test(s)) {
     visited = clean(m[1]!);
     push({ field: 'region', value: visited });
-  } else if (/\btrip\s+from\s/i.test(s) && (m = /(?:,|\band)\s*to\s+(?:the\s+)?([A-Za-z][A-Za-z.'-]{2,}(?:\s+[A-Za-z][A-Za-z.'-]{2,}){0,2})\s*(?=[,.;!?]|$)/.exec(s)) && !NOT_DESTINATION.test(s)) {
-    // "a trip from Chapel Hill, 2 nights, to washington": the "to" clause of a from-to list is where they want to go.
-    push({ field: 'region', value: m[1] === m[1]!.toLowerCase() ? properCase(m[1]!) : m[1]! });
   } else if (/\b(?:any|whatever)\s+distance\b|\bdrive\s+(?:anywhere|as far as)\b|\bdon'?t\s+mind\s+(?:driving|how far)\b/i.test(s)) {
     push({ field: 'region', value: 'any distance by car', maxTravelMinutes: 1440 });
   } else if ((m = /\b(?:destination|region|area)\s*(?:is|:)\s*([A-Za-z][A-Za-z ,.'-]{1,40})/i.exec(s))) {
@@ -172,14 +162,10 @@ function extractSentence(s: string, reference: string, pending: ConstraintField 
     const maxTravelMinutes = parseMaxTravelMinutes(value);
     push({ field: 'region', value, ...(maxTravelMinutes !== undefined ? { maxTravelMinutes } : {}) });
   }
-  // Driving or flying: "we'll fly", "flights", "by plane" is a plane trip; a bare "driving" answers "driving or flying?" and leaves whose car still to ask.
-  if (!s.includes('?') && PLANE.test(s) && !NOT_PLANE.test(s)) push({ field: 'transport', value: 'plane', vehicleAvailable: false });
-  else if (pending === 'transport' && /^(?:(?:ok(?:ay)?|fine|yeah|yes|so|alright|sure|let'?s|lets)[\s,]+)*(?:(?:we(?:'ll| will| are|'re)?|i(?:'ll| will)?)\s+)?(?:probably\s+|just\s+)?(?:drive|driving|by car|car|a car|road ?trip|take a car|taking a car|drive there|driving there)(?:\s+(?:then|instead|please|it is|for sure))*[.!\s]*$/i.test(s.trim())) push({ field: 'transport', value: 'driving', vehicleAvailable: false });
-  else if (pending === 'transport' && /^(?:mine|my car|my truck|me|i do|i will|i can|i have one|i have a car|my own)[.!\s]*$/i.test(s.trim())) push({ field: 'transport', value: 'own_vehicle', vehicleAvailable: true });
-  else if (/\bi(?:'ve|\s+have|\s+got)\s+(?:got\s+)?(?:a\s+|my\s+)?(?:own\s+)?(?:car|vehicle|truck|suv)\b|\bi\s+can\s+drive\b|\bi(?:'ll| will)\s+drive\b|\b(?:we|i)(?:'ll| will| can| could)?\s+(?:take|use|bring|drive)\s+(?:my|our|the)\s+(?:own\s+)?(?:car|truck|suv|van|vehicle)\b/i.test(s)) push({ field: 'transport', value: 'own_vehicle', vehicleAvailable: true });
+  if (/\bi(?:'ve|\s+have|\s+got)\s+(?:got\s+)?(?:a\s+|my\s+)?(?:own\s+)?(?:car|vehicle|truck|suv)\b|\bi\s+can\s+drive\b|\bi(?:'ll| will)\s+drive\b|\b(?:we|i)(?:'ll| will| can| could)?\s+(?:take|use|bring|drive)\s+(?:my|our|the)\s+(?:own\s+)?(?:car|truck|suv|van|vehicle)\b/i.test(s)) push({ field: 'transport', value: 'own_vehicle', vehicleAvailable: true });
   else if (pending === 'transport' && !s.includes('?') && CAR_BROKEN.test(s)) push({ field: 'transport', value: 'no_vehicle', vehicleAvailable: false });
   else if (pending === 'transport' && !s.includes('?') && !QUESTION_START.test(s) && /\b(?:has|have|got|owns?|can (?:drive|bring))\s+(?:one|it|a ride|a vehicle|a car|a truck|an suv)\b|\b(?:do|does)\b|\bmy (?:car|truck)\b/i.test(s) && !/\b(?:no|nobody|none|don'?t|doesn'?t|not)\b/i.test(s)) push({ field: 'transport', value: 'own_vehicle', vehicleAvailable: true });
-  else if (pending === 'transport' && !s.includes('?') && !/\bno\s+(?:limit|max|maximum|budget|idea|preference|clue|cap|rush|worries|problem)\b/i.test(s) && /\b(?:nobody|no ?one|none of us|neither of us|no)\b|\b(?:don'?t|doesn'?t|do not|does not)\s+(?:have|got|own)\b/i.test(s)) push({ field: 'transport', value: 'no_vehicle', vehicleAvailable: false });
+  else if (pending === 'transport' && !s.includes('?') && /\b(?:nobody|no ?one|none of us|neither of us|no)\b|\b(?:don'?t|doesn'?t|do not|does not)\s+(?:have|got|own)\b/i.test(s)) push({ field: 'transport', value: 'no_vehicle', vehicleAvailable: false });
   else if (!s.includes('?') && THIRD_PERSON_VEHICLE.test(s)) push({ field: 'transport', value: 'own_vehicle', vehicleAvailable: true });
   else if (/\bi\s+(?:don'?t|do not)\s+have\s+(?:a\s+)?(?:car|vehicle)\b|\bno car\b|\bi\s+(?:can'?t|cannot)\s+drive\b/i.test(s)) push({ field: 'transport', value: 'no_vehicle', vehicleAvailable: false });
 
@@ -209,20 +195,9 @@ function pendingAnswer(text: string, reference: string, pending: ConstraintField
   let m: RegExpExecArray | null;
   switch (pending) {
     case 'budget': {
-      // "i have like 150 bucks", "about 150", "150ish", "$1.5k": a number with filler around it still answers the budget question.
-      const loose = /\b(?:about|around|roughly|approximately|approx|like|only|just|up to|at most|tops)\b|\b(?:i|we)(?:'ve| have)?(?: got)?\b|\bish\b/gi;
-      const bare = t.replace(new RegExp(HEDGE.source, 'gi'), ' ').replace(/(?<=\d)ish\b/gi, '').replace(loose, ' ').replace(/\s+/g, ' ').trim();
-      const k = /^\$?\s*(\d+(?:\.\d)?)\s*k[.!]*$/i.exec(bare);
-      // "200-250" is a range: take the lower end, and ask. "two hundred", "a couple hundred": spelled-out amounts.
-      const range = /^\$?\s*(\d[\d,]*)\s*(?:-|–|to)\s*\$?\s*(\d[\d,]*)[.!]*$/i.exec(bare);
-      const NUM: Record<string, number> = { a: 1, one: 1, two: 2, couple: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
-      const spelled = /^(\d{1,2}|a|one|two|three|four|five|six|seven|eight|nine|ten|a couple|couple)(?: of)?\s+(hundred|grand|thousand)(?:\s+(?:and\s+)?(fifty|twenty five))?[.!]*$/i.exec(bare);
-      const spelledDollars = spelled ? (NUM[spelled[1]!.toLowerCase().replace(/^a /, '')] ?? Number(spelled[1])) * (/hundred/i.test(spelled[2]!) ? 100 : 1000) + (spelled[3] ? (/fifty/i.test(spelled[3]) ? 50 : 25) : 0) : 0;
-      const cents = k ? Math.round(Number(k[1]) * 1000) * 100 : range ? parseDollarsToCents(range[1]!) : spelled && spelledDollars > 0 ? spelledDollars * 100 : (m = BARE_AMOUNT.exec(bare)) ? parseDollarsToCents(m[1]!) : null;
-      if (range && cents !== null) return { value: { field: 'budget', value: cents }, hedged: true };
-      if (spelled && /couple/i.test(spelled[1]!) && cents !== null) return { value: { field: 'budget', value: cents }, hedged: true };
-      const looseHedge = hedged || bare !== t.replace(/\s+/g, ' ').trim() && /\b(?:about|around|roughly|approximately|approx|like|ish)\b|\d\s*ish/i.test(t);
-      return cents === null ? null : { value: { field: 'budget', value: cents }, hedged: looseHedge };
+      const bare = t.replace(new RegExp(HEDGE.source, 'gi'), ' ').replace(/\s+/g, ' ').trim();
+      const cents = (m = BARE_AMOUNT.exec(bare)) ? parseDollarsToCents(m[1]!) : null;
+      return cents === null ? null : { value: { field: 'budget', value: cents }, hedged };
     }
     case 'duration':
       return (m = /^(\d{1,2})\s*(?:nights?)?[.!]*$/i.exec(t)) && Number(m[1]) >= 1 && Number(m[1]) <= 30 ? { value: { field: 'duration', value: Number(m[1]) }, hedged } : null;
@@ -230,7 +205,7 @@ function pendingAnswer(text: string, reference: string, pending: ConstraintField
     case 'region': {
       // Only something that looks like a place: a few words, no pronouns/verbs ("Mason has a car for the trip" is not a destination).
       const place = t.replace(/[.!]+$/, '').replace(/^(?:(?:i'?m\s+)?(?:leaving\s+|coming\s+)?from\s+)+/i, '');   // "from Raleigh" is Raleigh
-      const looksLikePlace = /^[A-Za-z][A-Za-z ,.'-]{1,40}$/.test(place) && place.split(/\s+/).length <= 4 && !NOT_A_PLACE.test(place) && !NOT_A_PLACE_ANSWER.test(place) && !(pending === 'origin' && NOT_ORIGIN.test(place)) && parseDateWindows(place, reference).length === 0;
+      const looksLikePlace = /^[A-Za-z][A-Za-z ,.'-]{1,40}$/.test(place) && place.split(/\s+/).length <= 4 && !NOT_A_PLACE.test(place) && !NOT_A_PLACE_ANSWER.test(place) && parseDateWindows(place, reference).length === 0;
       return looksLikePlace && !hedged ? { value: { field: pending, value: properCase(place) }, hedged } : null;
     }
     case 'preferences':

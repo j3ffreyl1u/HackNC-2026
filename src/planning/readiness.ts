@@ -15,9 +15,6 @@ import type { ConstraintValues, ReadinessQuestion, ReadinessResult, TripState } 
 
 const MIN_PARTICIPANTS = 2;
 
-/** Getting there is settled: flying needs no car, driving needs someone's car. */
-const travelSorted = (t: ConstraintValues['transport']): boolean => t.mode === 'plane' || t.vehicleAvailable === true;
-
 export interface ReadinessOptions {
   /** The current time, used only to avoid repeating a recent unanswered question. */
   now?: string;
@@ -74,7 +71,7 @@ function describeBasics(origin: ConstraintValues['origin'], duration: Constraint
 
 /** "chapel hill" -> "Chapel Hill". Only touches words typed in lower case, so "NC" and "DC" stay as written. */
 function titleCase(text: string): string {
-  return text.replace(/\b([a-z])([a-z.']*)/g, (word, first: string, rest: string) => (['of', 'the', 'and', 'in', 'on', 'by'].includes(word) ? word : /^(?:dc|nc|sc|va|ny|nyc|ga|fl|tn|md|pa|wv)$/.test(word) ? word.toUpperCase() : first.toUpperCase() + rest));
+  return text.replace(/\b([a-z])([a-z.']*)/g, (word, first: string, rest: string) => (['of', 'the', 'and', 'in', 'on', 'by'].includes(word) ? word : first.toUpperCase() + rest));
 }
 
 const nightsText = (n: number) => `${n} night${n === 1 ? '' : 's'}`;
@@ -122,21 +119,8 @@ function evaluate(state: TripState): Evaluation {
     group('basics', 'origin', origin.tentativeOnly ? Q.originConfirm : Q.origin);
   } else if (origin.status === 'conflict') {
     conflicts.push('origin');
-    const options = origin.positions.map((p) => `${displayName(state, p.memberId)} is leaving from ${titleCase((p.value as ConstraintValues['origin']).city)}`);
+    const options = origin.positions.map((p) => `${displayName(state, p.memberId)} is leaving from ${(p.value as ConstraintValues['origin']).city}`);
     group('basics', 'conflict:origin', `${options.join(' and ')}. Which city should I plan the trip from?`);
-  }
-
-  // How you're getting there comes right after where you start: it shapes the place question that follows.
-  const transport = resolveGroupField(state, 'transport');
-  if (transport.status === 'unset') {
-    missing.push('transport');
-    group('basics', 'transport', Q.transport);
-  } else if (transport.status === 'conflict') {
-    conflicts.push('transport');
-    group('basics', 'conflict:transport', "Some of you said driving and some said flying, so I have conflicting answers. Are you driving or flying?");
-  } else if (!travelSorted(transport.value as ConstraintValues['transport'])) {
-    missing.push('vehicle');
-    group('basics', 'vehicle', Q.vehicle);
   }
 
   const duration = resolveGroupField(state, 'duration');
@@ -152,7 +136,7 @@ function evaluate(state: TripState): Evaluation {
   const region = resolveGroupField(state, 'region');
   if (region.status === 'unset') {
     missing.push('region');
-    group('basics', 'region', transport.status === 'agreed' && (transport.value as ConstraintValues['transport']).mode === 'plane' ? Q.regionFlying : Q.region);
+    group('basics', 'region', Q.region);
   } else if (region.status === 'conflict') {
     conflicts.push('region');
     const options = region.positions.map((p) => {
@@ -163,15 +147,24 @@ function evaluate(state: TripState): Evaluation {
     group('basics', 'conflict:region', `${options.join(' and ')}. Which sounds better?`);
   }
 
+  const transport = resolveGroupField(state, 'transport');
+  if (transport.status === 'unset') {
+    missing.push('transport');
+    group('basics', 'transport', Q.transport);
+  } else if (transport.status === 'conflict') {
+    conflicts.push('transport');
+    group('basics', 'conflict:transport', 'I have conflicting answers about whether you have a car. Does anyone have one for the trip?');
+  } else if (!(transport.value as ConstraintValues['transport']).vehicleAvailable) {
+    missing.push('vehicle');
+    group('basics', 'vehicle', Q.vehicle);
+  }
+
   // -- everyone gets a say in the shared basics: anyone who has not weighed in is asked whether the plan so far works
-  if (origin.status === 'agreed' && duration.status === 'agreed' && region.status === 'agreed' && transport.status === 'agreed' && travelSorted(transport.value as ConstraintValues['transport'])) {
+  if (origin.status === 'agreed' && duration.status === 'agreed' && region.status === 'agreed' && transport.status === 'agreed' && (transport.value as ConstraintValues['transport']).vehicleAvailable) {
     const authors = new Set([...origin.authors, ...duration.authors, ...region.authors, ...transport.authors]);
-    // Anyone who did not weigh in on EVERY shared basic is asked about the plan so far, so splitting the questions between two
-    // people never leaves one of them with a destination (or a car, or a length) they were never asked about.
-    const weighedInOnAll = (x: string) => [origin, duration, region, transport].every((r) => r.status === 'agreed' && r.authors.includes(x));
-    for (const id of ids.filter((x) => !weighedInOnAll(x))) {
+    for (const id of ids.filter((x) => !authors.has(x))) {
       missing.push(`confirm_basics:${id}`);
-      privately('basics', id, `confirm_basics:${id}`, `Hey ${displayName(state, id)}! ${authors.has(id) ? "Here's the plan so far, including what the others added." : `${names(state, [...authors])} started planning a trip with you.`} So far the idea is ${describeBasics(origin.value, duration.value, region.value)}, ${(transport.value as ConstraintValues['transport']).mode === 'plane' ? 'flying' : 'with a car'}.${authorsSaid(state, [...authors].filter((a) => a !== id))} I share who's free when with the group to find a weekend; budgets stay private. Does that work for you, or would you change anything?`);
+      privately('basics', id, `confirm_basics:${id}`, `Hey ${displayName(state, id)}! ${names(state, [...authors])} started planning a trip with you. So far the idea is ${describeBasics(origin.value, duration.value, region.value)}, with a car.${authorsSaid(state, [...authors])} I share who's free when with the group to find a weekend; budgets stay private. Does that work for you, or would you change anything?`);
     }
   }
 
@@ -279,8 +272,7 @@ export function describeGaps(state: TripState, result: Pick<ReadinessResult, 'mi
   if (result.missing.includes('origin')) items.push("where you're leaving from");
   if (result.missing.includes('duration')) items.push('how many nights');
   if (result.missing.includes('region')) items.push('where you want to go');
-  if (result.missing.includes('transport')) items.push("whether you're driving or flying");
-  if (result.missing.includes('vehicle')) items.push("whose car we're taking");
+  if (result.missing.includes('transport') || result.missing.includes('vehicle')) items.push('whether someone has a car');
   const unconfirmed = result.missing.filter((m) => m.startsWith('confirm_basics:')).map((m) => m.slice('confirm_basics:'.length));
   if (unconfirmed.length > 0) items.push(`${names(state, unconfirmed)} to say whether the plan so far works`);
   items.push(...perPerson('availability', (n) => (n === 'your' ? 'your dates' : `${n}'s dates`)));
@@ -292,7 +284,7 @@ export function describeGaps(state: TripState, result: Pick<ReadinessResult, 'mi
     if (c === 'origin') return "where you're leaving from";
     if (c === 'duration') return 'how many nights';
     if (c === 'region') return 'where to go';
-    if (c === 'transport') return "how you're getting there";
+    if (c === 'transport') return 'the car situation';
     if (c === 'dates') return 'the dates';
     if (c.startsWith('availability_unconfirmed')) return 'dates that still need a firm yes';
     if (c.startsWith('budget_unconfirmed')) return 'a budget that still needs a firm yes';
@@ -324,22 +316,8 @@ function settledBasics(state: TripState): string {
     const place = r.destination ?? r.searchRegion;
     if (place !== undefined) parts.push(titleCase(place));
   }
-  if (transport.status === 'agreed' && travelSorted(transport.value as ConstraintValues['transport'])) parts.push((transport.value as ConstraintValues['transport']).mode === 'plane' ? 'flying' : 'a car');
+  if (transport.status === 'agreed' && (transport.value as ConstraintValues['transport']).vehicleAvailable) parts.push('a car');
   return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : parts.join('');
-}
-
-/** What this person still owes (their own details and any shared basic nobody has answered), and the next question to ask them. */
-export function outstandingFor(state: TripState, memberId: string): { items: string[]; question?: string } {
-  const { missing, candidates } = evaluate(state);
-  const shared: Record<string, string> = { origin: "where you're leaving from", transport: "whether you're driving or flying", vehicle: "whose car we're taking", duration: 'how many nights', region: 'where you want to go' };
-  const own: Record<string, string> = { availability: 'your free dates', budget: 'your budget', preferences: "what you're into", confirm_basics: 'your OK on the plan so far' };
-  const items = [
-    ...missing.filter((m) => m in shared).map((m) => shared[m]!),
-    ...missing.filter((m) => m.endsWith(`:${memberId}`)).map((m) => own[m.split(':')[0]!]).filter((x): x is string => x !== undefined),
-  ];
-  const mine = candidates.filter((c) => (c.question.audience.kind === 'private' && c.question.audience.memberId === memberId) || (c.question.audience.kind === 'group' && !c.question.key.startsWith('conflict:')))
-    .sort((a, b) => TOPIC_ORDER.indexOf(a.topic) - TOPIC_ORDER.indexOf(b.topic));
-  return { items: [...new Set(items)], ...(mine[0] ? { question: mine[0].question.text } : {}) };
 }
 
 /** What each other person still owes, in a few words, with the one question to ask them next. Used to nudge them. */

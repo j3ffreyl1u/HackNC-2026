@@ -149,8 +149,7 @@ function normalizeValue<F extends ConstraintField>(field: F, value: ConstraintVa
       return { items: cleanList((v as ConstraintValues['must_dos']).items, 'must-dos', true) } as ConstraintValues[F];
     case 'transport': {
       const t = v as ConstraintValues['transport'];
-      if (t.mode === 'plane') return { mode: 'plane', vehicleAvailable: false } as ConstraintValues[F];
-      if (t.mode !== 'car') return invalid('This planner handles trips by car or by plane.');
+      if (t.mode !== 'car') return invalid('This planner only handles road trips by car for now.');
       if (typeof t.vehicleAvailable !== 'boolean') return invalid('Does the group have a car? Please say yes or no.');
       return { mode: 'car', vehicleAvailable: t.vehicleAvailable } as ConstraintValues[F];
     }
@@ -323,12 +322,7 @@ export function resolveGroupField<F extends 'transport' | 'region' | 'duration' 
   if (positions.length === 0) return { status: 'unset', tentativeOnly: sawTentative };
   const distinct = new Set(positions.map((p) => canonical(p.value)));
   // One person with a car is enough for the group: "I have a car" and "I don't" are not in conflict.
-  if (field === 'region' && distinct.size > 1) {
-    const placeOf = (v: unknown) => { const r = v as ConstraintValues['region']; const p = r.destination ?? r.searchRegion; return p === undefined ? undefined : p.toLowerCase().replace(/[.,]/g, '').replace(/^the\s+/, '').replace(/\s+/g, ' ').trim(); };
-    const places = positions.map((p) => placeOf(p.value));
-    if (places.every((p) => p !== undefined && p === places[0])) return { status: 'agreed', value: positions[0]!.value, authors: positions.map((p) => p.memberId) };
-  }
-  if (field === 'transport' && distinct.size > 1 && positions.every((p) => (p.value as ConstraintValues['transport']).mode !== 'plane')) {
+  if (field === 'transport' && distinct.size > 1) {
     const driver = positions.find((p) => (p.value as ConstraintValues['transport']).vehicleAvailable);
     if (driver) return { status: 'agreed', value: driver.value, authors: positions.map((p) => p.memberId) };
   }

@@ -37,7 +37,7 @@ export interface StoredConstraintValueByField {
   availability: AvailabilityWindow[];
   preferences: string[];
   must_dos: string[];
-  transport: { mode: 'road_trip' | 'plane'; hasVehicle: boolean; notes?: string };
+  transport: { mode: 'road_trip'; hasVehicle: boolean; notes?: string };
   region: { label: string; maxTravelMinutes?: number };
   duration: { nights: number };
   origin: { city: string; region: string; timeZone: string };
@@ -82,8 +82,6 @@ export type TripAction =
   | { kind: 'request_plans' }
   | { kind: 'select_candidate'; candidateId: string; revision: number }
   | { kind: 'accept_candidate'; candidateId: string; revision: number }
-  /** Takes back this person's own yes to the plan that is up for approval (or approved). */
-  | { kind: 'withdraw_acceptance' }
   | { kind: 'ask_guide'; question: string }
   | { kind: 'confirm_cost'; candidateId: string; revision: number; costId: string; lowCents: number; highCents: number; sourceMessageId: string }
   | { kind: 'confirm_stop'; candidateId: string; revision: number; item: ItineraryItem; sourceMessageId: string }
@@ -270,8 +268,6 @@ export interface ConversationContext {
   confirmBasics?: SharedConstraintValue[];
   openFields?: ConstraintField[];
   others?: Array<{ memberId: string; name: string; shared: string[]; missing: string[] }>;
-  /** What this person still owes and the next question to ask them (for "what else do you need from me?"). */
-  stillNeeded?: { items: string[]; question?: string };
   relays?: Array<{ withName: string; byMe: boolean; kind: 'ask' | 'tell' | 'request' | 'invite' | 'answer'; text: string }>;
   approval?: { title: string; inNames: string[]; waitingNames: string[]; youIn: boolean };
   /** The last few messages with this person, oldest first, so follow-ups like "the second one" or "how much was that?" make sense. */

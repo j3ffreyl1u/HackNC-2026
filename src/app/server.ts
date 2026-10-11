@@ -69,11 +69,11 @@ async function route(request: IncomingMessage, response: ServerResponse, options
       return;
     }
   }
-  if ((request.method === 'GET' || request.method === 'HEAD') && url.pathname === '/') {   // HEAD too: link previews probe with it
+  if (request.method === 'GET' && url.pathname === '/') {
     await sendFile(response, resolve(webRoot, 'index.html'), 'text/html; charset=utf-8');
     return;
   }
-  if ((request.method === 'GET' || request.method === 'HEAD') && ['/app.js', '/reef.js', '/styles.css'].includes(url.pathname)) {
+  if (request.method === 'GET' && ['/app.js', '/reef.js', '/styles.css'].includes(url.pathname)) {
     const name = basename(url.pathname);
     await sendFile(response, resolve(webRoot, name), name.endsWith('.jpg') ? 'image/jpeg' : name.endsWith('.webp') ? 'image/webp' : name.endsWith('.js') ? 'text/javascript; charset=utf-8' : 'text/css; charset=utf-8');
     return;

@@ -15,7 +15,7 @@ Here's a trimmed example using the assistant's real replies:
 ```text
 You:            leaving from chapel hill, 2 nights, my max is 400
 N.E.M.O:        Got it: your max is $400 (just between us), 2 nights, leaving from Chapel Hill.
-N.E.M.O:        Are you planning on driving or flying?
+N.E.M.O:        Does anyone have a car we can take?
 You:            ask mason if he has a car
 N.E.M.O:        Done, I asked Mason. I'll tell you what they say.
 Mason's phone:  Hey Mason! Jeffrey was wondering: Does anyone have a car we can take?
@@ -67,7 +67,7 @@ It's like having a personal AI travel agent for the group, with no app to downlo
 ## How it works
 
 1. **Everyone texts the assistant.** Each friend messages the same number from their own phone, in a private one-on-one thread. There is no group chat to manage.
-2. **It asks only for what is missing.** Starting city, driving or flying, how many nights, where to go, free dates, a personal budget and what each person enjoys. One short question at a time, and it accepts messy answers like "i can do like 400 tops" or "the weekend of Nov 21".
+2. **It asks only for what is missing.** Starting city, how many nights, where to go, whether someone has a car, free dates, a personal budget and what each person enjoys. One short question at a time, and it accepts messy answers like "i can do like 400 tops" or "the weekend of Nov 21".
 3. **It finds options that fit everyone.** Once the basics are settled, it researches destinations, prices each option against every person's own limit, and sends back two cited options with a cost breakdown.
 4. **Everyone agrees on the same plan.** Someone picks an option, then each person says "I'm in". If a detail changes (dates, budget, nights), the old approvals no longer count and the plan is rechecked.
 5. **It tracks who covered what.** After the trip is approved, friends can text things like "I just paid $60 for gas". The assistant records it in that person's simulated bank account, splits shared costs evenly, and works out who owes whom.
@@ -81,10 +81,10 @@ A read-only trip page shows the itinerary, costs, sources, who has agreed, and t
 - Rules handle common phrasing; Gemini handles everything else and is never trusted blindly (its output is validated before anything is saved).
 - The assistant speaks for everyone: "ask Mason if he has a car", "tell Mason I'm bringing snacks" and "remind Mason to lock it in" are passed on, and answers come back.
 - Follow-up questions about the options: "which is cheaper and by how much?", "what does option 2 include?", "how long is the drive?".
-- Disagreements (two starting cities, different trip lengths, driving versus flying) are surfaced once and settled in chat.
+- Disagreements (two starting cities, different trip lengths, two destinations) are surfaced once and settled in chat.
 
 **Planning**
-- Driving or flying. A driving trip asks whose car and prices fuel; a flying trip needs no car and uses an estimated airfare instead.
+- Built for road trips: it checks that someone has a car, keeps drives within the group's limit, and prices fuel.
 - Every option is checked against each person's own maximum, using the top of each price range so nobody is shown a price their limit would reject.
 - Exact-version approval: a change to a material detail starts a new revision and clears earlier approvals.
 - Approved plans can be downloaded as a calendar file.
@@ -96,7 +96,7 @@ A read-only trip page shows the itinerary, costs, sources, who has agreed, and t
 
 **Shared spending (simulated)**
 - Each friend has their own Capital One Nessie sandbox account. Purchases logged in chat are written there and read back to compute the tally.
-- Shared costs (lodging, gas or flights, activities, fees) are split evenly. Food stays personal unless the buyer says it was for everyone.
+- Shared costs (lodging, gas, activities, fees) are split evenly. Food stays personal unless the buyer says it was for everyone.
 - "Who covered what?", "remind everyone" and "wrap up the trip" answer from the ledger. Settle-up amounts are calculated only; nothing is ever paid or transferred.
 
 ## How we built it
@@ -215,7 +215,7 @@ npm test
 npm run build
 ```
 
-The suite has over 1,500 tests. Beyond unit tests, it drives the real conversation, planner and runtime through a simulated phone line to check complete conversations: gathering details, disagreements, picks, approvals, relays and purchase logging. Money calculations are also checked with seeded randomised tests (shares always add up to the cent and settle-up amounts always balance).
+The suite has nearly 1,500 tests. Beyond unit tests, it drives the real conversation, planner and runtime through a simulated phone line to check complete conversations: gathering details, disagreements, picks, approvals, relays and purchase logging. Money calculations are also checked with seeded randomised tests (shares always add up to the cent and settle-up amounts always balance).
 
 ## What's next: a real group chat
 
@@ -228,6 +228,10 @@ We couldn't ship it this time because adding a bot to iMessage group chats requi
 - Add the assistant to an existing group chat instead of having everyone text it separately.
 - Keep budgets and other private details in side DMs, exactly as today.
 - Show the itinerary, votes and who has said "I'm in" directly in the group, so nobody has to ask where things stand.
+
+### Also next
+
+- **Flights.** Today every trip is a road trip. Adding a "driving or flying?" question, airfare estimates and flight-based destinations is the next planning feature.
 
 ## Built with and credits
 
@@ -247,7 +251,7 @@ We couldn't ship it this time because adding a bot to iMessage group chats requi
 
 ## Known limitations
 
-- **Flight prices are estimates.** Flying trips use a typical round-trip fare per person, clearly labelled, rather than a live fare lookup.
+- **Road trips only.** Trips by plane are not supported yet.
 - **Research prices are estimates.** Prices come from web search and hotel listings; they are not bookable quotes.
 - **One-on-one threads only.** Group iMessage chats are not supported.
 - **A pick cannot be switched** once it is made. Changing a detail (dates, nights, a budget) brings fresh options instead.

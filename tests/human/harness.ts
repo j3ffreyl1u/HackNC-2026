@@ -21,12 +21,12 @@ export const cleanup = () => { for (const d of dirs.splice(0)) rmSync(d, { recur
 export interface Heard { mason: string[]; alex: string[]; jordan: string[]; all: string[] }
 
 /** Three real people texting the real parser + runtime + planner over a mock phone line (direct mode). */
-export async function humans(opts: { names?: Partial<Record<Who, string>>; start?: string; provider?: ReturnType<typeof createResearchProvider>; fund?: 'mock' | 'broken'; fundService?: ReturnType<typeof createFundService>; people?: Who[] } = {}) {
+export async function humans(opts: { names?: Partial<Record<Who, string>>; start?: string; provider?: ReturnType<typeof createResearchProvider>; fund?: 'mock' | 'broken'; fundService?: ReturnType<typeof createFundService> } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'human-')); dirs.push(dir);
   const path = join(dir, 'trip.json');
   const names = { mason: 'Mason', alex: 'Alex', jordan: 'Jordan', ...opts.names };
   writeFileSync(path, JSON.stringify({ mode: 'direct', tripId: 'h', groupSpaceId: 'direct:h', timeZone: 'America/New_York',
-    participants: (opts.people ?? (Object.keys(PHONES) as Who[])).map((w) => ({ memberId: w, displayName: names[w], providerUserId: PHONES[w], consentedAt: '2026-10-10T12:00:00Z' })) }));
+    participants: (Object.keys(PHONES) as Who[]).map((w) => ({ memberId: w, displayName: names[w], providerUserId: PHONES[w], consentedAt: '2026-10-10T12:00:00Z' })) }));
   const trip = await loadEnrolledTrip(path);
   const repository = SqliteTripRepository.open(join(dir, 'trips.sqlite'));
   await repository.bootstrapTrip(trip.enrollment, trip.state);

@@ -54,15 +54,13 @@ function requestFor(state: TripState): ResearchRequest {
   const origin = resolveGroupField(state, 'origin');
   const region = resolveGroupField(state, 'region');
   const place = region.status === 'agreed' ? (region.value as ConstraintValues['region']) : {};
-  const transport = resolveGroupField(state, 'transport');
-  const flying = transport.status === 'agreed' && (transport.value as ConstraintValues['transport']).mode === 'plane';
   return {
     purpose: 'plan',
     revision: state.revision,
     ...(origin.status === 'agreed' ? { origin: (origin.value as ConstraintValues['origin']).city } : {}),
     ...(place.destination !== undefined ? { destination: place.destination } : {}),
     ...(place.searchRegion !== undefined ? { searchRegion: place.searchRegion } : {}),
-    ...(flying ? { travel: 'plane' as const } : place.maxTravelMinutes !== undefined ? { maxTravelMinutes: place.maxTravelMinutes } : {}),
+    ...(place.maxTravelMinutes !== undefined ? { maxTravelMinutes: place.maxTravelMinutes } : {}),
     interests: groupPreferences(state),
     nights,
     groupSize: ids.length,
@@ -158,7 +156,7 @@ function describeOption(c: TripCandidate, rank: number, timeZone: string, option
   const parts: Array<[string, number]> = [
     ['hotel', roughDollars(perPerson(['accommodation']))],
     ['food', roughDollars(perPerson(['food']))],
-    [c.costs.some((x) => x.costId === 'flights') ? 'flights' : 'gas and parking', roughDollars(perPerson(['fuel_parking_tolls']))],
+    ['gas and parking', roughDollars(perPerson(['fuel_parking_tolls']))],
     ['tickets', roughDollars(perPerson(['activities']))],
     ['other', roughDollars(perPerson(['taxes_fees', 'other']))],
     ['a buffer', roughDollars(c.contingencyCents / people)],
@@ -169,7 +167,7 @@ function describeOption(c: TripCandidate, rank: number, timeZone: string, option
   const places = [...new Set(c.itinerary.map((i) => i.label).filter((l) => !looksLikeRoute(l) && !/^drive\b/i.test(l)))].slice(0, 3).map((l) => clip(l, 40));
   const region = option?.region && !c.title.toLowerCase().includes(option.region.toLowerCase()) ? option.region : '';
   const where = [region ? `In ${region}` : '', places.length > 0 ? `${region ? ': ' : 'Highlights: '}${places.join(', ')}` : ''].join('');
-  const drive = option?.driveMinutesFromOrigin !== undefined && !c.costs.some((x) => x.costId === 'flights') ? ` Roughly a ${driveWords(option.driveMinutesFromOrigin)} drive.` : '';
+  const drive = option?.driveMinutesFromOrigin !== undefined ? ` Roughly a ${driveWords(option.driveMinutesFromOrigin)} drive.` : '';
   // The cap check uses the top of each range, so the message names that figure too: nobody is shown a price under their max
   // that the check then rejects. The middle figure and its parts are what to plan around.
   const worst = Math.max(total, roughDollars(Math.max(...c.perPersonTotals.map((t) => t.highCents))));

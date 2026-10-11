@@ -73,7 +73,6 @@ export function validateConstraintItem(raw: unknown): ConstraintValue | null {
       const text = str(o.text, 60);
       if (!text) return null;
       // The model sometimes leaves the yes/no out ("Mason has one"); read it from the words rather than ask again.
-      if (/\b(?:fly|flying|flight|flights|plane|airplane)\b/i.test(text) && !/\b(?:don'?t|not|no)\s+(?:want\s+to\s+)?(?:fly|flying|plane)/i.test(text)) return { field: 'transport', value: 'plane', vehicleAvailable: false };
       const has = typeof o.vehicleAvailable === 'boolean' ? o.vehicleAvailable : /\b(?:no|nobody|none|don'?t|doesn'?t|without|neither)\b/i.test(text) ? false : /\b(?:has|have|got|own|owns|car|truck|suv|van|vehicle|drive|ride|one)\b/i.test(text) ? true : undefined;
       return { field: 'transport', value: text, ...(has !== undefined ? { vehicleAvailable: has } : {}) };
     }

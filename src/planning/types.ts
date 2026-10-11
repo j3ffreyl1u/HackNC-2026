@@ -39,7 +39,7 @@ export interface ConstraintValues {
   /** Hard requirements: must-dos, accessibility and dietary needs. May be empty. */
   must_dos: { items: string[] };
   /** Group level. MVP is a road trip, so the only mode is a car; this records whether the group has one. */
-  transport: { mode: 'car' | 'plane'; vehicleAvailable: boolean };
+  transport: { mode: 'car'; vehicleAvailable: boolean };
   /** Group level. A chosen destination, or a bounded search: a named region and/or a max travel time. */
   region: { destination?: string; searchRegion?: string; maxTravelMinutes?: number };
   /** Group level. Whole nights. */
@@ -220,8 +220,6 @@ export type TripAction =
   | { kind: 'request_plans' }
   | { kind: 'select_candidate'; candidateId: string; revision: number }
   | { kind: 'accept_candidate'; candidateId: string; revision: number }
-  /** Takes back this person's own yes to the plan that is up for approval (or approved). */
-  | { kind: 'withdraw_acceptance' }
   | { kind: 'ask_guide'; question: string }
   | { kind: 'request_funding'; topic?: 'status' | 'remind' | 'wrap_up' }
   | { kind: 'log_purchase'; category: string; what: string; dollars?: number; shared?: boolean }
