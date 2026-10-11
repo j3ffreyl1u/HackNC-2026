@@ -191,18 +191,20 @@ export function describeGaps(state: TripState, result: Pick<ReadinessResult, 'mi
   const items: string[] = [];
   const perPerson = (key: string, label: (name: string) => string) => {
     const ids = result.missing.filter((m) => m.startsWith(`${key}:`)).map((m) => m.slice(key.length + 1));
+    // When nobody has answered yet, "everyone's budget" reads better than a name for each person.
+    if (ids.length > 1 && ids.length === participantIds(state).length) return [label('everyone')];
     return ids.map((id) => label(displayName(state, id)));
   };
   const consent = result.missing.filter((m) => m.startsWith('consent:')).map((m) => m.slice('consent:'.length));
   if (consent.length > 0) items.push(`${names(state, consent)} to agree to plan with me`);
   if (result.missing.includes('roster')) items.push('who else is coming');
-  items.push(...perPerson('budget', (n) => `${n}'s budget`));
-  items.push(...perPerson('availability', (n) => `${n}'s dates`));
-  items.push(...perPerson('preferences', (n) => `${n}'s preferences`));
   if (result.missing.includes('origin')) items.push("where you're leaving from");
   if (result.missing.includes('duration')) items.push('how many nights');
   if (result.missing.includes('region')) items.push('where you want to go');
   if (result.missing.includes('transport') || result.missing.includes('vehicle')) items.push('whether someone has a car');
+  items.push(...perPerson('availability', (n) => `${n}'s dates`));
+  items.push(...perPerson('budget', (n) => `${n}'s budget`));
+  items.push(...perPerson('preferences', (n) => `${n}'s preferences`));
   const parts = items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items.at(-1)}` : (items[0] ?? '');
   const tail = result.conflicts.length > 0 ? 'Some answers also don\'t match yet, so I need those sorted out.' : '';
   if (parts === '') return tail === '' ? "I'm not ready to plan yet." : `I'm not ready to plan yet. ${tail}`;
