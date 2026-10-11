@@ -35,6 +35,13 @@ Pivoting is a config change (`mode: 'direct'`). In `direct`, `groupSpaceId` is o
 - Explicit forms (no AI): `show options`, `plan the trip`, `guide: <question>`, `request contributions`.
 - Gemini sees: message text, date, channel, timezone, member names, pending field. Never budgets or other members' private history. Output is validated (`intent.ts`); invalid items are dropped. Certainty and hedging are decided by code, not the model. Gemini errors degrade to a clarification (shown only in DMs).
 
+## Rules first, then Gemini (automatic handoff)
+Each message goes through the deterministic rules first (exact, instant, no network). The rules also report which sentences and long clauses they did **not** understand; exactly those are handed to Gemini automatically, and its validated answer is merged with the rules' (rules win per field, and Gemini is told which fields are already captured). Small talk ("thanks!", "hey", "lol") is answered without a model call, and a request tucked into a longer message ("..., can you show us some options?") is understood by rule. If Gemini says "clarify" it is asked once more; if it errors, the user gets the friendly help message (in a DM) instead of silence.
+
+**Simulated live test** (`tests/conversation/corpus.ts`, 135 realistic DMs with expected outcomes, including adversarial ones):
+- `corpus.test.ts` (always runs, no network): rules alone must get every `rules: true` case right, and every other case must have been handed to the model.
+- `corpus.live.test.ts` (real Gemini): `RUN_LIVE_GEMINI=1 GEMINI_API_KEY=... GEMINI_MODEL=... CORPUS_REPORT=/tmp/report.txt npx vitest run tests/conversation/corpus.live.test.ts`. Result 2026-10-10 with `gemini-3.8-flash`, two runs: **134 pass, 0 fail, 1 soft miss** ("free Thanksgiving week"). Soft cases are judgement calls and never fail the run. Add every message that goes wrong in a real test to the corpus.
+
 ## Join codes (my half, off by default)
 A friend can text the assistant `join 4F7K` (also `JOIN-4F7K`, `join code 4F7K`, `use code 4F7K to join`) to ask to be added. A code must contain a digit, so "join us" or "join now" are never codes.
 - `createConversationService({ ..., joinCodes: true })` lets a DM from a number that is **not enrolled** through, and only if the text is exactly a join request. It arrives as `senderId: 'guest:<number>'`; everything else from strangers is still dropped, and a guest can never do anything but join.
