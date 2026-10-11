@@ -17,6 +17,8 @@ import { formatCents } from './money.js';
 import type { ConversationDependencies } from './types.js';
 
 const APPROVE_REACTIONS = new Set(['👍', '👍🏻', '👍🏼', '👍🏽', '👍🏾', '👍🏿', '❤️', '❤', '✅', '✔️', 'like', 'love', 'thumbsup', '+1']);
+/** Taking back one's own yes to the plan. Only meaningful while a plan is up for approval or approved. */
+const WITHDRAW = /^(?:i'?m out|im out|count me out|i'?m not in(?: anymore)?|i'?m no longer in|take (?:back |away )?my (?:yes|acceptance|approval|ok)(?: back)?|(?:i )?withdraw(?: my (?:yes|acceptance|approval))?|i (?:have )?changed my mind|i take it back)$/i;
 const YES = /^(?:(?:ok(?:ay)?|yeah|yes|alright|sure)[, ]+)?(?:(?:yes|yep|yeah|yup|sure)(?:[ ,]+(?:it is|that is|that'?s right|that'?s it|correct|exactly|please|firm))?|ok|okay|accept|accepted|i accept|i'?m in(?:\s+too)?|me too|i'?m down|count me in|sounds good|works for me|let'?s do it|do it|confirm|confirmed|correct|that'?s right|exactly)[.!]*$/i;
 /** "yes that works", "sounds good to me", "all good": agreement, as long as nothing in it asks for a change. */
 const AGREES_START = /^(?:yes|yeah|yep|yup|yea|sure|ok|okay|absolutely|definitely|totally|sounds|that works|that'?ll work|works|all good|fine|good|perfect|great|i'?m (?:good|fine|down|in)|let'?s do it|love it|looks good)\b/i;
@@ -703,10 +705,14 @@ export function createParser(deps: ConversationDependencies) {
       const numberedFits = numberedTarget !== undefined && (rest !== '' && numberedTarget.description.toLowerCase().startsWith(rest));
       const target = byName ?? (numberedFits ? numberedTarget : undefined);
       if (!target) return { kind: 'ignored', reason: 'reaction target is not a proposal' };
+      // A tapback typed as text quotes words, not a version, so it cannot prove which revision was meant. Picking is harmless;
+      // agreeing is a commitment, so it needs an explicit word. (A native iMessage reaction names the exact message and is safe.)
+      if ((target.kind as string) === 'accept') return reply(msg, `Thanks for the thumbs up on ${target.description}! A tapback that comes through as text can't tell me which version you meant, so to lock it in please reply "accept ${target.candidateId} v${target.revision}" or just "I'm in".`, 'tapback-confirm', true);
       return one(msg, ctx, target.kind === 'accept'
         ? { kind: 'accept_candidate', candidateId: target.candidateId, revision: target.revision }
         : { kind: 'select_candidate', candidateId: target.candidateId, revision: target.revision });
     }
+    if ((ctx.status === 'awaiting_acceptance' || ctx.status === 'approved') && WITHDRAW.test(text.replace(/[?!.\s]+$/, ''))) return one(msg, ctx, { kind: 'withdraw_acceptance' });
     if (THUMBS.test(text)) {
       // A thumbs-up to "does that work for you?" is a yes to the plan so far, the same as typing "yes".
       if (ctx.confirmBasics?.length && ctx.actionable.length === 0 && !ctx.pendingConfirmation) return fromConstraints(msg, ctx, text, ctx.confirmBasics.map((value) => ({ value, hedged: false })));

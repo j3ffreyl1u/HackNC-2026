@@ -34,7 +34,7 @@ Open http://127.0.0.1:3000. Startup bootstraps the configured trip automatically
 
 ## Connect iMessage
 
-Create a local enrollment config with tripId, groupSpaceId, timeZone and a fixed participants array. Each participant has memberId, displayName, providerUserId (their E.164 phone number, such as +15551234567) and consentedAt (the actual consent timestamp). Set TRIP_CONFIG_PATH to that file and use a separate DATABASE_PATH. Live mode starts gathering; dates, budgets and preferences come from chat rather than demo fixtures.
+Create a local enrollment config with tripId, mode "direct", groupSpaceId (just a label for the trip), timeZone and a fixed participants array. Each participant has memberId, displayName, providerUserId (their E.164 phone number, such as +15551234567) and consentedAt (the actual consent timestamp). Set TRIP_CONFIG_PATH to that file and use a separate DATABASE_PATH. Live mode starts gathering; dates, budgets and preferences come from chat rather than demo fixtures.
 
 Set CHAT_MODE=photon, SPECTRUM_PROJECT_ID, SPECTRUM_PROJECT_SECRET and GEMINI_API_KEY in .env. GEMINI_INTENT_MODEL optionally overrides the language parser model. Keep RESEARCH_MODE=mock for a synthetic research demonstration, or set gemini for the adapted live flow. Run npm run dev.
 
@@ -52,7 +52,7 @@ confirm stop manual-11 v12 Park name | 2026-11-14T10:00:00-05:00 | 2026-11-14T12
 
 Dates must include a timezone and fit the agreed trip. Tags identify which requirements the participant says the stop covers. Stops may not overlap. A stop creates a new revision and requires renewed transport/activity estimates before approval. A worksheet with no confirmed stop cannot be selected or accepted. Required must-dos still block approval when uncovered.
 
-Spectrum is wired and tested with provider-shaped fakes. Real line enrollment, group delivery, DM/reactions and the adapted Gemini display are not live verified here. Links are local because the server binds to loopback; remote access needs authenticated hosting. No site was deployed. Calendar and funding extensions are disabled.
+Messages are delivered one-on-one (Photon Spectrum). The final build is tested end to end on a mock phone line; earlier builds were checked on real phones for DMs and reactions (see docs/conversation.md). Trip-page links in texts need `PUBLIC_BASE_URL` set to an https address that reaches this machine (for example `cloudflared tunnel --url http://127.0.0.1:3000`); otherwise they point at loopback and will not open on a phone. Calendar download is manual and funding tracking is off unless `FUNDING_MODE=nessie`.
 
 ## Checks
 
@@ -67,7 +67,7 @@ See [docs/integration.md](docs/integration.md) for boundaries and actual verific
 
 ## DM demo and corrected cap preset
 
-For the shared Photon line, set mode to direct in the live enrollment JSON. groupSpaceId is then a logical trip label; the fixed participants still use actual E.164 phone numbers and recorded consent. Use a fresh database when changing topology. A delivers shared replies as individual DMs and C records every receipt. Coordinate all live messages with Jeffrey.
+For the shared Photon line, set mode to direct in the live enrollment JSON. groupSpaceId is then a logical trip label; the fixed participants still use actual E.164 phone numbers and recorded consent. Use a fresh database when changing topology. Shared replies are delivered as individual DMs and every receipt is recorded.
 
 Run npm run demo:chat -- --realistic-caps for the separate $520/$560/$600 -> $450 scenario. Its $328/$500 prices are explicitly synthetic examples, not newly verified live quotes. The normal offline demo keeps the original affordability acceptance scenario. To replay a scenario after a saved run, choose a fresh DATABASE_PATH. Unknown essential prices still block approval regardless of higher caps.
 
