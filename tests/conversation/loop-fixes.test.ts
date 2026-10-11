@@ -14,3 +14,13 @@ describe('fixes found by scripted chat loops', () => {
     expect(validateIntent({ intent: 'constraints', items: [{ field: 'region', text: 'anywhere' }] })).toEqual({ intent: 'clarify' });
   });
 });
+
+describe('small talk after the trip is set', () => {
+  it('"cool see u there" and "im in too" are not misses', async () => {
+    const { setup, msg } = await import('./helpers.js');
+    const ask = (text: string, ctx: Record<string, unknown> = {}) => setup(ctx as never, undefined, 'direct').service.parseInbound(msg({ text, visibility: 'private', spaceId: 'dm-mason' }));
+    const text = (r: { kind: string; message?: { text: string } }) => (r.kind === 'reply' ? r.message!.text : '');
+    expect(text(await ask('cool see u there') as never)).toMatch(/See you there|Sounds fun/);
+    expect(text(await ask('im in too') as never)).not.toMatch(/didn't quite catch/);
+  });
+});

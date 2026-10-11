@@ -216,7 +216,7 @@ export function extractConstraints(text: string, reference: string, pending?: Co
 }
 
 /** Small talk that needs no interpretation (and therefore no model call). */
-export const TRIVIAL = /^(?:(?:hi|hey|hello|hiya|howdy|hola|sup|wassup|what'?s up|whats up|what up|good (?:morning|afternoon|evening|night)|gm|there|everyone|everybody|all|guys|y'?all|team|hmm+|hm+|um+|uh+|test(?:ing)?|yo|thanks?|thank you|thx|ty|so much|very much|a lot|a ton|appreciate (?:it|that)|you(?:'re| are) (?:the best|awesome|great|amazing)|[a-z']+ (?:is|was|are) (?:the best|awesome|great|amazing|a legend)|the best|ok(?:ay)?|cool|nice|great|awesome|perfect|sweet|lol|haha+|lmao|got it|sounds good|no worries|np|please|pls|sorry|oops)\b[\s,.!?:)-]*)+$/i;
+export const TRIVIAL = /^(?:(?:hi|hey|hello|hiya|howdy|hola|sup|wassup|what'?s up|whats up|what up|good (?:morning|afternoon|evening|night)|gm|there|everyone|everybody|all|guys|y'?all|team|hmm+|hm+|um+|uh+|test(?:ing)?|yo|thanks?|thank you|thx|ty|so much|very much|a lot|a ton|appreciate (?:it|that)|you(?:'re| are) (?:the best|awesome|great|amazing)|[a-z']+ (?:is|was|are) (?:the best|awesome|great|amazing|a legend)|the best|see (?:you|ya|u)(?: (?:there|soon|later|then))?|have fun|can'?t wait|so excited|excited|ok(?:ay)?|cool|nice|great|awesome|perfect|sweet|lol|haha+|lmao|got it|sounds good|no worries|np|please|pls|sorry|oops)\b[\s,.!?:)-]*)+$/i;
 
 export interface Coverage {
   items: Extracted[];

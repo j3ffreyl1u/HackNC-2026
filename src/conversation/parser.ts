@@ -17,7 +17,7 @@ import { formatCents } from './money.js';
 import type { ConversationDependencies } from './types.js';
 
 const APPROVE_REACTIONS = new Set(['👍', '👍🏻', '👍🏼', '👍🏽', '👍🏾', '👍🏿', '❤️', '❤', '✅', '✔️', 'like', 'love', 'thumbsup', '+1']);
-const YES = /^(?:(?:yes|yep|yeah|yup|sure)(?:[ ,]+(?:it is|that is|that'?s right|that'?s it|correct|exactly|please|firm))?|ok|okay|accept|accepted|i accept|i'?m in|count me in|sounds good|works for me|let'?s do it|do it|confirm|confirmed|correct|that'?s right|exactly)[.!]*$/i;
+const YES = /^(?:(?:yes|yep|yeah|yup|sure)(?:[ ,]+(?:it is|that is|that'?s right|that'?s it|correct|exactly|please|firm))?|ok|okay|accept|accepted|i accept|i'?m in(?:\s+too)?|me too|i'?m down|count me in|sounds good|works for me|let'?s do it|do it|confirm|confirmed|correct|that'?s right|exactly)[.!]*$/i;
 /** "yes that works", "sounds good to me", "all good": agreement, as long as nothing in it asks for a change. */
 const AGREES_START = /^(?:yes|yeah|yep|yup|yea|sure|ok|okay|absolutely|definitely|totally|sounds|that works|that'?ll work|works|all good|fine|good|perfect|great|i'?m (?:good|fine|down|in)|let'?s do it|love it|looks good)\b/i;
 const CHANGE_WORDS = /\b(?:but|actually|instead|rather|except|though|however|no|not|don'?t|doesn'?t|can'?t|wait|hold on|change)\b/i;
@@ -620,7 +620,9 @@ export function createParser(deps: ConversationDependencies) {
   /** Hellos, thanks and filler. Needs no model: warm in a one-on-one chat, silent in a group. Never a place, a date or a number. */
   function smallTalk(msg: InboundMessage, ctx: TripConversationContext, text: string, talkative: boolean): ParseResult {
     if (!talkative) return { kind: 'ignored', reason: 'small talk' };
-    if (/^(?:thanks?|thank you|thx|ty|appreciate|you'?re (?:awesome|great|the best|amazing|so helpful|helpful|a lifesaver|funny)|great job|good job|nice work|love it|this is (?:great|awesome|amazing|fun|cool))/i.test(text)) return reply(msg, 'Anytime! Tell me if you want to change anything, or say "show us some options" when you\'re ready.', 'welcome');
+    const done = ctx.status === 'approved';
+    if (/^(?:thanks?|thank you|thx|ty|appreciate|you'?re (?:awesome|great|the best|amazing|so helpful|helpful|a lifesaver|funny)|great job|good job|nice work|love it|this is (?:great|awesome|amazing|fun|cool))/i.test(text)) return reply(msg, done ? 'Anytime! Have a great trip.' : 'Anytime! Tell me if you want to change anything, or say "show us some options" when you\'re ready.', 'welcome');
+    if (/^(?:(?:ok(?:ay)?|cool|nice|great|awesome|sweet|alright|yay)[\s,!.]+)*(?:see (?:you|ya|u)\b|have fun|can'?t wait|so excited|excited)/i.test(text)) return reply(msg, done ? 'See you there! Tell me if a detail changes and I will look again.' : "Sounds fun! Tell me if you want to change anything, or say \"show us some options\" when you're ready.", 'see-you');
     if (/^good ?night\b|^(?:night|nite|gn|bye|goodbye|see ya|later|ttyl|talk later)\b/i.test(text)) return reply(msg, 'Night! I\'ll be here whenever you want to pick this back up.', 'goodnight');
     if (/^(?:(?:hi|hey|hello|yo|hiya|howdy|hola|sup|wassup|what'?s up|whats up|what up|gm)\b|good )/i.test(text)) {
       // Partway through a question: put it back instead of inviting them to start over.
@@ -631,7 +633,7 @@ export function createParser(deps: ConversationDependencies) {
       if (starters.length > 0 || ctx.confirmBasics?.length) return reply(msg, `Hey! ${starters.length > 0 ? list(starters) : 'Someone'} already started planning a trip. Tell me your free dates and what you're into, or say "show us some options" when you're ready.`, 'greeting-joined');
       return reply(msg, 'Hey! Want to plan a trip? Say "let\'s plan a trip" to get started.', 'greeting');
     }
-    return reply(msg, "Sounds good. I'm here whenever you want to add something or see options.", 'smalltalk');
+    return reply(msg, done ? "Sounds good. The trip is all set. I'm here if anything changes." : "Sounds good. I'm here whenever you want to add something or see options.", 'smalltalk');
   }
 
   /** "Hi Alex", "hello everyone": a greeting aimed at someone by name is still only a greeting. */
