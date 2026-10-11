@@ -85,3 +85,15 @@ describe('tentative dates', () => {
     const r = await h.say('mason', 'yes'); expect((await dates(h)).length, said(r)).toBe(1); await h.stop();
   });
 });
+
+describe('what is shared', () => {
+  it('a person invited into a trip is told that free dates are shared and budgets are not, before they give either', async () => {
+    const h = await humans(); await h.say('mason', "I'm leaving from Chapel Hill, 2 nights, I want to go to Boone, I have a car");
+    const r = await h.say('alex', 'I want to plan a trip');
+    expect(said(r)).toMatch(/started planning a trip with you/); expect(said(r)).toMatch(/free when.*budgets stay private/i); await h.stop();
+  });
+  it('a hello from someone joining says the same', async () => {
+    const h = await humans(); await h.say('mason', "I'm leaving from Chapel Hill, 2 nights, I want to go to Boone, I have a car");
+    expect(said(await h.say('jordan', 'hi'))).toMatch(/budgets stay private/i); await h.stop();
+  });
+});

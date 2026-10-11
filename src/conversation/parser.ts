@@ -391,7 +391,7 @@ export function createParser(deps: ConversationDependencies) {
       if (open) return reply(msg, `Hey! ${open}`, 'greeting-open');
       // Someone has already started: don't tell this person to start another trip.
       const starters = (ctx.others ?? []).filter((o) => o.shared.length > 0).map((o) => o.name);
-      if (starters.length > 0 || ctx.confirmBasics?.length) return reply(msg, `Hey! ${starters.length > 0 ? list(starters) : 'Someone'} already started planning a trip. Tell me your free dates and what you're into, or say "show us some options" when you're ready.`, 'greeting-joined');
+      if (starters.length > 0 || ctx.confirmBasics?.length) return reply(msg, `Hey! ${starters.length > 0 ? list(starters) : 'Someone'} already started planning a trip. Tell me your free dates and what you're into, or say "show us some options" when you're ready. I share who's free when with the group to find a weekend; budgets stay private.`, 'greeting-joined');
       return reply(msg, 'Hey! Want to plan a trip? Say "let\'s plan a trip" to get started.', 'greeting');
     }
     return reply(msg, "Sounds good. I'm here whenever you want to add something or see options.", 'smalltalk');

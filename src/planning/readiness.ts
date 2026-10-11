@@ -164,7 +164,7 @@ function evaluate(state: TripState): Evaluation {
     const authors = new Set([...origin.authors, ...duration.authors, ...region.authors, ...transport.authors]);
     for (const id of ids.filter((x) => !authors.has(x))) {
       missing.push(`confirm_basics:${id}`);
-      privately('basics', id, `confirm_basics:${id}`, `Hey ${displayName(state, id)}! ${names(state, [...authors])} started planning a trip with you. So far the idea is ${describeBasics(origin.value, duration.value, region.value)}, with a car.${authorsSaid(state, [...authors])} Does that work for you, or would you change anything?`);
+      privately('basics', id, `confirm_basics:${id}`, `Hey ${displayName(state, id)}! ${names(state, [...authors])} started planning a trip with you. So far the idea is ${describeBasics(origin.value, duration.value, region.value)}, with a car.${authorsSaid(state, [...authors])} I share who's free when with the group to find a weekend; budgets stay private. Does that work for you, or would you change anything?`);
     }
   }
 
