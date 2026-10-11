@@ -14,6 +14,7 @@ import { loadAppConfig, loadEnvironmentFile } from './config.js';
 import { createHttpServer } from './server.js';
 import { SqliteTripRepository } from '../storage/sqlite-repository.js';
 import { createNessieReader } from '../funding/nessie-reader.js';
+import { createBoundFundService } from '../funding/bound-service.js';
 import { createFundService } from '../funding/service.js';
 
 export async function startApp(): Promise<() => Promise<void>> {
@@ -22,7 +23,7 @@ export async function startApp(): Promise<() => Promise<void>> {
   if (config.calendarMode !== 'manual') {
     throw new Error('Calendar extension is not integrated. Select manual calendar.');
   }
-  const merchantCategories = config.fundingMode === 'nessie' && process.env.NESSIE_MERCHANTS_PATH ? JSON.parse(await readFile(process.env.NESSIE_MERCHANTS_PATH, 'utf8')) as Record<string, string> : {};
+  const merchantCategories = config.fundingMode === 'nessie' && process.env.NESSIE_MERCHANTS_PATH && !process.env.NESSIE_BINDING_PATH ? JSON.parse(await readFile(process.env.NESSIE_MERCHANTS_PATH, 'utf8')) as Record<string, string> : {};
   if (!merchantCategories || Array.isArray(merchantCategories) || typeof merchantCategories !== 'object' || Object.values(merchantCategories).some(value => typeof value !== 'string')) throw new Error('Nessie merchant categories must be an ID-to-string object.');
   const trip = config.chatMode === 'photon' ? await loadEnrolledTrip(config.tripConfigPath) : await loadDemoTrip(config.tripConfigPath);
   if (config.chatMode === 'photon') for (const warning of enrollmentWarnings(trip.enrollment)) console.warn(warning);
@@ -30,7 +31,10 @@ export async function startApp(): Promise<() => Promise<void>> {
   await mkdir(dirname(config.databasePath), { recursive: true });
   const repository = SqliteTripRepository.open(config.databasePath);
   const display = config.researchMode === 'gemini' ? new LiveResearchDisplay(process.env.GEMINI_API_KEY!, process.env.GEMINI_MODEL || 'gemini-3.8-flash', `http://127.0.0.1:${config.port}`) : undefined;
-  const fundService = config.fundingMode === 'disabled' ? undefined : createFundService(config.fundingMode === 'nessie'
+  const fundService = config.fundingMode === 'disabled' ? undefined
+    : config.fundingMode === 'nessie' && process.env.NESSIE_BINDING_PATH
+      ? createBoundFundService({ bindingPath: process.env.NESSIE_BINDING_PATH, merchantsPath: process.env.NESSIE_MERCHANTS_PATH || 'data/simulated-merchant-categories.json', baseUrl: process.env.NESSIE_BASE_URL!, apiKey: process.env.NESSIE_API_KEY! })
+      : createFundService(config.fundingMode === 'nessie'
     ? createNessieReader({ baseUrl: process.env.NESSIE_BASE_URL!, apiKey: process.env.NESSIE_API_KEY!, accountId: process.env.NESSIE_ACCOUNT_ID!, merchantCategories })
     : { read: async () => ({ deposits: [], purchases: [] }) }, config.fundingMode, config.fundingMode === 'nessie' ? Number(process.env.NESSIE_PLAN_REVISION) : undefined);
   const server = createHttpServer({ repository, researchDisplay: display, fundService });

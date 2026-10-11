@@ -15,7 +15,8 @@
     "simulate:fund": "node --env-file=.env --import tsx scripts/simulate-fund.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "build": "tsc --project tsconfig.build.json"
+    "build": "tsc --project tsconfig.build.json",
+    "fund:sim": "node --env-file=.env --import tsx scripts/fund-sim.ts"
   },
   "dependencies": {
     "better-sqlite3": "^11.10.0",
