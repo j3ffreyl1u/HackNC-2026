@@ -53,7 +53,8 @@ describe('request_plans', () => {
   it('does not ask the same unanswered question twice in a row', () => {
     const first = run(createTrip('trip-1', roster), 'mason', { kind: 'request_plans' });
     const second = run(first.state, 'alex', { kind: 'request_plans' });
-    const askedAgain = second.replies.some((r) => first.replies.some((f) => f.text === r.text));
+    const asking = (r: { text: string }) => r.text.trim().endsWith('?');
+    const askedAgain = second.replies.filter(asking).some((r) => first.replies.filter(asking).some((f) => f.text === r.text));
     expect(askedAgain).toBe(false);
   });
 
@@ -77,7 +78,8 @@ describe('request_plans', () => {
     const text = later.replies.map((r) => r.text).join(' ');
     expect(text).not.toMatch(/1,?234/);
     expect(text).not.toMatch(/Mason's budget/);
-    expect(text).toMatch(/Alex's budget/);
+    expect(text).toMatch(/your budget/);
+    expect(text).toMatch(/Jordan's budget/);
   });
 
   it('is refused for an approved trip', () => {
@@ -364,6 +366,27 @@ describe('purity', () => {
     const snapshot = structuredClone(state);
     setCap(state, 'mason', 18_000);
     expect(state).toEqual(snapshot);
+  });
+});
+
+describe('the early-request summary', () => {
+  it('comes with the very first request, along with the questions', () => {
+    const result = run(createTrip('trip-1', roster), 'mason', { kind: 'request_plans' });
+    expect(result.rejection?.code).toBe('NOT_READY');
+    const summary = result.replies.find((r) => /still waiting on/i.test(r.text));
+    expect(summary).toBeDefined();
+    expect(result.replies.some((r) => /leaving from/i.test(r.text))).toBe(true);
+  });
+
+  it('goes to the person who asked and says "your" for them', () => {
+    let state = createTrip('trip-1', roster);
+    state = put(state, 'alex', 'budget', { cents: 25_000 });
+    const result = run(state, 'mason', { kind: 'request_plans' });
+    const summary = result.replies.find((r) => /still waiting on/i.test(r.text))!;
+    expect(summary.audience).toEqual({ kind: 'private', memberId: 'mason' });
+    expect(summary.text).toMatch(/your budget/);
+    expect(summary.text).toMatch(/Jordan's budget/);
+    expect(summary.text).not.toMatch(/Mason's|Alex's budget/);
   });
 });
 

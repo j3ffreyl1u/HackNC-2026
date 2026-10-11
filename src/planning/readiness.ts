@@ -108,9 +108,8 @@ function evaluate(state: TripState): Evaluation {
   // -- dates: every participant's usable windows, and one window everybody shares that fits the trip
   const missingDates = ids.filter((id) => effectiveAvailability(state, id) === undefined);
   for (const id of missingDates) missing.push(`availability:${id}`);
-  if (missingDates.length > 0) {
-    group('dates', 'availability', `${names(state, missingDates)}, which dates could you ${missingDates.length > 1 ? 'each ' : ''}do for the trip?`);
-  }
+  // Each person is asked about their own dates, privately, so nobody else's phone gets the question.
+  for (const id of missingDates) privately('dates', id, `availability:${id}`, 'Which dates could you do for the trip?');
   for (const id of ids) {
     if (effectiveAvailability(state, id) !== undefined && hasUnconfirmedChange(state, id, 'availability')) {
       conflicts.push(`availability_unconfirmed:${id}`);
@@ -161,9 +160,7 @@ function evaluate(state: TripState): Evaluation {
   // -- preferences: a stated list, or an explicit "no preference"
   const quiet = ids.filter((id) => statedPreferences(state, id) === undefined);
   for (const id of quiet) missing.push(`preferences:${id}`);
-  if (quiet.length > 0) {
-    group('preferences', 'preferences', `${names(state, quiet)}, what would you like out of this trip? "No preference" is a fine answer.`);
-  }
+  for (const id of quiet) privately('preferences', id, `preferences:${id}`, 'What would you like out of this trip? "No preference" is a fine answer.');
 
   return { missing, conflicts, candidates };
 }
@@ -187,13 +184,14 @@ export function openQuestionKeys(state: TripState): Set<string> {
  * A plain sentence on what the plan is still waiting for, with no values in it, only who and what. Used when
  * every question was already asked recently, so a request for options is never answered with silence.
  */
-export function describeGaps(state: TripState, result: Pick<ReadinessResult, 'missing' | 'conflicts'>): string {
+export function describeGaps(state: TripState, result: Pick<ReadinessResult, 'missing' | 'conflicts'>, viewerId?: string): string {
   const items: string[] = [];
   const perPerson = (key: string, label: (name: string) => string) => {
     const ids = result.missing.filter((m) => m.startsWith(`${key}:`)).map((m) => m.slice(key.length + 1));
     // When nobody has answered yet, "everyone's budget" reads better than a name for each person.
     if (ids.length > 1 && ids.length === participantIds(state).length) return [label('everyone')];
-    return ids.map((id) => label(displayName(state, id)));
+    // The person reading it hears "your" for their own gaps instead of their name.
+    return ids.map((id) => (id === viewerId ? label('your') : label(displayName(state, id))));
   };
   const consent = result.missing.filter((m) => m.startsWith('consent:')).map((m) => m.slice('consent:'.length));
   if (consent.length > 0) items.push(`${names(state, consent)} to agree to plan with me`);
@@ -202,9 +200,9 @@ export function describeGaps(state: TripState, result: Pick<ReadinessResult, 'mi
   if (result.missing.includes('duration')) items.push('how many nights');
   if (result.missing.includes('region')) items.push('where you want to go');
   if (result.missing.includes('transport') || result.missing.includes('vehicle')) items.push('whether someone has a car');
-  items.push(...perPerson('availability', (n) => `${n}'s dates`));
-  items.push(...perPerson('budget', (n) => `${n}'s budget`));
-  items.push(...perPerson('preferences', (n) => `${n}'s preferences`));
+  items.push(...perPerson('availability', (n) => (n === 'your' ? 'your dates' : `${n}'s dates`)));
+  items.push(...perPerson('budget', (n) => (n === 'your' ? 'your budget' : `${n}'s budget`)));
+  items.push(...perPerson('preferences', (n) => (n === 'your' ? 'your preferences' : `${n}'s preferences`)));
   const parts = items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items.at(-1)}` : (items[0] ?? '');
   const tail = result.conflicts.length > 0 ? 'Some answers also don\'t match yet, so I need those sorted out.' : '';
   if (parts === '') return tail === '' ? "I'm not ready to plan yet." : `I'm not ready to plan yet. ${tail}`;
