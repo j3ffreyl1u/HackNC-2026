@@ -47,7 +47,8 @@ export type TripAction =
   | { kind: 'select_candidate'; candidateId: string; revision: number }
   | { kind: 'accept_candidate'; candidateId: string; revision: number }
   | { kind: 'ask_guide'; question: string }
-  | { kind: 'request_funding'; topic?: 'status' | 'remind' | 'wrap_up' };
+  | { kind: 'request_funding'; topic?: 'status' | 'remind' | 'wrap_up' }
+  | { kind: 'relay'; to: string; mode: 'ask' | 'tell' | 'request' | 'invite'; text: string; field?: string };
 
 export interface TripCommand {
   commandId: string;
@@ -138,6 +139,16 @@ export interface TripConversationContext {
   pendingQuestion?: { field: ConstraintField };
   /** What each OTHER person has told the bot that is fine to repeat (dates, car, tastes; never a budget), so "what did Mason say?" can be answered. */
   others?: Array<{ memberId: string; name: string; shared: string[]; missing: string[] }>;
+  /** What the bot passed on between this person and others at their request, so "did you tell Mason that I have a car?" can be answered. */
+  relays?: Array<{ withName: string; byMe: boolean; kind: 'ask' | 'tell' | 'request' | 'invite' | 'answer'; text: string }>;
+  /** What this person has told the bot about themselves, so "what's my budget?" and "what dates did I give you?" are answered (to them only). */
+  own?: { budgetDollars?: number; dates?: string; likes?: string[] };
+  /** The last few messages with this person, oldest first, so follow-ups like "the second one" or "how much was that?" make sense. */
+  recent?: Array<{ from: 'you' | 'bot'; text: string }>;
+  /** The options on offer in plain words (title and rough cost each), for answering questions about them. */
+  optionFacts?: string[];
+  /** Who has said "I'm in" on the picked plan, so "has Mason confirmed?" gets an exact answer. */
+  approval?: { title: string; inNames: string[]; waitingNames: string[]; youIn: boolean };
   /** Where the trip stands, so "what's the status?" can be answered without guessing. */
   status?: 'gathering' | 'researching' | 'proposed' | 'awaiting_acceptance' | 'approved';
   /** Every field there is an open question about for this actor (their own and the shared one), most relevant first, so a volunteered answer to any of them is understood. */

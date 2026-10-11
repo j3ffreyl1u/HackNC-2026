@@ -459,7 +459,7 @@ describe('question fields', () => {
       noVehicle,
       disagree('duration', { nights: 2 } as never, { nights: 3 } as never),
       disagree('region', { searchRegion: 'NC mountains' } as never, { searchRegion: 'NC coast' } as never),
-      disagree('transport', { mode: 'car', vehicleAvailable: true } as never, { mode: 'car', vehicleAvailable: false } as never),
+      disagree('transport', { mode: 'car', vehicleAvailable: false, notes: 'bus' } as never, { mode: 'car', vehicleAvailable: false, notes: 'train' } as never),   // one car is enough, so only two different no-car answers clash
       datesClash,
       put(trip(), 'alex', 'availability', { intervals: [OTHER_WEEKEND] }, 'tentative'),
       put(trip(), 'mason', 'budget', { cents: 15_000 }, 'tentative'),

@@ -85,7 +85,8 @@ export type TripAction =
   | { kind: 'ask_guide'; question: string }
   | { kind: 'confirm_cost'; candidateId: string; revision: number; costId: string; lowCents: number; highCents: number; sourceMessageId: string }
   | { kind: 'confirm_stop'; candidateId: string; revision: number; item: ItineraryItem; sourceMessageId: string }
-  | { kind: 'request_funding'; topic?: 'status' | 'remind' | 'wrap_up' };
+  | { kind: 'request_funding'; topic?: 'status' | 'remind' | 'wrap_up' }
+  | { kind: 'relay'; to: string; mode: 'ask' | 'tell' | 'request' | 'invite'; text: string; field?: string };
 
 export interface TripCommand {
   commandId: string;
@@ -199,6 +200,8 @@ export interface PendingQuestion {
 
 export interface TripState {
   /** Internal warning keys by approved revision; never part of the public snapshot. */
+  /** What the bot passed between people at their request (newest last), so it can answer "did you tell Mason?". */
+  relayLog?: Array<{ fromId: MemberId; toId: MemberId; kind: 'ask' | 'tell' | 'request' | 'invite'; text: string; at: string }>;
   fundingNoticeKeys?: Record<string, string[]>;
   /** Bank purchases the buyer was asked about ("was this for the trip?"), by purchase id. Internal; never part of the public snapshot. */
   purchaseChecks?: Record<string, { memberId: MemberId; status: 'asked' | 'trip' | 'personal'; askedAt: string; dollars: number; category?: string }>;
@@ -264,6 +267,13 @@ export interface ConversationContext {
   confirmBasics?: SharedConstraintValue[];
   openFields?: ConstraintField[];
   others?: Array<{ memberId: string; name: string; shared: string[]; missing: string[] }>;
+  relays?: Array<{ withName: string; byMe: boolean; kind: 'ask' | 'tell' | 'request' | 'invite' | 'answer'; text: string }>;
+  approval?: { title: string; inNames: string[]; waitingNames: string[]; youIn: boolean };
+  /** The last few messages with this person, oldest first, so follow-ups like "the second one" or "how much was that?" make sense. */
+  own?: { budgetDollars?: number; dates?: string; likes?: string[] };
+  recent?: Array<{ from: 'you' | 'bot'; text: string }>;
+  /** The options on offer in plain words (title and rough cost each), for answering questions about them. */
+  optionFacts?: string[];
 }
 
 export interface ConversationService {

@@ -17,7 +17,7 @@ import { formatCents } from './money.js';
 import type { ConversationDependencies } from './types.js';
 
 const APPROVE_REACTIONS = new Set(['👍', '👍🏻', '👍🏼', '👍🏽', '👍🏾', '👍🏿', '❤️', '❤', '✅', '✔️', 'like', 'love', 'thumbsup', '+1']);
-const YES = /^(?:(?:yes|yep|yeah|yup|sure)(?:[ ,]+(?:it is|that is|that'?s right|that'?s it|correct|exactly|please|firm))?|ok|okay|accept|accepted|i accept|i'?m in|count me in|sounds good|works for me|let'?s do it|do it|confirm|confirmed|correct|that'?s right|exactly)[.!]*$/i;
+const YES = /^(?:(?:ok(?:ay)?|yeah|yes|alright|sure)[, ]+)?(?:(?:yes|yep|yeah|yup|sure)(?:[ ,]+(?:it is|that is|that'?s right|that'?s it|correct|exactly|please|firm))?|ok|okay|accept|accepted|i accept|i'?m in(?:\s+too)?|me too|i'?m down|count me in|sounds good|works for me|let'?s do it|do it|confirm|confirmed|correct|that'?s right|exactly)[.!]*$/i;
 /** "yes that works", "sounds good to me", "all good": agreement, as long as nothing in it asks for a change. */
 const AGREES_START = /^(?:yes|yeah|yep|yup|yea|sure|ok|okay|absolutely|definitely|totally|sounds|that works|that'?ll work|works|all good|fine|good|perfect|great|i'?m (?:good|fine|down|in)|let'?s do it|love it|looks good)\b/i;
 const CHANGE_WORDS = /\b(?:but|actually|instead|rather|except|though|however|no|not|don'?t|doesn'?t|can'?t|wait|hold on|change)\b/i;
@@ -37,6 +37,8 @@ const REQUEST_FUNDING = /^(?:request|start|set up|send)\s+(?:the\s+)?(?:contribu
 const FUND_STATUS = /^(?:so\s+)?(?:how(?:'s| is)\s+(?:the\s+)?(?:trip\s+)?(?:fund|pot|money)(?:\s+(?:looking|going|doing|so far))?|(?:what'?s|what is|how much is)\s+(?:in\s+)?(?:the\s+)?(?:trip\s+)?(?:fund|pot)(?:\s+(?:at|now|status))?|who(?:'s| is)?\s*(?:still\s+)?owes?(?:\s+(?:money|anything|us|the fund))?|who\s+(?:still\s+)?(?:needs to pay|hasn'?t\s+(?:paid|chipped in|sent(?: their share)?))(?:\s+yet)?|(?:trip\s+)?fund\s+status|who(?:'s|s| has| have)?\s+(?:paid|chipped in|sent (?:their|the) (?:share|money))(?:\s+(?:yet|so far))?|(?:has|did|have)\s+(?:everyone|everybody|anyone|anybody|we all)\s+(?:paid|chipped in|sent (?:their|the) (?:share|money))(?:\s+(?:yet|so far))?|how much\s+(?:money\s+)?(?:do|have)\s+(?:we|we've)\s+(?:have|got|raised|collected|put in)(?:\s+(?:so far|in the (?:fund|pot)|yet|total))?|how much\s+(?:money\s+)?(?:do we have|is there)(?:\s+(?:in the (?:fund|pot)|so far|left))?|who\s+(?:has\s+)?(?:paid|covered|bought)\s+(?:for\s+)?what(?:\s+so far)?|who\s+covered\s+(?:what|the\s+\w+)(?:\s+so far)?|what\s+(?:do|did)\s+(?:i|we)\s+owe(?:\s+(?:so far|now|right now))?|how much\s+do\s+(?:i|we)\s+owe(?:\s+(?:so far|now|right now))?|who\s+owes\s+(?:who|whom|what)(?:\s+(?:so far|now|right now))?|where\s+(?:do\s+)?(?:we|things)\s+stand\s+(?:on|with)\s+(?:the\s+)?(?:money|costs?|spending))[?!.]*$/i;
 const FUND_REMIND = /^(?:(?:please|pls|can you|could you)\s+)*(?:(?:remind|nudge|ping)\s+(?:everyone|everybody|them|the others|the rest|whoever(?:'s| is)?\s+(?:left|missing|late))(?:\s+(?:to pay|about (?:the\s+)?(?:fund|money|it)|to chip in|to send (?:their|the) (?:share|money)))?|send (?:out )?(?:payment )?reminders?)$/i;
 const FUND_WRAP = /^(?:(?:please|pls|can you|could you)\s+)*(?:wrap\s*-?\s*up|settle\s+up|close\s+out)(?:\s+(?:the\s+)?(?:trip|fund|money|pot|trip fund))?$|^(?:who gets what back|how much (?:do (?:i|we) get|(?:will|would) (?:i|we) get) back|what do we get back)$/i;
+/** Nobody pays or logs a purchase through the assistant: it only reads the simulated spending log. */
+const READ_ONLY_MONEY = 'I can\'t pay or log spending from here. I only read the trip\'s simulated spending log. Ask "who covered what?" to see it, or "wrap up the trip" for who owes whom.';
 const GUIDE = /^(?:guide|ask guide|\/guide)\s*[:\-]?\s+(.{3,500})$/is;
 const SELECT = new RegExp(`^(?:pick|choose|select|go with|vote(?: for)?|i vote(?: for)?)\\s+(?:option\\s+|plan\\s+)?${ID}(?:\\s+v(\\d+))?$`, 'i');
 /**
@@ -94,6 +96,8 @@ function chatFacts(ctx: TripConversationContext): string[] {
   const needed = [...new Set([...(ctx.pendingQuestion ? [ctx.pendingQuestion.field] : []), ...(ctx.openFields ?? [])].map((f) => word[f] ?? f))];
   facts.push(needed.length ? `Still needed from the person asking: ${needed.join(', ')}.` : 'Nothing else is needed from the person asking right now.');
   if (ctx.actionable.length) facts.push('There are options waiting for the person asking to pick or approve.');
+  if (ctx.optionFacts?.length) facts.push(`${ctx.status === 'approved' ? 'The approved plan' : 'Options on offer'}: ${ctx.optionFacts.join(' | ')}.`);
+  if (ctx.approval) facts.push(`The picked plan is ${ctx.approval.title}. Said "I'm in": ${ctx.approval.youIn ? 'the person asking' : 'not the person asking'}${ctx.approval.inNames.length ? ` (people in: ${ctx.approval.inNames.join(', ')})` : ''}. Still waiting on: ${[...(ctx.approval.youIn ? [] : ['the person asking']), ...ctx.approval.waitingNames].join(', ') || 'nobody'}.`);
   facts.push('How plans change: when anyone changes the dates, the number of nights, the place, the starting city, the car, or their own maximum budget, the old options are dropped and a fresh search starts. Budgets are private, so never say whose budget changed or by how much; say only that someone changed a detail or a limit.');
   return facts;
 }
@@ -102,6 +106,9 @@ export function createParser(deps: ConversationDependencies) {
   const { trip } = deps;
   assertTimeZone(trip.timezone);
 
+  const noteMiss = (kind: 'help' | 'unavailable' | 'unclear', msg: InboundMessage, ctx?: TripConversationContext) => {
+    try { deps.onMiss?.({ kind, text: (msg.text ?? '').slice(0, 300), senderId: msg.senderId, ...(ctx?.status ? { status: ctx.status } : {}) }); } catch { /* never break the chat */ }
+  };
   const reply = (msg: InboundMessage, text: string, tag: string, forcePrivate = false): ParseResult => ({
     kind: 'reply',
     message: replyMessage(msg, text, tag, forcePrivate),
@@ -166,7 +173,9 @@ export function createParser(deps: ConversationDependencies) {
         private_ = true;
         continue;
       }
-      if (v.field === 'budget' && mentionsOtherMember(text, msg.senderId)) {
+      // Only the part of the message that talks about the money counts: "let's plan with Mason, my budget is 350" is the sender's own.
+      const moneyClause = text.split(/[,;.!?\n]+/).find((c) => /\$|\bbudget\b|\bmax(?:imum)?\b|\bspend|\bafford|\d{3,}/i.test(c)) ?? text;
+      if (v.field === 'budget' && mentionsOtherMember(moneyClause, msg.senderId)) {
         // Nobody can set another member's budget, and a message that names someone else is ambiguous.
         asks.push("I can only take a budget from the person it's for, so I haven't noted that one. Ask them to text me their own, or tell me yours with \"my max is $X\".");
         private_ = true;
@@ -259,6 +268,8 @@ export function createParser(deps: ConversationDependencies) {
       // Nothing is waiting on an answer, so this is probably a reply to our "Got it ... tell me if I got anything wrong".
       // In a one-on-one chat never go silent; in a group, stay out of it.
       if (msg.visibility !== 'private' && trip.mode !== 'direct') return { kind: 'ignored', reason: 'nothing to answer' };
+      if (yes && ctx.approval?.youIn) return reply(msg, ctx.approval.waitingNames.length ? `You're already in on ${ctx.approval.title}. Still waiting on ${ctx.approval.waitingNames.join(" and ")}.` : `You're in, and so is everyone else. ${ctx.approval.title} is approved.`, 'already-in', true);
+      if (ctx.status === 'approved') return reply(msg, yes ? 'Sounds good! The trip is all set. Ask me anything about it, or tell me if a detail changes.' : 'No worries. The trip is locked in. Tell me if a detail changes and I will look again.', yes ? 'approved-ok' : 'approved-no', true);
       return yes
         ? reply(msg, `Great! Anything else to add? When you're ready, say "show us some options".`, 'thanks')
         : reply(msg, `No worries! If anything's off, just tell me the right detail, like "my max is $300" or "free Nov 21-23". Otherwise say "show us some options" when you're ready.`, 'neutral-no');
@@ -301,7 +312,9 @@ export function createParser(deps: ConversationDependencies) {
     // "What did Mason say?": the bot is the go-between, so it repeats what is fine to repeat (never a budget).
     const about = ABOUT_SOMEONE.exec(plain);
     const aboutName = about ? (about[1] ?? about[2] ?? about[3] ?? about[4] ?? about[5] ?? about[6])?.toLowerCase() : undefined;
-    const person = aboutName ? ctx.others?.find((o) => o.name.toLowerCase() === aboutName || o.name.toLowerCase().startsWith(`${aboutName} `)) : undefined;
+    // While a plan waits on people to say "I'm in", "is Mason in?" or "has he finished?" is about that, and is answered below.
+    const aboutApproval = Boolean(ctx.approval) && (about?.[5] !== undefined || about?.[6] !== undefined);
+    const person = aboutName && !aboutApproval ? ctx.others?.find((o) => o.name.toLowerCase() === aboutName || o.name.toLowerCase().startsWith(`${aboutName} `)) : undefined;
     if (person) {
       const list = (items: string[]) => items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items.at(-1)}` : items[0]!;
       if (about?.[5] !== undefined || about?.[6] !== undefined) {
@@ -330,9 +343,253 @@ export function createParser(deps: ConversationDependencies) {
     if (/^(?:please\s+)?(?:start over|restart|reset|begin again|start again|from scratch)(?:\s+please)?$/i.test(plain)) {
       return reply(msg, 'I can\'t clear a trip yet, but you can change anything by telling me, like "leaving from Raleigh", "3 nights" or "my max is $300".', 'start-over', true);
     }
-    // "tell Mason to hurry up", "nudge Mason": the same as asking for options, which nudges whoever is still missing and tells the asker.
-    const nudge = /^(?:(?:please|can you|could you|pls)\s+)*(?:tell|ask|nudge|ping|poke|text|message)\s+(\w+)\b/i.exec(plain);
-    if (nudge && ctx.others?.some((o) => o.name.toLowerCase() === nudge[1]!.toLowerCase())) return one(msg, ctx, { kind: 'request_plans' });
+    const talkative = msg.visibility === 'private' || trip.mode === 'direct';
+    // "actually pick the other one": the option that is not already the pick; with nothing picked yet, ask which.
+    if (/^(?:actually\s+|no\s+|wait\s+)?(?:pick|choose|select|go\s+with|switch\s+to|take|change\s+(?:it\s+|my\s+pick\s+)?to)\s+(?:the\s+)?(?:other|another|different)(?:\s+(?:one|option|plan))?$/i.test(plain) && (msg.visibility === 'private' || trip.mode === 'direct')) {
+      const choices = ctx.actionable.filter((a) => a.kind === 'select');
+      // A pick is already made and waiting on everyone: the plan can't be swapped for the other option mid-way, but a changed detail brings fresh options.
+      if (ctx.approval && choices.length === 0) return reply(msg, `${ctx.approval.title} is already picked and waiting on everyone's OK. If you want to go a different way, change a detail like your dates, the nights or your max, and I'll bring fresh options.`, 'pick-locked', true);
+      if (choices.length === 1) return one(msg, ctx, { kind: 'select_candidate', candidateId: choices[0]!.candidateId, revision: choices[0]!.revision });
+      if (choices.length > 1) return reply(msg, `Which one do you mean? ${choices.map((c, i) => `option ${i + 1}`).join(' or ')}?`, 'pick-which', true);
+    }
+    // What this person has told the bot about themselves: their own budget, dates and likes are theirs to hear back.
+    if (ctx.own !== undefined || /^(?:what|whats)/i.test(plain)) {
+      const own = ctx.own ?? {};
+      const mine = /^(?:what(?:'s|s| is| was| are| were)|what\s+did\s+i\s+(?:say|tell\s+you|give\s+you)|remind\s+me|show\s+me|tell\s+me)\s+(?:about\s+)?(?:my|the)\s+(max(?:imum)?|budget|limit|cap|dates?|availability|preferences?|likes?|interests?)\b/i.exec(plain)
+        ?? /^how\s+much\s+(?:is|was)\s+my\s+(budget|max)/i.exec(plain);
+      const askDates = /^what\s+(?:dates|days)\s+(?:did\s+i|have\s+i|do\s+you\s+have\s+for\s+me)\b|^when\s+(?:am\s+i|did\s+i\s+say\s+i\s+was)\s+free/i.test(plain);
+      const askLikes = /^what\s+(?:do\s+i|did\s+i\s+say\s+i|am\s+i|are\s+my)\s+(?:like|into|want|prefer\w*|interests?)\b/i.test(plain) || /^what\s+(?:do\s+i\s+want\s+to\s+do|are\s+my\s+(?:preferences|likes|interests))\b/i.test(plain);
+      const askAll = /^what\s+(?:do\s+you\s+(?:have|know)\s+(?:for|about)\s+me|did\s+i\s+tell\s+you|have\s+i\s+(?:told|given)\s+you)\b|^(?:recap|summari[sz]e)\s+(?:my|what\s+i)/i.test(plain);
+      const topic = mine ? (/budget|max|limit|cap/i.test(mine[1]!) ? 'budget' : /date|avail/i.test(mine[1]!) ? 'dates' : 'likes') : askDates ? 'dates' : askLikes ? 'likes' : askAll ? 'all' : undefined;
+      if (topic && talkative) {
+        const lines: string[] = [];
+        if ((topic === 'budget' || topic === 'all') && own.budgetDollars !== undefined) lines.push(`your max is $${own.budgetDollars.toLocaleString('en-US')} (just between us)`);
+        if ((topic === 'dates' || topic === 'all') && own.dates) lines.push(`you're free ${own.dates}`);
+        if ((topic === 'likes' || topic === 'all') && own.likes?.length) lines.push(`you're into ${list(own.likes)}`);
+        if (lines.length > 0) return reply(msg, `${topic === 'all' ? 'So far I have that ' : 'I have that '}${list(lines)}.`, 'own-info', true);
+        const missing = topic === 'budget' ? "You haven't given me a max yet. What's the most you'd want to spend on the trip, including food and travel?" : topic === 'dates' ? "You haven't told me your free dates yet. Which dates could you do?" : topic === 'likes' ? "You haven't told me what you like yet. What would you like out of this trip?" : "You haven't told me anything yet. Where are you leaving from?";
+        return reply(msg, missing, 'own-info', true);
+      }
+    }
+    // Changing their mind is fine: say what can be changed, based on where things are.
+    if (/^(?:i\s+)?(?:changed|change)\s+(?:my|our)\s+mind\b/i.test(plain) && talkative) {
+      if (ctx.approval) return reply(msg, `No problem! ${ctx.approval.title} is picked and waiting on everyone's OK. To go a different way, change a detail like your dates, the number of nights, or your max, and I'll bring fresh options. What would you like to change?`, 'changed-mind', true);
+      const choose = ctx.actionable.some((a) => a.kind === 'select') ? ' You can pick a different option (say "option 1" or "option 2").' : '';
+      return reply(msg, `No problem!${choose} You can also change a detail like your dates, the number of nights, or your max, and I'll update the plan. What would you like to change?`, 'changed-mind', true);
+    }
+    // Leading filler ("yes ask if...", "ok and tell him...") does not change what is being asked.
+    const lean = plain.replace(/^(?:(?:yes|yeah|yep|yup|ok(?:ay)?|sure|please|pls|also|and|so|then|now|well|hey|actually)[,.!]?\s+)+/i, '');
+    const talkativeChat = msg.visibility === 'private' || trip.mode === 'direct';
+    const everyoneElse = ctx.others ?? [];
+    const personFor = (word: string) => {
+      const w = word.toLowerCase();
+      return everyoneElse.find((o) => o.name.toLowerCase() === w) ?? (/^(?:he|she|they|him|her|them)$/.test(w) && everyoneElse.length === 1 ? everyoneElse[0] : undefined);
+    };
+    const joinNames = (names: string[]) => list(names);
+    // Exact answers about who has said "I'm in" on the picked plan.
+    // "did he answer?" after the bot asked someone something: that is about the question, not about "I'm in".
+    if (talkativeChat && ctx.relays?.length) {
+      const answered = /^(?:has|have|did|is|was)\s+(\w+)\s+(?:already\s+|yet\s+|also\s+)?(?:answer(?:ed)?|respond(?:ed)?|repl(?:y|ied)(?:\s+back)?|(?:get|got)\s+back(?:\s+to\s+(?:us|me))?|say\s+anything|said\s+anything)$/i.exec(lean);
+      const who = answered ? personFor(answered[1]!) : undefined;
+      const asks = who ? ctx.relays.filter((r) => r.withName === who.name && r.byMe && r.kind === 'ask') : [];
+      if (who && asks.length > 0) {
+        const lastAskAt = ctx.relays.lastIndexOf(asks[asks.length - 1]!);
+        const back = ctx.relays.slice(lastAskAt + 1).filter((r) => r.withName === who.name && !r.byMe);
+        if (back.length > 0) return reply(msg, `Yes, ${who.name} said: "${back[back.length - 1]!.text}"`, 'relay-answer', true);
+        return reply(msg, `Not yet. I asked ${who.name}, and I'll tell you as soon as they answer.`, 'relay-answer', true);
+      }
+    }
+    if (ctx.approval && talkativeChat) {
+      const ap = ctx.approval;
+      const V = String.raw`(?:say|said|confirm(?:ed)?|approve(?:d)?|accept(?:ed)?|agree(?:d)?|lock(?:ed)?(?:\s+it)?(?:\s+in)?|done(?:\s+it)?|finish(?:ed)?|ok(?:ay)?|okayed|gone\s+for\s+it|go\s+for\s+it|answer(?:ed)?|respond(?:ed)?|repl(?:y|ied)|decid(?:e|ed)|signed\s+off|do(?:ne)?\s+it)`;
+      const gap = String.raw`(?:already\s+|yet\s+|also\s+|actually\s+|really\s+)?`;
+      const otherQ = new RegExp(String.raw`^(?:has|have|did|is|was)\s+(\w+)\s+${gap}(?:(?:been|got)\s+)?${V}\b`, 'i').exec(lean)
+        ?? new RegExp(String.raw`^(?:(?:can|could|would)\s+you\s+)?(?:ask|check|see|find\s+out|tell\s+me|let\s+me\s+know)\s+(?:if|whether)\s+(\w+)(?:'s|\s+(?:has|have|had|is|was|did))\s+${gap}(?:(?:has|have|had|is|was|did|been)\s+)?${V}\b`, 'i').exec(lean)
+        ?? /^(?:is|are)\s+(\w+)\s+(?:in|done|ready|locked\s+in|on\s+board)\b/i.exec(lean);
+      const who = otherQ ? personFor(otherQ[1]!) : undefined;
+      if (otherQ && who) {
+        if (ap.waitingNames.includes(who.name)) return reply(msg, `Not yet, ${who.name} hasn't said "I'm in" on ${ap.title}. Want me to remind them? Just say "remind ${who.name}".`, 'approval-other', true);
+        const left = [...ap.waitingNames.filter((n) => n !== who.name), ...(ap.youIn ? [] : ['you'])];
+        return reply(msg, left.length === 0 ? `Yes, ${who.name} is in, and so is everyone else. ${ap.title} is approved.` : `Yes, ${who.name} is in. Still waiting on ${joinNames(left)}.`, 'approval-other', true);
+      }
+      if (new RegExp(String.raw`^(?:did|have)\s+i\s+${gap}${V}\b`, 'i').test(lean) || /^am\s+i\s+(?:in|locked\s+in|done|confirmed|good)\b/i.test(lean)) {
+        return reply(msg, ap.youIn
+          ? (ap.waitingNames.length ? `Yes, you're in on ${ap.title}. Still waiting on ${joinNames(ap.waitingNames)}.` : `Yes, you're in, and so is everyone else. ${ap.title} is approved.`)
+          : `Not yet. Say "I'm in" to lock in ${ap.title}.`, 'approval-me', true);
+      }
+      if (/^(?:who(?:'s|\s+is)?\s+(?:still\s+)?(?:left|waiting|missing|needs?\s+to\s+(?:confirm|say\s+ok|approve|accept))|are\s+we\s+(?:done|locked\s+in|all\s+in|good|set|approved)|is\s+(?:it|the\s+(?:trip|plan))\s+(?:approved|confirmed|locked\s+in|done|set))\b/i.test(lean)) {
+        const waitingAll = [...(ap.youIn ? [] : ['you']), ...ap.waitingNames];
+        return reply(msg, waitingAll.length === 0 ? `Yes, everyone is in, so ${ap.title} is approved.` : `Not yet. ${ap.title} is picked, and I'm still waiting on ${joinNames(waitingAll)}.`, 'approval-all', true);
+      }
+      // "remind Mason": the plan is waiting on them, so ask for the "I'm in".
+      const nudgeOnly = /^(?:please\s+)?(?:remind|nudge|ping)\s+(\w+)$/i.exec(lean);
+      const nudged = nudgeOnly ? personFor(nudgeOnly[1]!) : undefined;
+      if (nudged && ap.waitingNames.includes(nudged.name)) return one(msg, ctx, { kind: 'relay', to: nudged.name, mode: 'request', text: "lock it in" });
+    }
+    // What the bot has already passed on: "did you tell Mason that I have a car?", "what did you tell Mason?", "did Mason get my message?".
+    if (talkativeChat && (ctx.relays?.length || everyoneElse.length)) {
+      const sent = (ctx.relays ?? []).filter((r) => r.byMe);
+      const sayIt = (r: { withName: string; kind: string; text: string }) => r.kind === 'tell' ? `told ${r.withName}: "${r.text}"` : r.kind === 'ask' ? `asked ${r.withName}: "${r.text}"` : r.kind === 'request' ? `asked ${r.withName} to ${r.text}` : `messaged ${r.withName} to get them started`;
+      const didYou = /^(?:did|have)\s+you\s+(?:already\s+|actually\s+|really\s+|even\s+|just\s+)?(?:tell|told|ask|asked|message|messaged|text|texted|dm|let|send|sent|pass|passed|remind|reminded|invite|invited|notify|notified|contact|contacted|reach|reached)\b(?:\s+out)?(?:\s+to)?\s*(\w+)?(?:\s+(.*))?$/i.exec(lean);
+      const whatDid = /^what\s+(?:did|have)\s+you\s+(?:tell|told|ask|asked|say|said\s+to|send|sent(?:\s+to)?|message|messaged|text|texted)\s+(\w+)$/i.exec(lean);
+      const gotIt = /^(?:did|has)\s+(\w+)\s+(?:get|got|receive|received|see|seen|read)\s+(?:my|the|that|our)\s+(?:message|text|note|msg)$/i.exec(lean);
+      const about = (didYou ?? whatDid ?? gotIt)?.[1];
+      const target = about ? personFor(about) ?? (everyoneElse.length === 1 && /^(?:if|whether|about|that|him|her|them)$/i.test(about) ? everyoneElse[0] : undefined) : (everyoneElse.length === 1 ? everyoneElse[0] : undefined);
+      if (target && (didYou || whatDid || gotIt)) {
+        const mine = sent.filter((r) => r.withName === target.name);
+        if (whatDid || (gotIt && !didYou)) {
+          return reply(msg, mine.length === 0 ? `I haven't sent ${target.name} anything yet.` : `So far I ${mine.slice(-3).map(sayIt).join('; and ')}.${gotIt ? " I can't see whether they've read it, but I'll tell you when they answer." : ''}`, 'relay-history', true);
+        }
+        const claim = (didYou![2] ?? '').toLowerCase().replace(/^(?:that|about|if|whether)\s+/, '');
+        const words = claim.match(/[a-z']{3,}/g)?.filter((w) => !['that', 'have', 'has', 'about', 'the', 'with', 'and', 'for', 'you', 'him', 'her', 'them', 'was', 'were', 'his', 'she', 'they', 'anything', 'something', 'everything', 'any', 'yet', 'already', 'ever', target.name.toLowerCase()].includes(w)) ?? [];
+        const hit = mine.filter((r) => words.length === 0 || words.some((w) => r.text.toLowerCase().includes(w)));
+        return reply(msg, hit.length > 0
+          ? `Yes, I ${sayIt(hit[hit.length - 1]!)}.`
+          : `No, I haven't sent ${target.name} anything${words.length ? ' about that' : ''} yet. Say "tell ${target.name} ..." with what you want them to know and I'll send it.`, 'relay-history', true);
+      }
+      // "pass it to Mason and ask": the rest of the message never came.
+      const passTo = /^(?:pass|send|forward|relay)\s+(?:this\s+|that\s+|it\s+|the\s+message\s+)?(?:on\s+)?to\s+(\w+)(?:\s+and\s+(ask|tell|say))?$/i.exec(lean);
+      const passPerson = passTo ? personFor(passTo[1]!) : undefined;
+      if (passTo && passPerson) return reply(msg, `What would you like me to ${(passTo[2] ?? 'tell').toLowerCase() === 'ask' ? 'ask' : 'tell'} ${passPerson.name}?`, 'relay-what', true);
+    }
+    // The bot speaks for everyone: "ask Mason if he has a car", "tell Mason I have a car", "message Mason to start planning it",
+    // "text Mason that we leave at 8", "have Mason join", "invite Mason", "send Mason a message saying hi".
+    const relayRaw = /^(?:(?:please|can you|could you|would you|pls)\s+)*(ask|tell|let|message|text|dm|notify|remind|have|get|invite|bring|add|send)\s+(\w+)(?:\s*[:,]\s*|\s+)?(.*)$/i.exec(lean);
+    // "ask if he's done it" has no name: with one other person it can only mean them, and "ask if Mason has..." names them later on.
+    const STOP = /^(?:if|whether|about|what|when|where|how|why|who|which|to|for|that|him|her|them|he|she|they)$/i;
+    const relay = relayRaw && STOP.test(relayRaw[2]!) && talkativeChat
+      ? (() => {
+          const pronoun = /^(?:him|her|them)$/i.test(relayRaw[2]!);
+          const text = pronoun ? (relayRaw[3] ?? '').trim() : `${relayRaw[2]} ${relayRaw[3] ?? ''}`.trim();
+          const named = everyoneElse.find((o) => new RegExp(`\\b${o.name}\\b`, 'i').test(text)) ?? (everyoneElse.length === 1 ? everyoneElse[0] : undefined);
+          return named ? ([relayRaw[0], relayRaw[1], named.name, text] as unknown as RegExpExecArray) : relayRaw;
+        })()
+      : relayRaw;
+    const relayTo = relay ? ctx.others?.find((o) => o.name.toLowerCase() === relay[2]!.toLowerCase()) : undefined;
+    if (relay && !relayTo && talkativeChat && ctx.others?.length && /^(?:ask|tell|message|text|dm|notify|invite)$/i.test(relay[1]!) && !/^(?:me|us|everyone|everybody|them|him|her|the|a|an|my|our|you|it|this|that|all)$/i.test(relay[2]!)) {
+      return reply(msg, `I'm not sure who ${relay[2]} is. I can pass things to ${list(ctx.others.map((o) => o.name))}.`, 'relay-unknown', true);
+    }
+    if (relay && relayTo && talkativeChat) {
+      let verb = relay[1]!.toLowerCase();
+      let rest = (relay[3] ?? '').trim().replace(/[.!\s]+$/, '');
+      const invite = { kind: 'relay' as const, to: relayTo.name, mode: 'invite' as const, text: 'join the planning' };
+      const inviteWords = /\b(?:start|begin|join|get started|jump in|come on board|help)\b|\bplan(?:ning)?\b/i;
+      // Asking someone to hurry or reply is a nudge, not a message to pass on.
+      if (/^(?:to\s+)?(?:hurry|reply|respond|answer|check|get back|text me|message me|finish|speed)\b|\bhurry up\b/i.test(rest)) {
+        // Once a plan is picked, a nudge asks for the "I'm in". It must never start a new search and throw the pick away.
+        if (ctx.approval) {
+          return ctx.approval.waitingNames.includes(relayTo.name)
+            ? one(msg, ctx, { kind: 'relay', to: relayTo.name, mode: 'request', text: 'lock it in' })
+            : reply(msg, `${relayTo.name} is already in on ${ctx.approval.title}.`, 'approval-other', true);
+        }
+        return one(msg, ctx, { kind: 'request_plans' });
+      }
+      if (/^(?:invite|bring|add)$/.test(verb)) {
+        if (rest === '' || /^(?:in|to (?:the )?(?:trip|planning|plan|chat|group)|along|on board)$/i.test(rest)) return one(msg, ctx, invite);
+      } else if (verb === 'send') {
+        const sent = /^an?\s+(?:message|text|note|dm)\s*(?:saying|that|to say|:)?\s*(.*)$/i.exec(rest);
+        if (sent) { verb = 'tell'; rest = (sent[1] ?? '').trim(); } else verb = '';
+      } else if (/^(?:have|get|remind)$/.test(verb)) {
+        if (verb !== 'remind' && inviteWords.test(rest) && !/^to\s+\S/i.test(rest)) return one(msg, ctx, invite);   // "have Mason start planning"
+        if (!/^to\s+\S/i.test(rest)) verb = '';
+      }
+      if (verb === 'let') { if (!/^know\b/i.test(rest)) return reply(msg, `I can pass things to ${relayTo.name}. Try "tell ${relayTo.name} I have a car" or "ask ${relayTo.name} if they have a car".`, 'relay-help', true); rest = rest.replace(/^know\s+/i, ''); }
+      if (verb) {
+        // "message Mason and ask if he has a car" is a question.
+        const andAsk = /^and\s+(?:ask\s+(?:him|her|them)?\s*|(?:see|check|find out|figure out|make sure)\s+)(.*)$/i.exec(rest);
+        if (andAsk) { verb = 'ask'; rest = andAsk[1]!.trim(); }
+        // "message Mason and tell him to start planning" / "text Mason and let him know I have a car"
+        const andTell = /^and\s+(?:tell|let|say to)\s+(?:him|her|them)\s*(?:know\s+)?(.*)$/i.exec(rest);
+        if (andTell) { verb = 'tell'; rest = andTell[1]!.trim(); }
+        rest = rest.replace(/^(?:and\s+)?(?:say(?:ing)?|that|:)\s*/i, '').replace(/^that\s+/i, '');
+        // "message Mason to start planning it": a request to them, or an invitation to join in.
+        const requested = /^to\s+(\S.*)$/i.exec(rest);
+        if (requested && verb !== 'ask' && verb !== 'tell') {
+          const action = requested[1]!.trim();
+          if (inviteWords.test(action)) return one(msg, ctx, invite);
+          rest = action; verb = 'request';
+        } else if (requested && (verb === 'ask' || verb === 'tell') && inviteWords.test(requested[1]!)) {
+          return one(msg, ctx, invite);
+        } else if (requested && verb === 'tell') { rest = requested[1]!.trim(); verb = 'request'; }
+        else if (/^(?:message|text|dm|notify)$/.test(verb)) verb = rest ? 'tell' : '';
+      }
+      // Budgets stay between each person and the bot, so they are never asked for or passed along.
+      if (verb && /\$\s*\d|\bbudgets?\b|\bmax(?:imum)?\b|\bafford|\bspend(?:ing)?\b|\bdollars?\b|\bbucks\b/i.test(rest)) return reply(msg, 'Budgets stay private between each person and me, so I can\'t ask for or pass one along.', 'relay-money', true);
+      if (verb && rest.length >= 2) {
+        const mode: 'ask' | 'tell' | 'request' = verb === 'ask' ? 'ask' : verb === 'request' ? 'request' : 'tell';
+        const fieldOf = (text: string): string | undefined =>
+          /\b(?:car|vehicle|ride|truck|drive)\b/i.test(text) || (/\b(?:has|have|got)\s+(?:one|it)\b/i.test(text) && (ctx.pendingQuestion?.field === 'transport' || ctx.openFields?.includes('transport'))) ? 'transport'
+          : /\b(?:dates?|free|available|availability|when)\b/i.test(text) ? 'availability'
+          : /\b(?:likes?|prefer\w*|into|wants? to do|interests?)\b/i.test(text) ? 'preferences'
+          : /\b(?:nights?|how long|how many days)\b/i.test(text) ? 'duration'
+          : /\b(?:leav\w*|start\w*|depart\w*)\s+from\b|\bwhere\b.*\b(?:leav\w*|start\w*|depart\w*)\b/i.test(text) ? 'origin'
+          : /\b(?:where|destination|place|go to)\b/i.test(text) ? 'region'
+          : undefined;
+        const field = mode === 'ask' ? fieldOf(rest) : undefined;
+        const action = { kind: 'relay' as const, to: relayTo.name, mode, text: rest, ...(field ? { field } : {}) };
+        // What the sender says about themselves while telling ("I have a car") also counts for them.
+        const own = mode === 'tell' ? extractWithCoverage(rest, localReference(msg.occurredAt, trip.timezone)).items : [];
+        return own.length ? fromConstraints(msg, ctx, rest, own, [action]) : one(msg, ctx, action);
+      }
+      if (/^(?:ask|tell|message|text|dm|notify)$/.test(relay[1]!.toLowerCase()) && rest === '') return reply(msg, `What would you like me to ${/^ask$/i.test(relay[1]!) ? 'ask' : 'tell'} ${relayTo.name}?`, 'relay-what', true);
+    }
+    // "nudge Mason", "ping Mason": the same as asking for options, which nudges whoever is still missing and tells the asker.
+    const nudge = /^(?:(?:please|can you|could you|pls)\s+)*(?:nudge|ping|poke|text|message)\s+(\w+)\b/i.exec(plain);
+    if (nudge && ctx.others?.some((o) => o.name.toLowerCase() === nudge[1]!.toLowerCase())) {
+      if (ctx.approval) return ctx.approval.waitingNames.includes(nudge[1]!) || ctx.approval.waitingNames.some((n) => n.toLowerCase() === nudge[1]!.toLowerCase()) ? one(msg, ctx, { kind: 'relay', to: ctx.others!.find((o) => o.name.toLowerCase() === nudge[1]!.toLowerCase())!.name, mode: 'request', text: 'lock it in' }) : reply(msg, `${nudge[1]} is already in on ${ctx.approval.title}.`, 'approval-other', true);
+      return one(msg, ctx, { kind: 'request_plans' });
+    }
+    // Money talk that is not a question about the log: nothing is paid or recorded here.
+    if (talkativeChat && (/^(?:i|we)\s+(?:just\s+)?(?:covered|paid\s+for|bought|treated|got)\s+(?:everyone|everybody|us|all of us|the\s+(?:group|table|whole\s+\w+)|everyone'?s|everybodys)\b/i.test(lean) || /\b(?:venmo|zelle|paypal|cash\s*app|apple\s*pay)\b/i.test(lean) && /^(?:(?:can|could|should|let)\b.*|(?:venmo|zelle|paypal|cash\s*app)\b.*)$/i.test(lean))) return reply(msg, READ_ONLY_MONEY, 'read-only-money', true);
+    if (talkativeChat && /\b(?:add|put|send|save|sync)\b.*\b(?:calendar|cal|invite|ics|reminder)\b/i.test(lean) && !/^(?:how|what|when|where|why|who|which|do|does|did|is|are)\b/i.test(lean)) return reply(msg, "I can't add things to a calendar yet. Ask me for the plan and I'll list the dates so you can add them yourself.", 'no-calendar', true);
+    // "can we do a day earlier": the dates are theirs to restate.
+    if (talkativeChat && /^(?:(?:can|could|would)\s+we|let'?s|how about|what about)\s+(?:do\s+|go\s+|leave\s+|start\s+|make\s+it\s+)?(?:it\s+)?(?:a|one|1|two|2|a\s+couple\s+of)\s+days?\s+(?:earlier|later|before|after)$/i.test(lean)) return reply(msg, 'Tell me the exact dates you want and I\'ll update the plan, like "free Nov 13-15".', 'dates-shift', true);
+    // Spending from the simulated fund: "I spent $60 on gas", "we paid 300 for the hotel", "bought food for $40", "log $20 for parking". The app asks for a yes first.
+    const spendCategory = (thing: string): string | undefined => {
+      const w = thing.toLowerCase();
+      if (/\b(?:hotel|motel|lodging|cabin|airbnb|room|rental|stay|accommodation|inn|lodge|campsite|camping)\b/.test(w)) return 'accommodation';
+      if (/\b(?:gas|gasoline|fuel|parking|toll|tolls|charging|uber|lyft|taxi)\b/.test(w)) return 'fuel_parking_tolls';
+      if (/\b(?:food|dinner|lunch|breakfast|brunch|groceries|grocery|restaurant|meal|meals|snacks?|coffee|drinks?|pizza|burgers?|eats|bbq|takeout)\b/.test(w)) return 'food';
+      if (/\b(?:tickets?|admission|entry|activities|activity|museum|tour|tours|park|hike|hiking|rental|zoo|show|concert|passes?)\b/.test(w)) return 'activities';
+      if (/\b(?:fees?|taxes|tax|tips?|resort fee)\b/.test(w)) return 'taxes_fees';
+      return undefined;
+    };
+    const amountOf = (text: string) => { const m = /\$\s*([\d,]+(?:\.\d{1,2})?)|\b([\d,]+(?:\.\d{1,2})?)\s*(?:dollars|bucks|usd)\b|\b(\d{1,6})\b/i.exec(text); const raw = m?.[1] ?? m?.[2] ?? m?.[3]; return raw ? Math.ceil(Number(raw.replace(/,/g, ''))) : undefined; };
+    const spendFormA = /^(?:(?:please|pls|ok(?:ay)?)\s+)*(?:i|we|jeffrey|mason|\w+)?\s*(?:'ve|have|just|already|had to)?\s*(?:spent|paid|put|used|dropped|blew)\s+\$?\s*([\d,]+(?:\.\d{1,2})?)(?:\s*(?:dollars|bucks|usd))?\s+(?:on|for|at|towards?)\s+(?:the\s+|a\s+|an\s+|our\s+|some\s+)?(.+)$/i.exec(lean)
+      ?? /^(?:(?:please|pls|ok(?:ay)?)\s+)*(?:log|record|add|enter|put\s+down|note|track)\s+(?:a\s+|an\s+|the\s+)?(?:purchase|expense|spend(?:ing)?|cost|charge)?\s*(?:of\s+)?\$?\s*([\d,]+(?:\.\d{1,2})?)(?:\s*(?:dollars|bucks|usd))?\s+(?:on|for|at)\s+(?:the\s+|a\s+|an\s+)?(.+)$/i.exec(lean);
+    // The "thing first" forms are only an expense when the thing is one: "my max is $450" must stay a budget.
+    const spendFormB = /^(?:(?:please|pls|ok(?:ay)?)\s+)*(?:i|we)?\s*(?:bought|got|grabbed|booked|paid\s+for)\s+(?:the\s+|a\s+|an\s+|some\s+|our\s+)?(.+?)\s+(?:for|at|costing|which\s+cost(?:s)?)\s+\$?\s*([\d,]+(?:\.\d{1,2})?)(?:\s*(?:dollars|bucks|usd))?$/i.exec(lean)
+      ?? /^(?:the\s+|our\s+)?([a-z][a-z ]{2,30}?)\s+(?:cost|costs|was|came\s+to|ran(?:\s+us)?)\s+\$?\s*([\d,]+(?:\.\d{1,2})?)(?:\s*(?:dollars|bucks|usd))?$/i.exec(lean);
+    if (talkativeChat && ctx.status !== undefined && (spendFormA || (spendFormB && spendCategory(spendFormB[1]!)))) {
+      const thing = spendFormA ? spendFormA[2]! : spendFormB![1]!;
+      const amount = spendFormA ? spendFormA[1]! : spendFormB![2]!;
+      const dollars = Math.ceil(Number(amount.replace(/,/g, '')));
+      const category = spendCategory(thing);
+      if (Number.isFinite(dollars) && dollars > 0 && category) return reply(msg, READ_ONLY_MONEY, 'read-only-money', true);
+      if (Number.isFinite(dollars) && dollars > 0 && ctx.status === 'approved') return reply(msg, READ_ONLY_MONEY, 'read-only-money', true);
+    }
+    // "I spent money", "log a purchase": there is no amount or purpose yet, so ask for both.
+    if (talkativeChat && ctx.status === 'approved' && /^(?:(?:please|pls|ok(?:ay)?|so)\s+)*(?:(?:i|we)\s+)?(?:(?:'ve|have|just|also)\s+)*(?:spent|paid|bought|purchased)\s+(?:some\s+|a\s+bit\s+of\s+|more\s+)?(?:money|cash|something|stuff|things)(?:\s+(?:on\s+the\s+trip|today|too))?$|^(?:(?:please|pls)\s+)*(?:log|record|add|enter|track)\s+(?:a\s+|an\s+|some\s+)?(?:purchase|expense|spending|spend|cost)$|^(?:i|we)\s+made\s+(?:a\s+)?purchase$|^(?:i|we)\s+need\s+to\s+(?:log|record|add)\s+(?:a\s+|some\s+)?(?:purchase|expense|spending)$/i.test(lean)) {
+      return reply(msg, READ_ONLY_MONEY, 'read-only-money', true);
+    }
+    const spentBare = /^(?:i|we)?\s*(?:'ve|have|just)?\s*(?:spent|paid)\s+\$?\s*([\d,]+(?:\.\d{1,2})?)(?:\s*(?:dollars|bucks|usd))?$/i.exec(lean);
+    if (spentBare && talkativeChat && ctx.status === 'approved') return reply(msg, READ_ONLY_MONEY, 'read-only-money', true);
+    // Paying into the simulated fund: "pay my share", "let me chip in $50", "cover Mason's share", "put in $60 for Jeffrey". The app asks for a yes before anything is added.
+    const lead = "(?:(?:please|pls|ok(?:ay)?|so)\\s+)*(?:(?:can|could|may|should|shall|would)\\s+(?:i|we)\\s+|let\\s*me\\s+|lemme\\s+|time\\s+to\\s+|(?:i|we)(?:'ll|\\s+will|'d like to|\\s+would like to|\\s+want to|\\s+wanna|\\s+should|\\s+can|\\s+gotta|\\s+need to|\\s+have to)?\\s+)?";
+    const tail = "(?:\\s+(?:now|please|pls|today|too|as well|also|real quick|right now))*[?!.]*$";
+    const share = "(?:my\\s+(?:share|part|portion|half)|\\$?\\s*(\\d{1,9})(?:\\s*(?:dollars|bucks|usd))?)";
+    const fundWord = "(?:\\s+(?:to|into|in)\\s+(?:the\\s+)?(?:fund|pot|trip(?:\\s+fund)?|kitty))?";
+    const payOther = new RegExp(`^${lead}(?:pay|cover|chip\\s+in\\s+for|put\\s+in\\s+for|contribute\\s+for)\\s+(?:for\\s+)?(\\w+?)(?:'s|s)?(?:\\s+(?:share|part|portion|half))?${tail}`, 'i').exec(plain);
+    const payOtherTo = payOther ? ctx.others?.find((o) => o.name.toLowerCase() === payOther[1]!.toLowerCase()) : undefined;
+    if (payOther && payOtherTo) return reply(msg, READ_ONLY_MONEY, 'read-only-money', true);
+    const payAmountFor = new RegExp(`^${lead}(?:pay|put\\s+in|chip\\s+in|send|add|cover|put)\\s+\\$?\\s*(\\d{1,9})(?:\\s*(?:dollars|bucks|usd))?\\s+(?:for|toward|towards)\\s+(\\w+?)(?:'s\\s+share)?${tail}`, 'i').exec(plain);
+    const payAmountTo = payAmountFor ? ctx.others?.find((o) => o.name.toLowerCase() === payAmountFor[2]!.toLowerCase()) : undefined;
+    if (payAmountFor && payAmountTo) return reply(msg, READ_ONLY_MONEY, 'read-only-money', true);
+    const payMine = new RegExp(`^${lead}(?:pay(?:\\s+up)?|chip\\s+in|contribute|put\\s+in|send|add|cover)\\s+${share}${fundWord}${tail}`, 'i').exec(plain);
+    if (payMine) return reply(msg, READ_ONLY_MONEY, 'read-only-money', true);
+    if (new RegExp(`^${lead}(?:pay(?:\\s+up)?|contribute|chip\\s+in)${tail}`, 'i').test(plain)) return reply(msg, READ_ONLY_MONEY, 'read-only-money', true);
+    if (/^how\s+(?:do|can|would|should)\s+(?:i|we)\s+(?:pay|chip in|contribute|put (?:money )?in|get my money in)\??$/i.test(plain)) return reply(msg, READ_ONLY_MONEY, 'read-only-money', true);
+    if (/^(?:i(?:'ve| have)?\s+)?(?:already\s+)?paid(?:\s+(?:my\s+)?(?:share|part|up|already|it))?$/i.test(plain)) return reply(msg, READ_ONLY_MONEY, 'read-only-money', true);
     if (FUND_REMIND.test(plain)) return one(msg, ctx, { kind: 'request_funding', topic: 'remind' });
     if (FUND_WRAP.test(plain)) return one(msg, ctx, { kind: 'request_funding', topic: 'wrap_up' });
     if (FUND_STATUS.test(plain)) return one(msg, ctx, { kind: 'request_funding', topic: 'status' });
@@ -347,12 +604,24 @@ export function createParser(deps: ConversationDependencies) {
         ? `Still waiting on ${list(waiting)}. Say "show us some options" and I'll nudge them and check what else is open.`
         : `I have what I need from the others. Say "show us some options" when you're ready, and I'll check what's still open.`, 'status-gathering', true);
     }
+    if (/^(?:help(?:\s+me)?|menu|commands|what can i say|how does this work)[?!.\s]*$/i.test(plain) && (msg.visibility === 'private' || trip.mode === 'direct')) {
+      return reply(msg, 'Happy to help. Tell me your budget, free dates and what you\'re into, say "show us some options" when you\'re ready, or ask me about the trip. You can also say things like "ask Mason if he has a car".', 'help-menu', true);
+    }
     if (REQUEST_PLANS.test(plain)) return one(msg, ctx, { kind: 'request_plans' });
     if (REQUEST_FUNDING.test(plain)) return one(msg, ctx, { kind: 'request_funding' });
     if ((m = GUIDE.exec(text.trim()))) return one(msg, ctx, { kind: 'ask_guide', question: m[1]!.trim() });
     if ((m = ACCEPT.exec(plain))) return bindPlan(msg, ctx, 'accept', m[1]!, Number(m[2]));
     if ((m = SELECT.exec(plain)) && !(m[1]!.toLowerCase() in CHOICE_NUMBER)) return bindPlan(msg, ctx, 'select', m[1]!, m[2] ? Number(m[2]) : undefined);
-    if (actionable(ctx, 'select').length === 0 && ctx.status === 'awaiting_acceptance' && PICK_WORDS.exec(plain) && !(BARE_CHOICE.test(plain) && (ctx.pendingQuestion || ctx.pendingConfirmation))) return alreadyPicked(msg, ctx);
+    if (actionable(ctx, 'select').length === 0 && ctx.status === 'awaiting_acceptance' && PICK_WORDS.exec(plain) && !(BARE_CHOICE.test(plain) && (ctx.pendingQuestion || ctx.pendingConfirmation))) { const w = (PICK_WORDS.exec(plain)?.[1] ?? '').toLowerCase(); return alreadyPicked(msg, ctx, CHOICE_NUMBER[w] ?? (Number(w) || undefined)); }
+    // "i like the cabin", "we'll take the state park": the words name exactly one of the options on offer.
+    const byName = /^(?:(?:ok(?:ay)?|yeah|yes|so|alright)[,\s]+)?(?:(?:i|we)(?:'ll|'d| will| would)?\s+)?(?:(?:like|love|want)\s+the\s+|(?:prefer|go with|take|pick|choose|vote for|let'?s do|lets do|let'?s go with)\s+(?:the\s+)?)([a-z][a-z' -]{2,40}?)(?:\s+(?:one|option|plan|trip|weekend|please|then|better|best))*$/i.exec(plain);
+    if (byName && actionable(ctx, 'select').length > 1) {
+      const wordsOf = (t: string): string[] => t.toLowerCase().match(/[a-z']{3,}/g) ?? [];
+      const asked = wordsOf(byName[1]!).filter((w) => !['the', 'and', 'for', 'one', 'option', 'plan', 'trip', 'weekend', 'that', 'this', 'with', 'one'].includes(w));
+      const options = actionable(ctx, 'select');
+      const hits = asked.length === 0 ? [] : options.map((a, i) => ({ i, words: wordsOf(a.description) })).filter((o) => asked.every((w) => o.words.includes(w)));
+      if (hits.length === 1) return bindPlan(msg, ctx, 'select', String(hits[0]!.i + 1), undefined);
+    }
     if (actionable(ctx, 'select').length > 0 && (m = PICK_WORDS.exec(plain))) {
       // A bare "2" while we are waiting on an answer ("how many nights?") is that answer, not a pick.
       if (BARE_CHOICE.test(plain) && (ctx.pendingQuestion || ctx.pendingConfirmation)) return null;
@@ -363,8 +632,13 @@ export function createParser(deps: ConversationDependencies) {
   }
 
   /** A pick after a plan is already chosen: say which one it is and what is needed, instead of "nothing to pick yet". */
-  function alreadyPicked(msg: InboundMessage, ctx: TripConversationContext): ParseResult {
+  function alreadyPicked(msg: InboundMessage, ctx: TripConversationContext, choice?: number): ParseResult {
     const mine = actionable(ctx, 'accept')[0];
+    // They named a different option than the one picked: say so, instead of repeating "already the pick" as if they had named the same one.
+    const named = choice === undefined ? undefined : /^Option (\d+) is (.+?)(?:,|:|$)/.exec(ctx.optionFacts?.find((f) => f.startsWith(`Option ${choice} is `)) ?? '')?.[2];
+    if (mine && named && !mine.description.toLowerCase().startsWith(named.toLowerCase()) && !named.toLowerCase().startsWith(mine.description.toLowerCase())) {
+      return reply(msg, `${mine.description} is already the pick, so I can't switch to ${named}. To go a different way, change a detail like the dates or your max and I'll bring fresh options. Otherwise say "I'm in" to lock it in.`, 'already-picked-other', true);
+    }
     return reply(msg, mine
       ? `${mine.description} is already the pick. Say "I'm in" to lock it in.`
       : "A plan is already picked and you've said you're in. I'm waiting on the others.", 'already-picked', true);
@@ -383,9 +657,12 @@ export function createParser(deps: ConversationDependencies) {
   /** Hellos, thanks and filler. Needs no model: warm in a one-on-one chat, silent in a group. Never a place, a date or a number. */
   function smallTalk(msg: InboundMessage, ctx: TripConversationContext, text: string, talkative: boolean): ParseResult {
     if (!talkative) return { kind: 'ignored', reason: 'small talk' };
-    if (/^(?:thanks?|thank you|thx|ty|appreciate)/i.test(text)) return reply(msg, 'Anytime! Tell me if you want to change anything, or say "show us some options" when you\'re ready.', 'welcome');
+    const done = ctx.status === 'approved';
+    if (/^(?:thanks?|thank you|thx|ty|appreciate|you'?re (?:awesome|great|the best|amazing|so helpful|helpful|a lifesaver|funny)|great job|good job|nice work|love it|this is (?:great|awesome|amazing|fun|cool))/i.test(text)) return reply(msg, done ? 'Anytime! Have a great trip.' : 'Anytime! Tell me if you want to change anything, or say "show us some options" when you\'re ready.', 'welcome');
+    if (/^(?:(?:ok(?:ay)?|cool|nice|great|awesome|sweet|alright|yay)[\s,!.]+)*(?:see (?:you|ya|u)\b|have fun|can'?t wait|so excited|excited)/i.test(text)) return reply(msg, done ? 'See you there! Tell me if a detail changes and I will look again.' : "Sounds fun! Tell me if you want to change anything, or say \"show us some options\" when you're ready.", 'see-you');
+    if (/^(?:hold on|hang on|wait|one (?:sec|second|moment|min|minute)|give me a (?:sec|second|minute|min|moment)|brb)\b/i.test(text)) return reply(msg, "No rush. I'm here whenever you're ready.", 'hold-on');
     if (/^good ?night\b|^(?:night|nite|gn|bye|goodbye|see ya|later|ttyl|talk later)\b/i.test(text)) return reply(msg, 'Night! I\'ll be here whenever you want to pick this back up.', 'goodnight');
-    if (/^(?:hi|hey|hello|yo|hiya|howdy|hola|sup|wassup|what'?s up|whats up|what up|good |gm)/i.test(text)) {
+    if (/^(?:(?:hi|hey|hello|yo|hiya|howdy|hola|sup|wassup|what'?s up|whats up|what up|gm)\b|good )/i.test(text)) {
       // Partway through a question: put it back instead of inviting them to start over.
       const open = ctx.pendingQuestion ? REASK[ctx.pendingQuestion.field] : undefined;
       if (open) return reply(msg, `Hey! ${open}`, 'greeting-open');
@@ -394,7 +671,7 @@ export function createParser(deps: ConversationDependencies) {
       if (starters.length > 0 || ctx.confirmBasics?.length) return reply(msg, `Hey! ${starters.length > 0 ? list(starters) : 'Someone'} already started planning a trip. Tell me your free dates and what you're into, or say "show us some options" when you're ready. I share who's free when with the group to find a weekend; budgets stay private.`, 'greeting-joined');
       return reply(msg, 'Hey! Want to plan a trip? Say "let\'s plan a trip" to get started.', 'greeting');
     }
-    return reply(msg, "Sounds good. I'm here whenever you want to add something or see options.", 'smalltalk');
+    return reply(msg, done ? "Sounds good. The trip is all set. I'm here if anything changes." : "Sounds good. I'm here whenever you want to add something or see options.", 'smalltalk');
   }
 
   /** "Hi Alex", "hello everyone": a greeting aimed at someone by name is still only a greeting. */
@@ -442,6 +719,12 @@ export function createParser(deps: ConversationDependencies) {
       return resolveAnswer(msg, ctx, true);
     }
 
+    // "Can you actually do Nov 14-16?" was asked a moment ago and the answer is a yes: those are their dates.
+    if (YES.test(text) && ctx.actionable.length === 0 && !ctx.pendingConfirmation) {
+      const lastBot = [...(ctx.recent ?? [])].reverse().find((r) => r.from === 'bot');
+      const asked = lastBot ? /Can you actually do ([^?]{3,40})\?/.exec(lastBot.text) : null;
+      if (asked) return parseText({ ...msg, text: `free ${asked[1]}` }, ctx);
+    }
     const ex = explicit(msg, ctx, text);
     if (ex) return ex;
     const plain = text.replace(/[?!.\s]+$/, '');
@@ -508,6 +791,7 @@ export function createParser(deps: ConversationDependencies) {
       ...(ctx.pendingQuestion ? { pendingField: ctx.pendingQuestion.field } : {}),
       hasActionable: ctx.actionable.length > 0,
       facts,
+      ...(ctx.recent?.length ? { history: ctx.recent.slice(-6) } : {}),
       ...(actionable(ctx, 'select').length > 0 ? { options: actionable(ctx, 'select').map((a) => a.description) } : {}),
     });
     const intent = validateIntent(raw);
@@ -533,21 +817,25 @@ export function createParser(deps: ConversationDependencies) {
       case 'none':
         // In a group, ordinary chat between friends is none of our business. In a one-on-one DM every message
         // is addressed to us, so staying silent just looks broken.
+        if (msg.visibility === 'private' || trip.mode === 'direct') noteMiss('help', msg, ctx);
         return msg.visibility === 'private' || trip.mode === 'direct'
           ? reply(msg, HELP, 'help')
           : { kind: 'ignored', reason: 'not addressed to the assistant' };
       case 'chat': {
         if (!(msg.visibility === 'private' || trip.mode === 'direct')) return { kind: 'ignored', reason: 'casual chat in a group' };
         const answer = safeChatAnswer(intent.answer, `${facts.join(' ')} ${handoffText}`);
+        if (!answer) noteMiss('unclear', msg, ctx);
         return reply(msg, answer ?? HELP, answer ? 'chat' : 'help', true);
       }
       case 'unavailable':
         // Same rule as an unclear message: in a group, friends talking are none of our business even when the service is down.
+        if (msg.visibility === 'private' || trip.mode === 'direct') noteMiss('unavailable', msg, ctx);
         return msg.visibility === 'private' || trip.mode === 'direct'
           ? reply(msg, UNAVAILABLE, 'unavailable')
           : { kind: 'ignored', reason: 'language service unavailable, group message' };
       case 'clarify':
         // In a group, an unclear message is usually just friends talking: stay quiet there.
+        if (msg.visibility === 'private' || trip.mode === 'direct') noteMiss('help', msg, ctx);
         return msg.visibility === 'private' || trip.mode === 'direct'
           ? reply(msg, HELP, 'help')
           : { kind: 'ignored', reason: 'unclear group message' };

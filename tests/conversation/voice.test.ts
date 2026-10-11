@@ -15,13 +15,16 @@ describe('what may be reworded', () => {
 
 describe('a rewrite is only used if it keeps every fact', () => {
   const original = 'Got it: leaving from Chapel Hill. Tell me if I got anything wrong.';
+  it('rejects the phrase "shout if that is off"', () => {
+    expect(acceptPolished('Got it: leaving from Chapel Hill. Tell me if I got anything wrong.', 'Chapel Hill, noted. Shout if that is off.')).toBeUndefined();
+  });
   it('accepts a friendlier rewrite that keeps the names and numbers', () => {
-    expect(acceptPolished(original, 'Chapel Hill, noted. Shout if that is off.')).toBe('Chapel Hill, noted. Shout if that is off.');
+    expect(acceptPolished(original, 'Chapel Hill, noted. Say so if that is off.')).toBe('Chapel Hill, noted. Say so if that is off.');
   });
   it.each([
-    ['drops a place', 'Noted, leaving from there. Shout if that is off.'],
+    ['drops a place', 'Noted, leaving from there. Say so if that is off.'],
     ['adds an amount', 'Chapel Hill, noted. That should be about $200 each.'],
-    ['uses an em dash', 'Chapel Hill, noted — shout if that is off.'],
+    ['uses an em dash', 'Chapel Hill, noted — say so if that is off.'],
     ['turns a statement into a question', 'Is it Chapel Hill?'],
     ['stacks exclamations', 'Chapel Hill! Noted! Great!'],
     ['rambles', 'Chapel Hill, noted. '.repeat(10)],
@@ -38,7 +41,7 @@ describe('a rewrite is only used if it keeps every fact', () => {
 describe('the Gemini voice', () => {
   const voice = (text: string, errors: unknown[] = []) => createGeminiVoice({ apiKey: 'k', model: 'm', fetchImpl: reply(text) as never, onError: (e) => errors.push(e) });
   it('returns the rewrite when it is safe', async () => {
-    expect(await voice('Chapel Hill, noted. Shout if that is off.').polish('Got it: leaving from Chapel Hill. Tell me if I got anything wrong.')).toBe('Chapel Hill, noted. Shout if that is off.');
+    expect(await voice('Chapel Hill, noted. Say so if that is off.').polish('Got it: leaving from Chapel Hill. Tell me if I got anything wrong.')).toBe('Chapel Hill, noted. Say so if that is off.');
   });
   it('falls back to the original when the rewrite loses a fact', async () => {
     const original = 'Got it: leaving from Chapel Hill. Tell me if I got anything wrong.';
@@ -59,11 +62,11 @@ describe('the Gemini voice', () => {
   });
   it('and as a second line of defence, a rewrite that changes an amount is rejected', async () => {
     const text = 'Got it: your max is $250 (just between us). Tell me if I got anything wrong.';
-    expect(acceptPolished(text, 'Your max is $250, between us. Shout if that is off.')).toBe('Your max is $250, between us. Shout if that is off.');
-    expect(await voice('Your max is $205, between us. Shout if that is off.').polish(text)).toBe(text);      // changed the amount
-    expect(await voice('Your max is $250 or $300, between us. Shout if that is off.').polish(text)).toBe(text); // invented an amount
-    expect(await voice('Your max is 250, between us. Shout if that is off.').polish(text)).toBe(text);        // dropped the dollar sign
-    expect(await voice('Got it, between us. Shout if that is off.').polish(text)).toBe(text);                  // lost the amount
+    expect(acceptPolished(text, 'Your max is $250, between us. Say so if that is off.')).toBe('Your max is $250, between us. Say so if that is off.');
+    expect(await voice('Your max is $205, between us. Say so if that is off.').polish(text)).toBe(text);      // changed the amount
+    expect(await voice('Your max is $250 or $300, between us. Say so if that is off.').polish(text)).toBe(text); // invented an amount
+    expect(await voice('Your max is 250, between us. Say so if that is off.').polish(text)).toBe(text);        // dropped the dollar sign
+    expect(await voice('Got it, between us. Say so if that is off.').polish(text)).toBe(text);                  // lost the amount
   });
 });
 

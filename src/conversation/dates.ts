@@ -143,6 +143,17 @@ export function parseDateWindows(input: string, reference: string): ParsedWindow
     out.push({ start: day(start), end: day(thisFriday + (weekend[1]!.toLowerCase() === 'this' ? 0 : 7 * 86_400_000) + 2 * 86_400_000) });
   }
 
+  // "the weekend of Nov 21": the Friday to Sunday that holds that day, not just the one day.
+  if (/\bweekend\s+(?:of|around|starting|beginning)\b/i.test(input)) {
+    const shift = (iso: string, days: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+    for (const w of out) {
+      if (w.start !== w.end) continue;
+      const dow = new Date(`${w.start}T00:00:00Z`).getUTCDay();
+      const friday = shift(w.start, dow === 6 ? -1 : dow === 0 ? -2 : 5 - dow);
+      w.start = friday; w.end = shift(friday, 2);
+    }
+  }
+
   const seen = new Set<string>();
   return out
     .filter((w) => !seen.has(w.start + w.end) && !!seen.add(w.start + w.end))

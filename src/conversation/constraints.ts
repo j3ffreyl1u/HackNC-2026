@@ -19,7 +19,7 @@ const MONEY = '\\$\\s*([\\d,]+(?:\\.\\d{1,2})?)|([\\d,]+(?:\\.\\d{1,2})?)\\s*(?:
 const BUDGET_KEYWORD = '(?:budget|max(?:imum)?|cap|limit|spend|afford|up to|at most|no more than|(?:can|could|may|might|able to) (?:only )?(?:do|pay|swing|spend|afford)|can swing|able to (?:do|pay|spend|afford)|only (?:got|have|has)|all[- ]in)';
 const BUDGET_AFTER = new RegExp(`\\b${BUDGET_KEYWORD}\\b[^.!?\\n$\\d]{0,30}?(?:${MONEY})`, 'i');
 const BUDGET_BEFORE = new RegExp(`(?:${MONEY})\\s*(?:(?:is|'s)\\s+(?:my|the|our)\\s+(?:(?:firm|hard|absolute|final)\\s+)?)?(?:max|maximum|total|tops|cap|limit|all[- ]in|budget|at most)\\b`, 'i');
-const BUDGET_BARE = /\b(?:budget|max(?:imum)?|cap|limit)\b\s*(?:(?:is|of|:|=)\s*)?(?:(?:around|about|roughly|approximately|like|at)\s*)?\$?([\d,]+(?:\.\d{1,2})?)\b(?!\s*[a-z])|\b(?:spend|afford|pay|swing)\s+(?:about\s+|around\s+|up to\s+)?\$?([\d,]+(?:\.\d{1,2})?)\b(?!\s*[a-z])|\b(?:have|got)\s+\$?([\d,]+(?:\.\d{1,2})?)\s+(?:dollars\s+|bucks\s+)?(?:to|for)\s+(?:spend|the trip|this trip)\b|(?:^|[\s,])\$?([\d,]+(?:\.\d{1,2})?)\s*(?:is|'s)\s+(?:my|the|our)\s+(?:(?:firm|hard|absolute|final)\s+)?(?:max|maximum|budget|cap|limit)\b/i;
+const BUDGET_BARE = /\b(?:budget|max(?:imum)?|cap|limit)\b\s*(?:(?:is|of|:|=)\s*)?(?:(?:around|about|roughly|approximately|like|at)\s*)?\$?([\d,]+(?:\.\d{1,2})?)\b(?!\s*[a-z])|\b(?:(?:can|could|only|would)\s+(?:only\s+)?(?:pay|swing)|spend|afford|swing)\s+(?:about\s+|around\s+|up to\s+)?\$?([\d,]+(?:\.\d{1,2})?)(?:\s+(?:in total|total|all in|altogether|tops))?\b(?!\s*[a-z])|\b(?:have|got)\s+\$?([\d,]+(?:\.\d{1,2})?)\s+(?:dollars\s+|bucks\s+)?(?:to|for)\s+(?:spend|the trip|this trip)\b|(?:^|[\s,])\$?([\d,]+(?:\.\d{1,2})?)\s*(?:is|'s)\s+(?:my|the|our)\s+(?:(?:firm|hard|absolute|final)\s+)?(?:max|maximum|budget|cap|limit)\b/i;
 const BARE_AMOUNT = /^\$?\s*([\d,]+(?:\.\d{1,2})?)\s*(?:dollars|bucks|usd)?[.!]*$/i;
 const AVAIL_WORDS = /\b(free|available|availability|open|works?|can (?:do|go|make(?: it)?|leave)|good|window|off|maybe|perhaps|how about|what about|could (?:do|go|make it))\b/i;
 const NEGATIVE = /\b(not|n't|busy|can'?t|cannot|unavailable|booked|out of town|bad|no good|conflict|have plans|taken)\b/i;
@@ -34,7 +34,7 @@ export function parseMaxTravelMinutes(text: string): number | undefined {
 }
 
 /** Short replies that are not a place even when a place was asked for: a change of subject, a date, or a liking. */
-const NOT_A_PLACE_ANSWER = /^(?:start over|restart|reset|begin again|cancel|never ?mind|nvm|stop|quit|skip|idk|not sure|no idea|later|nothing|none|n\/a|ok(?:ay)?|sure|thanks|thank you|hello|hi|hey)$|\b(?:weekends?|weeks?|months?|days?|today|tomorrow|tonight|next|this|monday|tuesday|wednesday|thursday|friday|saturday|sunday|mostly|mainly|probably|maybe|just|only|really|kind of|whatever|anything|food|foods|nights?|monuments?|museums?|histor(?:y|ical)|hiking|nightlife|sightseeing|restaurants?|breweries|brewery|shopping|nature|outdoors?|relax(?:ing)?|looks?|sounds?|seems?|good|fine|perfect|awesome|lol|lmao|haha|ok(?:ay)?|yes|yeah|yep|thanks|everything|how|what|why|does|this|that)\b/i;
+const NOT_A_PLACE_ANSWER = /^(?:start over|restart|reset|begin again|cancel|never ?mind|nvm|stop|quit|skip|idk|not sure|no idea|later|nothing|none|n\/a|ok(?:ay)?|sure|thanks|thank you|hello|hi|hey|bye|goodbye|good ?night|gn|ttyl|see ya|cya|yes|yep|yeah|no|nope|nah)$|\b(?:weekends?|weeks?|months?|days?|today|tomorrow|tonight|next|this|monday|tuesday|wednesday|thursday|friday|saturday|sunday|mostly|mainly|probably|maybe|just|only|really|kind of|whatever|anything|food|foods|nights?|monuments?|museums?|histor(?:y|ical)|hiking|nightlife|sightseeing|restaurants?|breweries|brewery|shopping|nature|outdoors?|relax(?:ing)?|looks?|sounds?|seems?|good|fine|perfect|awesome|lol|lmao|haha|ok(?:ay)?|yes|yeah|yep|thanks|everything|how|what|why|does|this|that)\b/i;
 /** "I like the second one better" is about the options, not something the person likes doing. */
 const PICK_TALK = /\b(?:the\s+)?(?:first|second|third|1st|2nd|3rd|last|other)\s+(?:one|option|plan)\b|\b(?:option|plan)\s+\d\b|\bone\s+better\b/i;
 const NOT_A_PLACE = /\b(i|we|you|he|she|they|has|have|had|is|are|was|am|can|will|would|want|like|need|car|trip|my|our|it|not|but|with|for|please|thanks|yes|no|help|huh|menu|options?|wait|sorry|skip|later|stop|cancel|idk|dunno|what|why|how|nothing|never ?mind)\b/i;
@@ -84,7 +84,8 @@ function budgetFrom(sentence: string): number | null {
   sentence = expandK(sentence);
   const m = BUDGET_AFTER.exec(sentence) ?? BUDGET_BEFORE.exec(sentence);
   const bare = m ? null : BUDGET_BARE.exec(sentence);
-  const raw = m ? (m[1] ?? m[2] ?? m[3] ?? m[4]) : (bare?.[1] ?? bare?.[2] ?? bare?.[3] ?? bare?.[4]);
+  const trailing = m || bare ? null : /(?<![\d$.,])(\d{3,5}(?:\.\d{1,2})?)\s*(?:max|maximum|tops|at most)\b/i.exec(sentence);   // "350 max"
+  const raw = m ? (m[1] ?? m[2] ?? m[3] ?? m[4]) : (bare?.[1] ?? bare?.[2] ?? bare?.[3] ?? bare?.[4] ?? trailing?.[1]);
   return raw ? parseDollarsToCents(raw) : null;
 }
 
@@ -126,23 +127,30 @@ function extractSentence(s: string, reference: string, pending: ConstraintField 
     else push({ field: 'availability', value: windows });
   }
 
-  if ((m = /\b(\d{1,2}|one|two|three|four|five|six|seven)\s*[- ]?nights?\b/i.exec(s))) {
+  // "3 nights is too long for me" objects to the length; it does not say they want 3.
+  const objectsToLength = /\btoo\s+(?:long|short|many|much)\b|\b(?:can'?t|cannot|won'?t|don'?t want|do not want)\s+(?:do|make|stay|go for|handle)?\s*(?:\d{1,2}|one|two|three|four|five|six|seven)\s*[- ]?nights?\b/i.test(s);
+  if (!objectsToLength && (m = /\b(\d{1,2}|one|two|three|four|five|six|seven)\s*[- ]?nights?\b/i.exec(s))) {
     const n = /^\d/.test(m[1]!) ? Number(m[1]) : ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven'].indexOf(m[1]!.toLowerCase());
     if (n >= 1 && n <= 30) push({ field: 'duration', value: n });
   }
   else if (!s.includes('?') && /\blong weekend\b/i.test(s)) push({ field: 'duration', value: 3 });
   else if (!s.includes('?') && /\b(?:a|quick|short|just a|over a)\s+weekend(?!\s+of\b)|\bweekend\s+(?:trip|getaway)\b/i.test(s) && !windows.length) push({ field: 'duration', value: 2 });
-  if ((m = /\b(?:leav(?:e|ing)|depart(?:ing)?|start(?:ing)?|driv(?:e|ing)|coming|going)\s+from\s+([A-Za-z][A-Za-z .'-]{1,40}?)(?=[,.;!?]|\s+(?:and|but|on|at|around|with|to|for|in|if|tomorrow|today|tonight|next|this|after|before|early|late|by|when|then|so|since|because|until|till|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b|$)/i.exec(s)) ?? (m = /\b(?:origin|departing city)\s*(?:is|:)\s*([A-Za-z][A-Za-z .'-]{1,40})/i.exec(s))) {
+  if (!QUESTION_START.test(s) && !s.includes('?') && ((m = /\b(?:leav(?:e|ing)|depart(?:ing)?|start(?:ing)?|driv(?:e|ing)|coming|going)\s+from\s+([A-Za-z][A-Za-z .'-]{1,40}?)(?=[,.;!?]|\s+(?:and|but|on|at|around|with|to|for|in|if|tomorrow|today|tonight|next|this|after|before|early|late|by|when|then|so|since|because|until|till|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b|$)/i.exec(s)) ?? (m = /\b(?:origin|departing city)\s*(?:is|:)\s*([A-Za-z][A-Za-z .'-]{1,40})/i.exec(s)))) {
     const place = m![1]!.trim();
-    if (!NOT_ORIGIN.test(place)) push({ field: 'origin', value: place });
+    if (!NOT_ORIGIN.test(place)) push({ field: 'origin', value: place === place.toLowerCase() ? properCase(place) : place });
+  }
+  else if (!pending && (m = /^from\s+([A-Za-z][A-Za-z '-]{1,30}?)\s*[.!,]*\s*$/i.exec(s.trim())) && !NOT_ORIGIN.test(m[1]!) && !NOT_A_PLACE_ANSWER.test(m[1]!)) {
+    push({ field: 'origin', value: properCase(m[1]!.trim()) });
   }
   if ((m = /\b(?:within|no more than|at most|up to|under|max(?:imum)? of)\s+(?:about\s+|around\s+)?(\d{1,2}(?:\.\d)?)\s*(?:hours?|hrs?|h)\b(?!\s*of\s+(?:sleep|work))/i.exec(s)) ?? (m = /\b(\d{1,2}(?:\.\d)?)\s*[- ]?(?:hours?|hrs?)\s+(?:drive|away|radius)\b/i.exec(s))) {
     push({ field: 'region', value: `within ${m![1]} hours by car`, maxTravelMinutes: Math.round(Number(m![1]) * 60) });
   } else if ((m = /\b(?:[Gg]o|[Tt]ravel|[Dd]rive|[Hh]ead|going|headed|heading|trip)\s+to\s+(?:the\s+)?((?:[A-Z][A-Za-z.'-]*)(?:\s+[A-Z][A-Za-z.'-]*){0,3})/.exec(s)) && !QUESTION_START.test(s) && !NOT_DESTINATION.test(s)) {
     push({ field: 'region', value: clean(m[1]!).replace(/^the\s+/i, '') });
-  } else if ((m = /\b(?:go|going|head(?:ing)?|headed|drive|driving|travel(?:ing)?|trip)\s+to\s+(?:the\s+)?((?:[a-z]+\s+){0,2}(?:beach(?:es)?|coast|mountains?|lakes?|shore|countryside|woods))\b/i.exec(s)) && !QUESTION_START.test(s)) {
+  } else if ((m = /\b(?:go|going|head(?:ing)?|headed|drive|driving|travel(?:ing)?|trip)\s+to\s+(?:the\s+)?((?:[a-z]+\s+){0,2}(?:beach(?:es)?|coast|mountains?|lakes?|shore|countryside|woods))\b/i.exec(s) ?? /\b(?:want|wanna|looking for|thinking|prefer|how about|what about|hoping for|in the mood for)\s+(?:to be in\s+)?(?:the\s+)?((?:nc\s+)?(?:mountains?|beach(?:es)?|coast|lakes?|shore|countryside|woods))\b/i.exec(s)) && !QUESTION_START.test(s)) {
     push({ field: 'region', value: m[1]!.replace(/^the\s+/i, '') });
   } else if ((m = /\b(?:let'?s|lets|let us|we should|we could|i want to|we want to|i wanna|we wanna|how about|what about|i'?d like to|we'?d like to)\s+(?:go|head|drive|travel)\s+to\s+(?:the\s+)?([a-z][a-z.'-]{2,}(?:\s+[a-z][a-z.'-]{2,}){0,2})(?=[\s,.;!?]|$)/.exec(s)) && !QUESTION_START.test(s) && !NOT_DESTINATION.test(s) && !LOWER_NOT_PLACE.test(m[1]!)) {
+    push({ field: 'region', value: properCase(m[1]!) });
+  } else if ((m = /\b(?:wanna|want to|lets|let's|we should|we could|i want to|we want to)\s+go\s+(?!(?:to|for|on|out|there|back|with|home|somewhere|anywhere|ahead|now|early|soon|see|eat|get|do|have|try|play|swim|fish|camp|hike|over|up|down|along|together|first|later)\b)([a-z][a-z.'-]{2,}(?:\s+[a-z][a-z.'-]{2,}){0,2})(?=[\s,.;!?]|$)/i.exec(s)) && !/ing$/i.test(m[1]!.split(/\s+/)[0]!) && !QUESTION_START.test(s) && !NOT_DESTINATION.test(s) && !NOT_ORIGIN.test(m[1]!)) {
     push({ field: 'region', value: properCase(m[1]!) });
   } else if ((m = /\b(?:want|wanna|'d like|would like)\s+to\s+(?:visit|see)\s+((?:[A-Z][A-Za-z.'-]*)(?:\s+[A-Z][A-Za-z.'-]*){0,3})(?=[\s,.;!?]|$)/.exec(s)) && !QUESTION_START.test(s)) {
     visited = clean(m[1]!);
@@ -167,7 +175,7 @@ function extractSentence(s: string, reference: string, pending: ConstraintField 
     if (gone.length) push({ field: 'preferences', value: gone });
   } else if (/\b(?:no (?:real )?preferences?|don'?t (?:really )?care(?!\s+(?:about|for)\b)|i'?m (?:easy|flexible|open to anything))\b/i.test(s)) {
     push({ field: 'preferences', value: ['no preference'] });
-  } else if (!PICK_TALK.test(s) && (m = /\b(?:i|we)(?:\s+really)?(?:\s+|(?='))(?:prefer|like|love|enjoy|(?:am|are|'m|'re)\s+into|(?:want|'d like|would like) to (?:be able to )?(?:do|try|see|visit|explore|check out))\s+(.+)$/i.exec(s))) {
+  } else if (!PICK_TALK.test(s) && !QUESTION_START.test(s) && (m = /\b(?:i|we)(?:\s+really)?(?:\s+|(?='))(?:prefer|like|love|enjoy|(?:am|are|'m|'re)\s+into|(?:want|'d like|would like) to (?:be able to )?(?:do|try|see|visit|explore|check out))\s+(.+)$/i.exec(s))) {
     // Stop at the next clause ("..., my max is $400", "... and I'm free Nov 14") so money and dates never end up as a liking.
     const liked = m[1]!.split(/\b(?:but|so|because)\b|[,;.]\s*(?:and\s+)?(?=(?:my|our|i|i'm|i'd|i'll|we|we're)\b)|\s+and\s+(?=(?:my|our|i|i'm|i'd|we|we're)\b)/i)[0]!;
     const items = splitItems(liked).filter((item) => !/\$|\d|\b(?:budget|max(?:imum)?)\b/i.test(item) && item.toLowerCase() !== visited?.toLowerCase());
@@ -227,7 +235,7 @@ export function extractConstraints(text: string, reference: string, pending?: Co
 }
 
 /** Small talk that needs no interpretation (and therefore no model call). */
-export const TRIVIAL = /^(?:(?:hi|hey|hello|hiya|howdy|hola|sup|wassup|what'?s up|whats up|what up|good (?:morning|afternoon|evening|night)|gm|there|everyone|everybody|all|guys|y'?all|team|hmm+|hm+|um+|uh+|test(?:ing)?|yo|thanks?|thank you|thx|ty|so much|very much|a lot|a ton|appreciate (?:it|that)|you(?:'re| are) (?:the best|awesome|great|amazing)|the best|ok(?:ay)?|cool|nice|great|awesome|perfect|sweet|lol|haha+|lmao|got it|sounds good|no worries|np|please|pls|sorry|oops)\b[\s,.!?:)-]*)+$/i;
+export const TRIVIAL = /^(?:(?:hi|hey|hello|hiya|howdy|hola|sup|wassup|what'?s up|whats up|what up|good (?:morning|afternoon|evening|night)|gm|there|everyone|everybody|all|guys|y'?all|team|hmm+|hm+|um+|uh+|test(?:ing)?|yo|thanks?|thank you|thx|ty|so much|very much|a lot|a ton|appreciate (?:it|that)|you(?:'re| are) (?:the best|awesome|great|amazing)|[a-z']+ (?:is|was|are) (?:the best|awesome|great|amazing|a legend)|the best|bye|goodbye|cya|ttyl|talk (?:to you )?later|good ?night|gn|hold on|hang on|one (?:sec|second|moment|min|minute)|give me a (?:sec|second|minute|min|moment)|brb|wait|hmm+ ok|sounds (?:fun|great|awesome|cool|amazing|exciting|like a plan)|that sounds (?:fun|great|awesome|good|cool|amazing)|fun|see (?:you|ya|u)(?: (?:there|soon|later|then))?|have fun|can'?t wait|so excited|excited|ok(?:ay)?|cool|nice|great|awesome|perfect|sweet|lol|haha+|lmao|got it|sounds good|no worries|np|please|pls|sorry|oops)\b[\s,.!?:)-]*)+$/i;
 
 export interface Coverage {
   items: Extracted[];
@@ -243,7 +251,7 @@ export function extractWithCoverage(text: string, reference: string, pending?: C
   const out: Extracted[] = [];
   const unmatched: string[] = [];
   // A correction ("..., wait no, 2 nights" / "... actually $300") starts a new sentence even in lower case.
-  const sentences = text.split(/(?<=[!?\n;])\s+|(?<=[a-z0-9)])\.\s+(?=[A-Z]|(?:wait|actually|scratch that|i mean|oops|correction|make that|no wait)\b)|,\s+(?=(?:wait|actually|scratch that|i mean|oops|correction|no wait)\b)/).map((s) => s.trim()).filter(Boolean);
+  const sentences = text.split(/(?<=[!?\n;])\s+|(?<=^from\s+[A-Za-z' ]{2,30})\.\s+|(?<=[a-z0-9)])\.\s+(?=[A-Z]|(?:wait|actually|scratch that|i mean|oops|correction|make that|no wait)\b)|,\s+(?=(?:wait|actually|scratch that|i mean|oops|correction|no wait)\b)/).map((s) => s.trim()).filter(Boolean);
   for (const s of sentences) {
     const before = out.length;
     extractSentence(s, reference, pending, out);
