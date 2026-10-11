@@ -25,6 +25,11 @@ export function toPlanningState(state: C.TripState): B.TripState {
   };
 }
 
+/** "Washington DC" or "Asheville" is a destination to plan around; "the coast" or "within 3 hours" is only an area to search. */
+function placeFor(label: string, maxTravelMinutes: number | undefined): { destination: string } | { searchRegion: string } {
+  return maxTravelMinutes === undefined && /^[A-Z]/.test(label.trim()) ? { destination: label.trim() } : { searchRegion: label };
+}
+
 export function toPlanningUpdate(update: C.StoredConstraintUpdate): B.ConstraintUpdate {
   let value: unknown;
   switch (update.field) {
@@ -32,7 +37,7 @@ export function toPlanningUpdate(update: C.StoredConstraintUpdate): B.Constraint
     case 'availability': value = { intervals: update.value.map(({ startAt, endAt }) => ({ startAt, endAt })) }; break;
     case 'preferences': case 'must_dos': value = { items: update.value }; break;
     case 'transport': value = { mode: 'car', vehicleAvailable: update.value.hasVehicle }; break;
-    case 'region': value = { searchRegion: update.value.label, maxTravelMinutes: update.value.maxTravelMinutes }; break;
+    case 'region': value = { ...placeFor(update.value.label, update.value.maxTravelMinutes), maxTravelMinutes: update.value.maxTravelMinutes }; break;
     case 'origin': value = { city: update.value.city }; break;
     case 'duration': value = update.value; break;
   }
@@ -45,7 +50,7 @@ export function toPlanningCommandUpdate(update: C.ConstraintUpdate): B.Constrain
     case 'budget': value = { cents: update.value }; break;
     case 'availability': value = { intervals: update.value.map(({ startAt, endAt }) => ({ startAt, endAt })) }; break;
     case 'preferences': case 'must_dos': value = { items: update.value }; break;
-    case 'region': value = { searchRegion: update.value, ...(update.maxTravelMinutes !== undefined ? { maxTravelMinutes: update.maxTravelMinutes } : {}) }; break;
+    case 'region': value = { ...placeFor(update.value, update.maxTravelMinutes), ...(update.maxTravelMinutes !== undefined ? { maxTravelMinutes: update.maxTravelMinutes } : {}) }; break;
     case 'transport': value = { mode: 'car', vehicleAvailable: update.vehicleAvailable ?? (update.value === 'own_vehicle' ? true : update.value === 'no_vehicle' ? false : undefined) }; break;
     case 'origin': value = { city: update.value }; break;
     case 'duration': value = { nights: update.value }; break;

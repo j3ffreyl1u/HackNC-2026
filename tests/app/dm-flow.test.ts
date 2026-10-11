@@ -194,4 +194,25 @@ describe('first live DM scenario, end to end (A parser + C runtime + B planner, 
     expect(JSON.stringify(after[after.length - 1]!.value)).toMatch(/no preference/);
     await t.stop();
   });
+
+  it('dates that never overlap are explained to BOTH people, with who is free when', async () => {
+    const t = await live();
+    await t.say(JEFF, "I'm leaving from Chapel Hill, 2 nights, I want to go to Asheville, I have a car, I'm free Dec 20-31, my max is $500, I like hiking");
+    const r = await t.say(MASON, "I'm free Nov 14-17, my max is $500, I like food");
+    for (const who of [r.jeff, r.mason]) {
+      expect(who.some((x) => /Jeffrey is free Dec 20-31/.test(x) && /Mason is free Nov 14-17/.test(x) && /no 2 nights stretch/i.test(x))).toBe(true);
+    }
+    await t.stop();
+  });
+
+  it('starts looking for options on its own once the last detail is in, and tells both people', async () => {
+    const t = await live();
+    await t.say(JEFF, "I'm leaving from Chapel Hill, 2 nights, I want to go to Asheville, I have a car, I'm free Nov 14-17, my max is $500, I like hiking");
+    expect((await t.state()).status).toBe('gathering');
+    const r = await t.say(MASON, "I'm free Nov 14-17, my max is $500, I like food");
+    expect(r.jeff.some((x) => /looking up options now/i.test(x))).toBe(true);
+    expect(r.mason.some((x) => /looking up options now/i.test(x))).toBe(true);
+    expect((await t.state()).revision).toBeGreaterThan(1);   // the search ran (the mock data has no Asheville trip, so it reports that)
+    await t.stop();
+  });
 });

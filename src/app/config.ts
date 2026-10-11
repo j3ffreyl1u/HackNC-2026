@@ -2,7 +2,8 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 export type ChatMode = 'mock' | 'photon';
-export type ResearchMode = 'mock' | 'gemini';
+/** `live` researches real options with Gemini + Google Search and prices them; `gemini` only builds a manual cost worksheet. */
+export type ResearchMode = 'mock' | 'gemini' | 'live';
 export type CalendarMode = 'manual' | 'google';
 export type FundingMode = 'disabled' | 'mock' | 'nessie';
 
@@ -47,7 +48,7 @@ export async function loadEnvironmentFile(path = '.env', target: NodeJS.ProcessE
 
 export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const chatMode = choice(env.CHAT_MODE, ['mock', 'photon'] as const, 'mock', 'CHAT_MODE');
-  const researchMode = choice(env.RESEARCH_MODE, ['mock', 'gemini'] as const, 'mock', 'RESEARCH_MODE');
+  const researchMode = choice(env.RESEARCH_MODE, ['mock', 'gemini', 'live'] as const, 'mock', 'RESEARCH_MODE');
   const calendarMode = choice(env.CALENDAR_MODE, ['manual', 'google'] as const, 'manual', 'CALENDAR_MODE');
   const fundingMode = choice(env.FUNDING_MODE, ['disabled', 'mock', 'nessie'] as const, 'disabled', 'FUNDING_MODE');
   const port = env.PORT === undefined ? 3000 : Number(env.PORT);
@@ -57,7 +58,7 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     required(env.SPECTRUM_PROJECT_ID, 'SPECTRUM_PROJECT_ID');
     required(env.SPECTRUM_PROJECT_SECRET, 'SPECTRUM_PROJECT_SECRET');
   }
-  if (researchMode === 'gemini') {
+  if (researchMode === 'gemini' || researchMode === 'live') {
     required(env.GEMINI_API_KEY, 'GEMINI_API_KEY');
   }
   if (calendarMode === 'google') {

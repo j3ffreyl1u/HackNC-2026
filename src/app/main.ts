@@ -6,6 +6,7 @@ import { createChatAdapter } from './conversation-adapter.js';
 import { createPlannerAdapter } from './planning-adapter.js';
 import { createApplicationRuntime } from './runtime.js';
 import { createResearchProvider } from '../research/provider.js';
+import { createGeminiProvider, geminiConfigFromEnv } from '../research/gemini.js';
 import { demoResearchFixtures as defaultFixtures } from './research-fixtures.js';
 import { LiveResearchDisplay, createLivePlanner } from './live-research.js';
 import { loadAppConfig, loadEnvironmentFile } from './config.js';
@@ -32,7 +33,9 @@ export async function startApp(): Promise<() => Promise<void>> {
     const stored = (await repository.loadTrip(enrollment.tripId))!;
     if (!stored.roster) await repository.commitEvent({ eventId: `roster-migration:${enrollment.tripId}`, expectedRevision: stored.revision, state: { ...stored, timeZone: trip.state.timeZone, roster: enrollment.participants.map(p => ({ memberId: p.memberId, displayName: p.displayName, consented: Boolean(p.consentedAt) })) }, messages: [] });
     const chat = await createChatAdapter(enrollment, trip.state.timeZone ?? 'America/New_York', config.chatMode);
-    const planner = display ? createLivePlanner(display, enrollment.groupSpaceId) : createPlannerAdapter(createResearchProvider({ mode: 'mock', fixtures: defaultFixtures }), enrollment.groupSpaceId);
+    const planner = display ? createLivePlanner(display, enrollment.groupSpaceId)
+      : config.researchMode === 'live' ? createPlannerAdapter(createResearchProvider({ mode: 'live', live: createGeminiProvider(geminiConfigFromEnv(process.env)!) }), enrollment.groupSpaceId)
+      : createPlannerAdapter(createResearchProvider({ mode: 'mock', fixtures: defaultFixtures }), enrollment.groupSpaceId);
     runtime = createApplicationRuntime({ repository, conversation: chat.conversation, planner, tripId: enrollment.tripId });
     await runtime.start();
     const port = await server.listen(config.port);

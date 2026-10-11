@@ -185,8 +185,21 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
         const final = planner.finalizeTurn(nextState, message.occurredAt);
         nextState = final.state;
         // In a one-on-one chat a shared question is asked of the person talking, not copied to everyone else's phone.
+        // A conflict (like dates that don't overlap) is different: everyone has to hear it to fix it, so it goes to all.
+        const conflicts = new Set(final.state.pendingQuestions.filter((q) => q.questionId.startsWith('conflict:')).map((q) => q.text));
         replies.push(...final.replies.map((reply, index) => makeMessage(tripId, `questions:${message.eventId}:${index}`,
-          message.visibility === 'private' && reply.audience.kind === 'group' ? { ...reply, audience: { kind: 'private', memberId: member.memberId } } : reply)));
+          message.visibility === 'private' && reply.audience.kind === 'group' && !conflicts.has(reply.text) ? { ...reply, audience: { kind: 'private', memberId: member.memberId } } : reply)));
+      }
+      // Once the last missing detail is in, start looking for options without waiting to be asked.
+      if (!researchRequested && nextState.status === 'gathering' && commands.some((c) => c.action.kind === 'update_constraint') && !(parsed.kind === 'commands' && parsed.clarificationQuestion)) {
+        const auto: TripCommand = { commandId: deterministicCommandId(tripId, message.eventId, 'auto_plan'), eventId: message.eventId, actorId: member.memberId, tripId, action: { kind: 'request_plans' } } as TripCommand;
+        let probe: ReturnType<PlannerAdapter['applyCommand']> | undefined;
+        try { probe = planner.applyCommand(nextState, auto, { now: message.occurredAt }); } catch { probe = undefined; }
+        if (probe && !probe.rejection && probe.researchRequested) {
+          nextState = probe.state;
+          researchRequested = true;
+          replies.push(makeMessage(tripId, `auto-plan:${message.eventId}`, { audience: { kind: 'group', spaceId: enrollment.groupSpaceId }, text: "I have what I need from everyone, so I'm looking up options now. Give me a minute." }));
+        }
       }
       if (parsed.kind === 'commands' && parsed.clarificationQuestion) {
         replies.push(makeMessage(tripId, `clarification:${message.eventId}`, {

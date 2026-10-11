@@ -25,6 +25,22 @@ function names(state: TripState, ids: readonly string[]): string {
   return `${list.slice(0, -1).join(', ')} and ${list.at(-1)}`;
 }
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** "Nov 14-17, Dec 20-31". An end that falls exactly on midnight is the day before; windows are shown in the trip's local time. */
+function formatWindows(windows: readonly { startAt: string; endAt: string }[]): string {
+  const local = (ms: number) => {
+    const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', month: 'numeric', day: 'numeric', hour: 'numeric', hourCycle: 'h23' }).formatToParts(ms).map((x) => [x.type, x.value]));
+    return { month: Number(p.month), day: Number(p.day), hour: Number(p.hour) };
+  };
+  return windows.map((w) => {
+    const start = local(Date.parse(w.startAt));
+    const endMs = Date.parse(w.endAt);
+    const end = local(local(endMs).hour === 0 ? endMs - 3_600_000 : endMs);
+    const s = `${MONTHS[start.month - 1]} ${start.day}`;
+    return start.month === end.month && start.day === end.day ? s : start.month === end.month ? `${s}-${end.day}` : `${s}-${MONTHS[end.month - 1]} ${end.day}`;
+  }).join(', ') || 'never';
+}
+
 const nightsText = (n: number) => `${n} night${n === 1 ? '' : 's'}`;
 
 interface Evaluation {
@@ -124,10 +140,11 @@ function evaluate(state: TripState): Evaluation {
     );
     if (windows.length === 0) {
       conflicts.push('dates');
+      const freeWhen = ids.map((id) => `${displayName(state, id)} is free ${formatWindows(effectiveAvailability(state, id) ?? [])}`);
       group(
         'dates',
         'conflict:dates',
-        `I can't find a ${nightsText(nights)} window that works for everyone. Could you each double-check your dates and tell me which of the dates you gave is right?`,
+        `${freeWhen.join(' and ')}, so there's no ${nightsText(nights)} stretch that works for everyone. Could either of you open up other dates?`,
       );
     }
   }
