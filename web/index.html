@@ -3,11 +3,12 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#dff7f3" />
+    <meta name="theme-color" content="#079ddd" />
     <title>Weekend, together</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
+    <div class="sky-bubbles" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
     <header class="topbar">
       <a class="brand" href="/" aria-label="Weekend, together home"><span class="brand-mark">✦</span> weekend, together</a>
       <span class="live-pill"><span class="pulse"></span> Group plan</span>
@@ -15,15 +16,34 @@
     <main>
       <section class="hero">
         <div class="hero-copy">
-          <p class="eyebrow">A little less planning alone</p>
-          <h1>Your weekend,<br /><span>taking shape.</span></h1>
-          <p class="lede">Shared plans, clear costs, and the sources behind each idea.</p>
+          <p class="eyebrow">Good friends. Fresh air. One shared plan.</p>
+          <h1>A little closer<br /><span>to the outdoors.</span></h1>
+          <p class="lede">Your next weekend starts in the chat. Find your shared plan, clear costs, and a little room to explore right here.</p>
+          <a class="aero-button" href="#trip">Explore your group’s plan <span aria-hidden="true">↗</span></a>
         </div>
-        <div class="hero-orb" aria-hidden="true"><span>↗</span></div>
+        <svg class="landscape" viewBox="0 0 1100 440" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+          <defs>
+            <linearGradient id="sky" x2="0" y2="1"><stop stop-color="#028fd5"/><stop offset="1" stop-color="#c4f9ff"/></linearGradient>
+            <linearGradient id="grass" x2="0" y2="1"><stop stop-color="#b1e643"/><stop offset="1" stop-color="#299746"/></linearGradient>
+            <linearGradient id="water" x2="0" y2="1"><stop stop-color="#77e8e2"/><stop offset="1" stop-color="#0589c0"/></linearGradient>
+            <radialGradient id="sun"><stop stop-color="white" stop-opacity=".95"/><stop offset="1" stop-color="white" stop-opacity="0"/></radialGradient>
+          </defs>
+          <path fill="url(#sky)" d="M0 0h1100v440H0z"/>
+          <circle cx="880" cy="83" r="150" fill="url(#sun)"/>
+          <g fill="white" opacity=".74"><ellipse cx="620" cy="91" rx="74" ry="18"/><ellipse cx="660" cy="74" rx="40" ry="28"/><ellipse cx="715" cy="93" rx="52" ry="17"/><ellipse cx="1020" cy="161" rx="94" ry="20"/><ellipse cx="982" cy="144" rx="40" ry="25"/></g>
+          <path fill="#74babe" d="m520 315 165-144 110 119 103-169 202 213v106H520z"/>
+          <path fill="#e5ffff" d="m650 202 35-31 41 44-37-13-13 16z m207-35 41-46 51 55-35-15-20 19z"/>
+          <path fill="#79c665" d="M0 342Q260 226 514 318T1100 279v161H0z"/>
+          <path fill="url(#grass)" d="M0 393Q300 285 560 353T1100 320v120H0z"/>
+          <path fill="url(#water)" d="M902 319q-236 25-163 61t-176 60h374q122-28-39-58t89-59z"/>
+          <g stroke="#d6ffff" opacity=".6"><path d="M781 365h85m-76 43h129m-272 24h196"/></g>
+          <g fill="#18744b"><path d="m1016 204-47 86h29l-41 55h121l-37-55h25z"/><path d="m1070 239-33 60h20l-29 40h85l-26-40h18z"/></g>
+        </svg>
+        <div class="hero-orb" aria-hidden="true"><span>✦</span></div>
       </section>
       <p id="status" class="status" role="status" aria-live="polite">Loading the latest plan…</p>
       <section id="trip" aria-live="polite"></section>
-      <footer>Estimates are planning aids, not bookings or guaranteed availability. Check current details with each source.</footer>
+      <footer><span class="footer-leaf" aria-hidden="true">❧</span> Made for weekends together.<br />Estimates are planning aids, not bookings or guaranteed availability. Check current details with each source.</footer>
     </main>
     <script type="module" src="/app.js"></script>
   </body>
