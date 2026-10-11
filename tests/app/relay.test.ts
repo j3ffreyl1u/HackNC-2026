@@ -62,6 +62,16 @@ describe('asking and telling through the bot', () => {
     await t.stop();
   });
 
+  it('one car is enough, and a budget in a message that also names the other person is still the sender\'s own', async () => {
+    const t = await live();
+    const first = await t.say(JEFF, "lets do a trip w mason. im in raleigh, budget around $350, free dec 5-7, i got a car");
+    expect(first.jeff.join(' ')).not.toMatch(/can only take a budget from the person/);
+    expect(first.jeff.join(' ')).toMatch(/your max is \$350/);
+    const second = await t.say(MASON, 'im comin from charlotte, no car tho');
+    expect([...second.jeff, ...second.mason].join(' ')).not.toMatch(/conflicting answers about whether you have a car/);
+    await t.stop();
+  });
+
   it('"ask Mason if he has a car" puts the question to Mason and tells the asker, then passes the answer back', async () => {
     const t = await live();
     await t.say(JEFF, START);

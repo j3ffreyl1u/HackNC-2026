@@ -169,7 +169,9 @@ export function createParser(deps: ConversationDependencies) {
         private_ = true;
         continue;
       }
-      if (v.field === 'budget' && mentionsOtherMember(text, msg.senderId)) {
+      // Only the part of the message that talks about the money counts: "let's plan with Mason, my budget is 350" is the sender's own.
+      const moneyClause = text.split(/[,;.!?\n]+/).find((c) => /\$|\bbudget\b|\bmax(?:imum)?\b|\bspend|\bafford|\d{3,}/i.test(c)) ?? text;
+      if (v.field === 'budget' && mentionsOtherMember(moneyClause, msg.senderId)) {
         // Nobody can set another member's budget, and a message that names someone else is ambiguous.
         asks.push("I can only take a budget from the person it's for, so I haven't noted that one. Ask them to text me their own, or tell me yours with \"my max is $X\".");
         private_ = true;

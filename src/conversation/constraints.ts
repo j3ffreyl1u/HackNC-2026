@@ -119,7 +119,9 @@ function extractSentence(s: string, reference: string, pending: ConstraintField 
     else push({ field: 'availability', value: windows });
   }
 
-  if ((m = /\b(\d{1,2}|one|two|three|four|five|six|seven)\s*[- ]?nights?\b/i.exec(s))) {
+  // "3 nights is too long for me" objects to the length; it does not say they want 3.
+  const objectsToLength = /\btoo\s+(?:long|short|many|much)\b|\b(?:can'?t|cannot|won'?t|don'?t want|do not want)\s+(?:do|make|stay|go for|handle)?\s*(?:\d{1,2}|one|two|three|four|five|six|seven)\s*[- ]?nights?\b/i.test(s);
+  if (!objectsToLength && (m = /\b(\d{1,2}|one|two|three|four|five|six|seven)\s*[- ]?nights?\b/i.exec(s))) {
     const n = /^\d/.test(m[1]!) ? Number(m[1]) : ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven'].indexOf(m[1]!.toLowerCase());
     if (n >= 1 && n <= 30) push({ field: 'duration', value: n });
   }
@@ -136,6 +138,8 @@ function extractSentence(s: string, reference: string, pending: ConstraintField 
   } else if ((m = /\b(?:go|going|head(?:ing)?|headed|drive|driving|travel(?:ing)?|trip)\s+to\s+(?:the\s+)?((?:[a-z]+\s+){0,2}(?:beach(?:es)?|coast|mountains?|lakes?|shore|countryside|woods))\b/i.exec(s)) && !QUESTION_START.test(s)) {
     push({ field: 'region', value: m[1]!.replace(/^the\s+/i, '') });
   } else if ((m = /\b(?:let'?s|lets|let us|we should|we could|i want to|we want to|i wanna|we wanna|how about|what about|i'?d like to|we'?d like to)\s+(?:go|head|drive|travel)\s+to\s+(?:the\s+)?([a-z][a-z.'-]{2,}(?:\s+[a-z][a-z.'-]{2,}){0,2})(?=[\s,.;!?]|$)/.exec(s)) && !QUESTION_START.test(s) && !NOT_DESTINATION.test(s) && !LOWER_NOT_PLACE.test(m[1]!)) {
+    push({ field: 'region', value: properCase(m[1]!) });
+  } else if ((m = /\b(?:wanna|want to|lets|let's|we should|we could|i want to|we want to)\s+go\s+(?!(?:to|for|on|out|there|back|with|home|somewhere|anywhere|ahead|now|early|soon|see|eat|get|do|have|try|play|swim|fish|camp|hike|over|up|down|along|together|first|later)\b)([a-z][a-z.'-]{2,}(?:\s+[a-z][a-z.'-]{2,}){0,2})(?=[\s,.;!?]|$)/i.exec(s)) && !/ing$/i.test(m[1]!.split(/\s+/)[0]!) && !QUESTION_START.test(s) && !NOT_DESTINATION.test(s) && !NOT_ORIGIN.test(m[1]!)) {
     push({ field: 'region', value: properCase(m[1]!) });
   } else if ((m = /\b(?:want|wanna|'d like|would like)\s+to\s+(?:visit|see)\s+((?:[A-Z][A-Za-z.'-]*)(?:\s+[A-Z][A-Za-z.'-]*){0,3})(?=[\s,.;!?]|$)/.exec(s)) && !QUESTION_START.test(s)) {
     visited = clean(m[1]!);

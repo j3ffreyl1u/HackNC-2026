@@ -24,3 +24,14 @@ describe('small talk after the trip is set', () => {
     expect(text(await ask('im in too') as never)).not.toMatch(/didn't quite catch/);
   });
 });
+
+describe('"wanna go <place>" without "to"', () => {
+  it('reads the place', async () => {
+    const { extractConstraints } = await import('../../src/conversation/constraints.js');
+    const region = (t: string) => extractConstraints(t, REF).map((e) => e.value).find((v) => v.field === 'region');
+    expect(region('im in raleigh, wanna go asheville, like 2 nights')).toEqual({ field: 'region', value: 'Asheville' });
+    expect(region('we should go hiking this weekend')).toBeUndefined();
+    expect(region('wanna go eat after')).toBeUndefined();
+    expect(region('lets go with the cheaper one')).toBeUndefined();
+  });
+});
