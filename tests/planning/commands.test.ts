@@ -63,9 +63,10 @@ describe('request_plans', () => {
     expect(later.replies.length).toBeGreaterThan(0);
     const text = later.replies.map((r) => r.text).join(' ');
     expect(text).toMatch(/still waiting on/i);
-    expect(text).toMatch(/Mason's budget/);
-    expect(text).toMatch(/Alex's dates/);
+    expect(text).toMatch(/everyone's budget/);
+    expect(text).toMatch(/everyone's dates/);
     expect(text).toMatch(/where you're leaving from/);
+    expect(text).not.toMatch(/Mason's/);
     expect(later.replies.every((r) => r.audience.kind === 'group' || r.audience.kind === 'private')).toBe(true);
   });
 
