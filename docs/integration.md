@@ -1,4 +1,4 @@
-﻿# C integration status - 2026-10-10
+# C integration status - 2026-10-10
 
 C composes A from origin/Jeffrey-agent/spectrum-loop and B from origin/Mason-planning/research. Their owned source/test files were imported without switching branches, overwriting existing peer paths, staging changes or changing the legacy finance module.
 
@@ -121,3 +121,11 @@ C added a GET-only Nessie reader, separate preview/execute sandbox simulator, re
 ## Final C funding/nature handoff checks
 
 Typecheck and build passed; 36 targeted tests passed (funding reader/service/simulator/guide/runtime plus HTTP/config/live-display fixtures). The funding runtime regression reopens SQLite and verifies a persisted near-budget notice is not re-enqueued. No live write, bank request or Photon listener was run. docs/devpost-draft.md contains submission copy and a two-minute storyboard; it is not a submitted entry or recorded video. Backup transcript: data/backup-combined-demo.txt, based on combined SHA 1da32c7, completed at revision 12 approved.
+
+## Combined-v3 rebased handoff
+
+C rebuilt the handoff on combined-v3 1da32c7, merged Mason d6c9958, and replayed only the two visual commits and funding commit. Conflicts in main/runtime were resolved by retaining all three research modes, A's acknowledgement ordering and the automatic readiness behavior, then adding C's funding dependency/context. Web commits replayed cleanly in order. This separate branch does not update shared main or combined-v3.
+
+The fund service now caches successful ledger reads for 30 seconds and coalesces simultaneous reads; failures are never cached or replaced with mock data. A report can therefore lag a newly posted sandbox transaction by up to 30 seconds. The revision/approval gate is checked before using the cached ledger. After a cap change and new approval, configure a fresh simulated account/revision; the old fixed NESSIE_PLAN_REVISION deliberately yields not_ready. Private reminder intents remain Jeffrey's.
+
+Rebased typecheck/build pass. Full Windows suite: 873 passed, 2 skipped, 1 failed. The failure is the legacy finance/store future-schema cleanup EBUSY and also reproduces on unchanged combined-v3 1da32c7. Both seed CLI tests pass once the isolated worktree has its local tsx package path. No live Nessie or Photon calls were made.
