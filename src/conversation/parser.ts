@@ -359,6 +359,22 @@ export function createParser(deps: ConversationDependencies) {
     // "nudge Mason", "ping Mason": the same as asking for options, which nudges whoever is still missing and tells the asker.
     const nudge = /^(?:(?:please|can you|could you|pls)\s+)*(?:nudge|ping|poke|text|message)\s+(\w+)\b/i.exec(plain);
     if (nudge && ctx.others?.some((o) => o.name.toLowerCase() === nudge[1]!.toLowerCase())) return one(msg, ctx, { kind: 'request_plans' });
+    // Paying into the simulated fund: "pay my share", "let me chip in $50", "cover Mason's share", "put in $60 for Jeffrey". The app asks for a yes before anything is added.
+    const lead = "(?:(?:please|pls|ok(?:ay)?|so)\\s+)*(?:(?:can|could|may|should|shall|would)\\s+(?:i|we)\\s+|let\\s*me\\s+|lemme\\s+|time\\s+to\\s+|(?:i|we)(?:'ll|\\s+will|'d like to|\\s+would like to|\\s+want to|\\s+wanna|\\s+should|\\s+can|\\s+gotta|\\s+need to|\\s+have to)?\\s+)?";
+    const tail = "(?:\\s+(?:now|please|pls|today|too|as well|also|real quick|right now))*[?!.]*$";
+    const share = "(?:my\\s+(?:share|part|portion|half)|\\$?\\s*(\\d{1,9})(?:\\s*(?:dollars|bucks|usd))?)";
+    const fundWord = "(?:\\s+(?:to|into|in)\\s+(?:the\\s+)?(?:fund|pot|trip(?:\\s+fund)?|kitty))?";
+    const payOther = new RegExp(`^${lead}(?:pay|cover|chip\\s+in\\s+for|put\\s+in\\s+for|contribute\\s+for)\\s+(?:for\\s+)?(\\w+?)(?:'s|s)?(?:\\s+(?:share|part|portion|half))?${tail}`, 'i').exec(plain);
+    const payOtherTo = payOther ? ctx.others?.find((o) => o.name.toLowerCase() === payOther[1]!.toLowerCase()) : undefined;
+    if (payOther && payOtherTo) return one(msg, ctx, { kind: 'fund_pay', forName: payOtherTo.name });
+    const payAmountFor = new RegExp(`^${lead}(?:pay|put\\s+in|chip\\s+in|send|add|cover|put)\\s+\\$?\\s*(\\d{1,9})(?:\\s*(?:dollars|bucks|usd))?\\s+(?:for|toward|towards)\\s+(\\w+?)(?:'s\\s+share)?${tail}`, 'i').exec(plain);
+    const payAmountTo = payAmountFor ? ctx.others?.find((o) => o.name.toLowerCase() === payAmountFor[2]!.toLowerCase()) : undefined;
+    if (payAmountFor && payAmountTo) return one(msg, ctx, { kind: 'fund_pay', dollars: Number(payAmountFor[1]), forName: payAmountTo.name });
+    const payMine = new RegExp(`^${lead}(?:pay(?:\\s+up)?|chip\\s+in|contribute|put\\s+in|send|add|cover)\\s+${share}${fundWord}${tail}`, 'i').exec(plain);
+    if (payMine) return one(msg, ctx, { kind: 'fund_pay', ...(payMine[1] ? { dollars: Number(payMine[1]) } : {}) });
+    if (new RegExp(`^${lead}(?:pay(?:\\s+up)?|contribute|chip\\s+in)${tail}`, 'i').test(plain)) return one(msg, ctx, { kind: 'fund_pay' });
+    if (/^how\s+(?:do|can|would|should)\s+(?:i|we)\s+(?:pay|chip in|contribute|put (?:money )?in|get my money in)\??$/i.test(plain)) return reply(msg, 'Just say "pay my share" and I\'ll add it to the simulated trip fund. You can also say "chip in $50" or "pay Mason\'s share".', 'how-to-pay', true);
+    if (/^(?:i(?:'ve| have)?\s+)?(?:already\s+)?paid(?:\s+(?:my\s+)?(?:share|part|up|already|it))?$/i.test(plain)) return reply(msg, 'I can only count money that goes into the trip fund. Say "pay my share" and I\'ll add it (simulated).', 'paid-elsewhere', true);
     if (FUND_REMIND.test(plain)) return one(msg, ctx, { kind: 'request_funding', topic: 'remind' });
     if (FUND_WRAP.test(plain)) return one(msg, ctx, { kind: 'request_funding', topic: 'wrap_up' });
     if (FUND_STATUS.test(plain)) return one(msg, ctx, { kind: 'request_funding', topic: 'status' });
