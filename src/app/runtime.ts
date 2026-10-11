@@ -480,7 +480,11 @@ async function conversationContext(repository: Repository, state: TripState, mes
       ...(state.status === 'awaiting_acceptance' && state.selectedCandidateId === candidateId && !state.acceptances.some(a => a.actorId === actorId && a.candidateId === candidateId && a.revision === revision) ? ['accept' as const] : []),
     ],
   })).filter((plan) => plan.actions.length > 0);
-  const confirmBasics = state.pendingQuestions.some((q) => q.questionId.startsWith('confirm_basics:') && q.memberId === actorId) ? sharedBasics(state) : [];
+  // Someone who has not weighed in on the shared basics can agree with a plain "yes" or "sounds good" whether or not the bot got to ask yet
+  // (a hello does not trigger the question), so the search is not left waiting on an answer nobody was asked for.
+  const basics = sharedBasics(state);
+  const unsigned = basics.length === 4 && !state.groupConstraints.some((c) => c.memberId === actorId);
+  const confirmBasics = unsigned || state.pendingQuestions.some((q) => q.questionId.startsWith('confirm_basics:') && q.memberId === actorId) ? basics : [];
   return {
     tripId: state.tripId,
     revision: state.revision,

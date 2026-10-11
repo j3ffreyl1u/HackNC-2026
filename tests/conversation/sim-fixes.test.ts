@@ -34,6 +34,14 @@ describe('places named in a list', () => {
   });
 });
 
+describe('generic places are where to go, not a liking', () => {
+  it.each([['I want to go to the beach', 'beach'], ['we are headed to the mountains', 'mountains'], ["let's drive to the coast", 'coast']])('"%s"', (text, place) => {
+    const v = values(text).map((e) => e.value);
+    expect(v).toContainEqual({ field: 'region', value: place });
+    expect(v.some((x) => x.field === 'preferences')).toBe(false);
+  });
+});
+
 describe('answers that were saved wrongly', () => {
   it('"mostly food" is food', () => {
     expect(values('mostly food', 'preferences').map((e) => e.value)).toEqual([{ field: 'preferences', value: ['food'] }]);

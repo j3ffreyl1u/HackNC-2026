@@ -103,6 +103,8 @@ function extractSentence(s: string, reference: string, pending: ConstraintField 
     push({ field: 'region', value: `within ${m![1]} hours by car`, maxTravelMinutes: Math.round(Number(m![1]) * 60) });
   } else if ((m = /\b(?:[Gg]o|[Tt]ravel|[Dd]rive|[Hh]ead|going|headed|heading|trip)\s+to\s+(?:the\s+)?((?:[A-Z][A-Za-z.'-]*)(?:\s+[A-Z][A-Za-z.'-]*){0,3})/.exec(s)) && !QUESTION_START.test(s)) {
     push({ field: 'region', value: clean(m[1]!).replace(/^the\s+/i, '') });
+  } else if ((m = /\b(?:go|going|head(?:ing)?|headed|drive|driving|travel(?:ing)?|trip)\s+to\s+(?:the\s+)?((?:[a-z]+\s+){0,2}(?:beach(?:es)?|coast|mountains?|lakes?|shore|countryside|woods))\b/i.exec(s)) && !QUESTION_START.test(s)) {
+    push({ field: 'region', value: m[1]!.replace(/^the\s+/i, '') });
   } else if ((m = /\b(?:want|wanna|'d like|would like)\s+to\s+(?:visit|see)\s+((?:[A-Z][A-Za-z.'-]*)(?:\s+[A-Z][A-Za-z.'-]*){0,3})(?=[\s,.;!?]|$)/.exec(s)) && !QUESTION_START.test(s)) {
     visited = clean(m[1]!);
     push({ field: 'region', value: visited });
