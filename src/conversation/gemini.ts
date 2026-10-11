@@ -1,7 +1,7 @@
 /**
  * Gemini intent model over REST (no SDK dependency): models/{model}:generateContent with JSON-schema
  * structured output. (The Interactions endpoint returned 404 live on 2026-10-10 and is not used.)
- * The response extractor stays tolerant of layout. See docs/conversation.md for live status.
+ * The response extractor stays tolerant of layout.
  *
  * Gemini only classifies language. Output is untrusted and goes through validateIntent();
  * it never authorizes or calculates anything.

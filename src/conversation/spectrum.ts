@@ -2,7 +2,7 @@
  * Spectrum (Photon) transport. Verified against spectrum-ts / @spectrum-ts/core /
  * @spectrum-ts/imessage 12.10.1 type definitions and docs.photon.codes pages
  * (messages, spaces-and-users, reactions-and-replies, providers/imessage), 2026-10-10.
- * NOT verified against a live line: no credentials were available. See docs/conversation.md.
+ * Exercised on real phones over a live Photon line during the hackathon.
  *
  * The SDK is described by the minimal structural types below, so this module needs no
  * compile-time dependency on spectrum-ts. C adds `spectrum-ts` to package.json; `loadSpectrumApp`

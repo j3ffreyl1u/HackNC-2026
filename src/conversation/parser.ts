@@ -916,7 +916,7 @@ export function createParser(deps: ConversationDependencies) {
 
   /**
    * A join attempt. The shared contracts have no `join_trip` action yet, so this is emitted only when the app opts
-   * in with `joinCodes: true` (see docs/conversation.md); the app must validate the code and record consent.
+   * in with `joinCodes: true` (off by default); the app must validate the code and record consent.
    */
   function joinCommand(msg: InboundMessage, code: string, providerUserId: string): ParseResult {
     const command = {
