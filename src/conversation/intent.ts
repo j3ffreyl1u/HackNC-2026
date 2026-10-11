@@ -10,9 +10,11 @@ export type ValidIntent =
   | { intent: 'yes' }
   | { intent: 'no' }
   | { intent: 'clarify' }
+  /** The language service did not answer (quota, outage, timeout). Not the same as "I couldn't tell what you meant". */
+  | { intent: 'unavailable' }
   | { intent: 'none' };
 
-const SIMPLE = new Set(['request_plans', 'request_funding', 'yes', 'no', 'none']);
+const SIMPLE = new Set(['request_plans', 'request_funding', 'yes', 'no', 'none', 'unavailable']);
 const str = (v: unknown, max: number): string | null => (typeof v === 'string' && v.trim() && v.trim().length <= max ? v.trim() : null);
 const list = (v: unknown): string[] | null => {
   if (!Array.isArray(v) || v.length > 10) return null;

@@ -38,6 +38,7 @@ const GUIDE = /^(?:guide|ask guide|\/guide)\s*[:\-]?\s+(.{3,500})$/is;
 const SELECT = new RegExp(`^(?:pick|choose|select|go with|vote(?: for)?|i vote(?: for)?)\\s+(?:option\\s+|plan\\s+)?${ID}(?:\\s+v(\\d+))?$`, 'i');
 const ACCEPT = new RegExp(`^accept\\s+${ID}\\s+v(\\d+)$`, 'i');
 
+const UNAVAILABLE = "Sorry, my language helper isn't answering right now, so I couldn't read that one. Try again in a minute, or use plain phrases like \"my max is $200\" or \"free Oct 17-19\".";
 const HELP = "Hmm, I didn't quite catch that. Could you say it another way? I can take your budget, free dates and what you're into, show trip options, or answer trip questions, like \"my max is $200\" or \"free Oct 17-19\".";
 
 const money = (cents: number) => `$${(cents / 100).toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
@@ -355,6 +356,11 @@ export function createParser(deps: ConversationDependencies) {
         return msg.visibility === 'private' || trip.mode === 'direct'
           ? reply(msg, HELP, 'help')
           : { kind: 'ignored', reason: 'not addressed to the assistant' };
+      case 'unavailable':
+        // Same rule as an unclear message: in a group, friends talking are none of our business even when the service is down.
+        return msg.visibility === 'private' || trip.mode === 'direct'
+          ? reply(msg, UNAVAILABLE, 'unavailable')
+          : { kind: 'ignored', reason: 'language service unavailable, group message' };
       case 'clarify':
         // In a group, an unclear message is usually just friends talking: stay quiet there.
         return msg.visibility === 'private' || trip.mode === 'direct'

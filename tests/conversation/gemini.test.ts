@@ -15,10 +15,21 @@ describe('gemini intent model', () => {
     expect(String(seen!.init.body)).not.toContain('SECRET');
     expect((seen!.init.headers as Record<string, string>)['x-goog-api-key']).toBe('SECRET');
   });
-  it('degrades to a clarification on HTTP errors, bad JSON, or no text', async () => {
-    for (const f of [(async () => new Response('no', { status: 500 })) as unknown as typeof fetch, ok({ output_text: 'not json' }), ok({}), (async () => { throw new Error('net'); }) as unknown as typeof fetch]) {
+  it('degrades to a clarification on bad JSON or no text', async () => {
+    for (const f of [ok({ output_text: 'not json' }), ok({})]) {
       const model = createGeminiIntentModel({ apiKey: 'k', model: 'm', fetchImpl: f });
       expect(validateIntent(await model.interpret(input)).intent).toBe('clarify');
+    }
+  });
+  it('says the service is unavailable, not that the message was unclear, on a quota error, a server error, a network error or a timeout', async () => {
+    for (const f of [
+      (async () => new Response('quota', { status: 429 })) as unknown as typeof fetch,
+      (async () => new Response('no', { status: 500 })) as unknown as typeof fetch,
+      (async () => { throw new Error('net'); }) as unknown as typeof fetch,
+      (async () => { throw new DOMException('timed out', 'TimeoutError'); }) as unknown as typeof fetch,
+    ]) {
+      const model = createGeminiIntentModel({ apiKey: 'k', model: 'm', fetchImpl: f });
+      expect(validateIntent(await model.interpret(input)).intent).toBe('unavailable');
     }
   });
   it('frames the message as data, names no budgets, and describes the trip intents', () => {

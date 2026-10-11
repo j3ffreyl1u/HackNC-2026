@@ -208,6 +208,23 @@ describe('requests, guide questions, and the model', () => {
     }
     expect(model.calls).toHaveLength(0);
   });
+  it('when the language service is down it says so plainly and invites a retry, instead of blaming the message', async () => {
+    const down = () => ({ intent: 'unavailable' });
+    const dm = setup({}, down, 'direct');
+    const r = await dm.service.parseInbound(msg({ text: 'could we maybe do something around the end of November', visibility: 'private' }));
+    expect(r.kind).toBe('reply');
+    const said = text(r);
+    expect(said).toMatch(/isn't answering|not answering|can't reach/i);
+    expect(said).toMatch(/try again|send (?:it|that) again/i);
+    expect(said).not.toMatch(/didn't (?:quite )?catch|say it another way/i);
+    expect(said).not.toMatch(/[—–]/);
+    // In a group chat, friends talking are none of our business even when the service is down.
+    const group = setup({}, down, 'group');
+    expect((await group.service.parseInbound(msg({ text: 'ha that sounds fun' }))).kind).toBe('ignored');
+    // Plain phrases the rules understand never need the service at all.
+    const plain = await dm.service.parseInbound(msg({ text: 'my max is $200', visibility: 'private' }));
+    expect(updates(plain)[0]).toMatchObject({ field: 'budget', value: 20000 });
+  });
   it('does not mistake ordinary chat for a fund request', async () => {
     const { service } = setup();
     for (const t of ["how's the weather", 'who owes the most gas money lol', 'remind me to bring a jacket', 'we should wrap up the dinner plans']) {
