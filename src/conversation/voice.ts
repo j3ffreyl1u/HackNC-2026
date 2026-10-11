@@ -22,10 +22,10 @@ const STYLE = [
   'Return only the rewritten message text.',
 ].join('\n');
 
-/** Messages that carry money, links, instructions to copy exactly, or structure are never reworded. */
+/** Messages with links, tokens, lists or several lines are never reworded. A message with a dollar amount may be, but only if the exact amount survives. */
 export function shouldPolish(text: string): boolean {
   if (text.length < 8 || text.length > 260) return false;
-  if (/[$]|https?:|\{\{|•|\n/.test(text)) return false;
+  if (/https?:|\{\{|•|\n/.test(text)) return false;
   return true;
 }
 
@@ -33,9 +33,10 @@ export function shouldPolish(text: string): boolean {
 function mustKeep(original: string): string[] {
   const numbers = original.match(/\d+/g) ?? [];
   const quoted = original.match(/"[^"]+"/g) ?? [];
+  const money = original.match(/\$\s?\d+(?:,\d{3})*(?:\.\d+)?/g) ?? [];
   // Capitalized words in the middle of a sentence are names and places.
   const names = (original.match(/(?<=[a-z,] )[A-Z][A-Za-z.']+/g) ?? []).map((n) => n.replace(/[.']+$/, ''));
-  return [...new Set([...numbers, ...quoted, ...names])];
+  return [...new Set([...numbers, ...quoted, ...money, ...names])];
 }
 
 /** The rewrite if it is safe to send, otherwise undefined. */
@@ -45,7 +46,10 @@ export function acceptPolished(original: string, candidate: string | undefined |
   if (text === '' || text === original) return undefined;
   if (text.length > Math.min(320, Math.round(original.length * 1.4) + 30)) return undefined;
   if (/[—–]/.test(text) || (text.match(/!/g) ?? []).length > 1) return undefined;
-  if (/[$]|https?:|\{\{/.test(text)) return undefined;
+  if (/https?:|\{\{/.test(text)) return undefined;
+  // Dollar amounts: only the ones in the original, written exactly the same way.
+  const moneyIn = new Set(original.match(/\$\s?\d+(?:,\d{3})*(?:\.\d+)?/g) ?? []);
+  if ((text.match(/\$\s?\d+(?:,\d{3})*(?:\.\d+)?/g) ?? []).some((m) => !moneyIn.has(m)) || (text.includes('$') && moneyIn.size === 0)) return undefined;
   if (/\n\s*\n/.test(text)) return undefined;
   if (!/[.?!)"']$/.test(text)) return undefined; // a message that stops mid-sentence is a cut-off one
   const asks = (s: string) => s.trim().endsWith('?');

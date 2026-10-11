@@ -6,7 +6,6 @@ const reply = (text: string) => async () => new Response(JSON.stringify({ candid
 describe('what may be reworded', () => {
   it.each(['Got it: leaving from Chapel Hill. Tell me if I got anything wrong.', 'Where are you all leaving from?', 'Great, 3 nights it is.'])('plain chat "%s" may be', (t) => expect(shouldPolish(t)).toBe(true));
   it.each([
-    'Got it: your max is $250 (just between us). Tell me if I got anything wrong.',
     'The full plan is here: https://example.com',
     'Option 1: Blue Ridge\nNov 14-16 · about $130-$381 each',
     'ok',
@@ -51,12 +50,13 @@ describe('the Gemini voice', () => {
     expect(await failing.polish('Where are you all leaving from?')).toBe('Where are you all leaving from?');
     expect(errors).toHaveLength(1);
   });
-  it('never even calls the model for a message with money in it', async () => {
-    let calls = 0;
-    const counting = createGeminiVoice({ apiKey: 'k', model: 'm', fetchImpl: (async () => { calls += 1; return reply('x')(); }) as never });
+  it('may reword a private message with a dollar amount, but only if the exact amount survives', async () => {
     const text = 'Got it: your max is $250 (just between us). Tell me if I got anything wrong.';
-    expect(await counting.polish(text)).toBe(text);
-    expect(calls).toBe(0);
+    expect(await voice('Your max is $250, between us. Shout if that is off.').polish(text)).toBe('Your max is $250, between us. Shout if that is off.');
+    expect(await voice('Your max is $205, between us. Shout if that is off.').polish(text)).toBe(text);      // changed the amount
+    expect(await voice('Your max is $250 or $300, between us. Shout if that is off.').polish(text)).toBe(text); // invented an amount
+    expect(await voice('Your max is 250, between us. Shout if that is off.').polish(text)).toBe(text);        // dropped the dollar sign
+    expect(await voice('Got it, between us. Shout if that is off.').polish(text)).toBe(text);                  // lost the amount
   });
 });
 
