@@ -592,6 +592,15 @@ export function createParser(deps: ConversationDependencies) {
     if ((m = ACCEPT.exec(plain))) return bindPlan(msg, ctx, 'accept', m[1]!, Number(m[2]));
     if ((m = SELECT.exec(plain)) && !(m[1]!.toLowerCase() in CHOICE_NUMBER)) return bindPlan(msg, ctx, 'select', m[1]!, m[2] ? Number(m[2]) : undefined);
     if (actionable(ctx, 'select').length === 0 && ctx.status === 'awaiting_acceptance' && PICK_WORDS.exec(plain) && !(BARE_CHOICE.test(plain) && (ctx.pendingQuestion || ctx.pendingConfirmation))) return alreadyPicked(msg, ctx);
+    // "i like the cabin", "we'll take the state park": the words name exactly one of the options on offer.
+    const byName = /^(?:(?:ok(?:ay)?|yeah|yes|so|alright)[,\s]+)?(?:(?:i|we)(?:'ll|'d| will| would)?\s+)?(?:(?:like|love|want)\s+the\s+|(?:prefer|go with|take|pick|choose|vote for|let'?s do|lets do|let'?s go with)\s+(?:the\s+)?)([a-z][a-z' -]{2,40}?)(?:\s+(?:one|option|plan|trip|weekend|please|then|better|best))*$/i.exec(plain);
+    if (byName && actionable(ctx, 'select').length > 1) {
+      const wordsOf = (t: string): string[] => t.toLowerCase().match(/[a-z']{3,}/g) ?? [];
+      const asked = wordsOf(byName[1]!).filter((w) => !['the', 'and', 'for', 'one', 'option', 'plan', 'trip', 'weekend', 'that', 'this', 'with', 'one'].includes(w));
+      const options = actionable(ctx, 'select');
+      const hits = asked.length === 0 ? [] : options.map((a, i) => ({ i, words: wordsOf(a.description) })).filter((o) => asked.every((w) => o.words.includes(w)));
+      if (hits.length === 1) return bindPlan(msg, ctx, 'select', String(hits[0]!.i + 1), undefined);
+    }
     if (actionable(ctx, 'select').length > 0 && (m = PICK_WORDS.exec(plain))) {
       // A bare "2" while we are waiting on an answer ("how many nights?") is that answer, not a pick.
       if (BARE_CHOICE.test(plain) && (ctx.pendingQuestion || ctx.pendingConfirmation)) return null;

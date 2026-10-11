@@ -35,3 +35,16 @@ describe('"wanna go <place>" without "to"', () => {
     expect(region('lets go with the cheaper one')).toBeUndefined();
   });
 });
+
+describe('picking an option by its name', () => {
+  it('"i like the cabin" picks the one option with that word, not a liking', async () => {
+    const { setup, msg } = await import('./helpers.js');
+    const options = [
+      { kind: 'select', candidateId: 'c1', revision: 1, description: 'State park and small-town weekend' },
+      { kind: 'select', candidateId: 'c2', revision: 1, description: 'Mountain cabin weekend' },
+    ];
+    const r = await setup({ actionable: options } as never, undefined, 'direct').service.parseInbound(msg({ text: 'i like the cabin', visibility: 'private', spaceId: 'dm-mason' }));
+    expect(JSON.stringify(r)).toMatch(/select_candidate/);
+    expect(JSON.stringify(r)).toMatch(/c2/);
+  });
+});
