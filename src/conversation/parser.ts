@@ -36,6 +36,22 @@ const FUND_REMIND = /^(?:(?:please|pls|can you|could you)\s+)*(?:(?:remind|nudge
 const FUND_WRAP = /^(?:(?:please|pls|can you|could you)\s+)*(?:wrap\s*-?\s*up|settle\s+up|close\s+out)(?:\s+(?:the\s+)?(?:trip|fund|money|pot|trip fund))?$|^(?:who gets what back|how much (?:do (?:i|we) get|(?:will|would) (?:i|we) get) back|what do we get back)$/i;
 const GUIDE = /^(?:guide|ask guide|\/guide)\s*[:\-]?\s+(.{3,500})$/is;
 const SELECT = new RegExp(`^(?:pick|choose|select|go with|vote(?: for)?|i vote(?: for)?)\\s+(?:option\\s+|plan\\s+)?${ID}(?:\\s+v(\\d+))?$`, 'i');
+/**
+ * Picking by words: "option 1", "the first one", "1", "let's do option 2", "I'll take the second one", "I like option 2 better".
+ * Only ever a pick (a preference); agreeing to pay is a separate, explicit step.
+ */
+const CHOICE = '(first|1st|second|2nd|third|3rd|fourth|4th|one|two|three|four|[1-9])';
+const PICK_WORDS = new RegExp(
+  `^(?:(?:ok(?:ay)?|yeah|yes|so|alright)[,\\s]+)?` +
+  `(?:(?:let'?s|lets)\\s+(?:do|go with|take|pick|choose)\\s+|(?:i|we)(?:'ll|'d| will| would)?\\s+(?:do|go with|take|pick|choose|want|like|prefer|vote(?: for)?|say)\\s+|(?:i|we)\\s+(?:vote|say)\\s+|(?:go with|take|pick|choose|vote(?: for)?)\\s+)?` +
+  `(?:the\\s+)?(?:option\\s+|plan\\s+|trip\\s+|number\\s+|no\\.?\\s*|#\\s*)?${CHOICE}(?:\\s+(?:one|option|plan|trip))?(?:\\s+(?:please|for me|for us|then|better|i think|sounds good|looks good))*$`,
+  'i',
+);
+const CHOICE_NUMBER: Record<string, number> = { first: 1, '1st': 1, one: 1, second: 2, '2nd': 2, two: 2, third: 3, '3rd': 3, three: 3, fourth: 4, '4th': 4, four: 4 };
+const BARE_CHOICE = /^(?:[1-9]|one|two|three|four)$/i;
+/** iMessage on Android and SMS show a tapback as text: Liked "…". Only the positive ones count. */
+const TEXT_TAPBACK = /^(Liked|Loved|Disliked|Laughed at|Emphasized|Questioned)\s+["“](.*)["”]$/s;
+const THUMBS = /^(?:👍[\u{1F3FB}-\u{1F3FF}]?|❤️?|✅)$/u;
 const ACCEPT = new RegExp(`^accept\\s+${ID}\\s+v(\\d+)$`, 'i');
 
 const UNAVAILABLE = "Sorry, my language helper isn't answering right now, so I couldn't read that one. Try again in a minute, or use plain phrases like \"my max is $200\" or \"free Oct 17-19\".";
@@ -229,8 +245,11 @@ export function createParser(deps: ConversationDependencies) {
       return reply(msg, "No worries, I haven't recorded an acceptance. What would you want to change: the dates, the budget, or the activities?", 'no');
     }
     if (list.length > 1) {
-      const lines = list.map((a, i) => `${i + 1}. ${a.description} (${a.candidateId} v${a.revision})`);
-      return reply(msg, `I've got more than one thing waiting on you:\n${lines.join('\n')}\nWhich one do you mean? Reply "accept <id> v<version>" or "pick <id>".`, 'which');
+      const lines = list.map((a, i) => `${i + 1}. ${a.description}`);
+      const allPicks = list.every((a) => a.kind === 'select');
+      return reply(msg, allPicks
+        ? `I've got more than one plan waiting on you:\n${lines.join('\n')}\nWhich one do you mean? Say ${list.map((_, i) => `"option ${i + 1}"`).join(' or ')}.`
+        : `I've got more than one thing waiting on you:\n${lines.join('\n')}\nWhich one do you mean? Tell me the number and whether you're picking it or saying you're in.`, 'which');
     }
     const only = list[0]!;
     return one(msg, ctx, only.kind === 'accept'
@@ -297,6 +316,12 @@ export function createParser(deps: ConversationDependencies) {
     if ((m = GUIDE.exec(text.trim()))) return one(msg, ctx, { kind: 'ask_guide', question: m[1]!.trim() });
     if ((m = ACCEPT.exec(plain))) return bindPlan(msg, ctx, 'accept', m[1]!, Number(m[2]));
     if ((m = SELECT.exec(plain))) return bindPlan(msg, ctx, 'select', m[1]!, m[2] ? Number(m[2]) : undefined);
+    if (actionable(ctx, 'select').length > 0 && (m = PICK_WORDS.exec(plain))) {
+      // A bare "2" while we are waiting on an answer ("how many nights?") is that answer, not a pick.
+      if (BARE_CHOICE.test(plain) && (ctx.pendingQuestion || ctx.pendingConfirmation)) return null;
+      const word = m[1]!.toLowerCase();
+      return bindPlan(msg, ctx, 'select', String(CHOICE_NUMBER[word] ?? Number(word)), undefined);
+    }
     return null;
   }
 
@@ -305,6 +330,26 @@ export function createParser(deps: ConversationDependencies) {
     const text = (msg.text ?? '').replace(/[\u2018\u2019\u02BC]/g, "'").replace(/[\u201C\u201D]/g, '"').trim();
     if (!text) return { kind: 'ignored', reason: 'empty message' };
     const ctx = override ?? (await deps.getConversationContext(msg.senderId, msg.spaceId));
+
+    // A tapback shown as text. It points at one of the messages we sent, so it only counts when that message is a plan
+    // this person can act on; anything else about it is none of our business and never gets an "I didn't catch that".
+    const tap = TEXT_TAPBACK.exec(text);
+    if (tap) {
+      if (tap[1] !== 'Liked' && tap[1] !== 'Loved') return { kind: 'ignored', reason: 'only positive reactions are recorded' };
+      const quote = tap[2]!.toLowerCase();
+      const picks = actionable(ctx, 'select');
+      const byName = ctx.actionable.find((a) => a.description !== '' && quote.includes(a.description.toLowerCase()));
+      const numbered = /^option\s+(\d{1,2})\s*:/i.exec(tap[2]!.trim());
+      const target = byName ?? (numbered ? picks[Number(numbered[1]) - 1] : undefined);
+      if (!target) return { kind: 'ignored', reason: 'reaction target is not a proposal' };
+      return one(msg, ctx, target.kind === 'accept'
+        ? { kind: 'accept_candidate', candidateId: target.candidateId, revision: target.revision }
+        : { kind: 'select_candidate', candidateId: target.candidateId, revision: target.revision });
+    }
+    if (THUMBS.test(text)) {
+      if (ctx.actionable.length === 0 && !ctx.pendingConfirmation) return { kind: 'ignored', reason: 'nothing to approve' };
+      return resolveAnswer(msg, ctx, true);
+    }
 
     const ex = explicit(msg, ctx, text);
     if (ex) return ex;
@@ -376,6 +421,7 @@ export function createParser(deps: ConversationDependencies) {
       ...(ctx.pendingQuestion ? { pendingField: ctx.pendingQuestion.field } : {}),
       hasActionable: ctx.actionable.length > 0,
       facts,
+      ...(actionable(ctx, 'select').length > 0 ? { options: actionable(ctx, 'select').map((a) => a.description) } : {}),
     });
     const intent = validateIntent(raw);
     const hedged = HEDGE.test(handoffText);
@@ -414,6 +460,15 @@ export function createParser(deps: ConversationDependencies) {
           : { kind: 'ignored', reason: 'unclear group message' };
       case 'constraints':
         return fromConstraints(msg, ctx, text, intent.items.map((value) => ({ value, hedged })));
+      case 'pick': {
+        // The model only says which numbered option was meant; whether that is allowed is decided here.
+        if (actionable(ctx, 'select').length === 0) {
+          return msg.visibility === 'private' || trip.mode === 'direct'
+            ? reply(msg, `There's nothing to pick yet. Say "show us some options" when you're ready.`, 'nothing-to-pick')
+            : { kind: 'ignored', reason: 'nothing to pick' };
+        }
+        return bindPlan(msg, ctx, 'select', String(intent.choice), undefined);
+      }
       case 'request_plans':
         return one(msg, ctx, { kind: 'request_plans' });
       case 'ask_guide':

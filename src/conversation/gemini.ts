@@ -13,7 +13,8 @@ const BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 export const INTENT_SCHEMA = {
   type: 'object',
   properties: {
-    intent: { type: 'string', enum: ['constraints', 'request_plans', 'ask_guide', 'request_funding', 'yes', 'no', 'clarify', 'chat', 'none'] },
+    intent: { type: 'string', enum: ['constraints', 'request_plans', 'ask_guide', 'request_funding', 'yes', 'no', 'pick', 'clarify', 'chat', 'none'] },
+    choice: { type: 'integer', description: 'For intent=pick: the 1-based number of the option the sender chose from the options on offer.' },
     items: {
       type: 'array',
       description: 'For intent=constraints: facts the SENDER states about THEMSELVES or the trip.',
@@ -57,6 +58,7 @@ export function buildPrompt(input: IntentInput): string {
     `Today: ${input.occurredAt.slice(0, 10)} (${input.timezone}). Channel: ${input.visibility}.`,
     `Group members: ${input.memberNames.join(', ') || 'unknown'}.`,
     input.alreadyKnown?.length ? `Already captured from this message (do NOT report these again): ${input.alreadyKnown.join(', ')}. The text below is only the part that was not understood.` : 'Interpret the whole message.',
+    input.options?.length ? `Options on offer to pick from: ${input.options.map((o, i) => `${i + 1}. ${JSON.stringify(o)}`).join('; ')}.` : 'No options are on offer to pick from.',
     `Last question asked of the sender: ${input.pendingField ?? 'none'}. ${input.hasActionable ? 'A plan awaits their answer.' : ''}`,
     input.facts?.length ? `Facts (the only things you may use for a chat answer): ${input.facts.join(' | ')}` : 'Facts: none.',
     `Message: ${JSON.stringify(input.text)}`,

@@ -6,6 +6,8 @@ export type ValidIntent =
   | { intent: 'constraints'; items: ConstraintValue[] }
   | { intent: 'request_plans' }
   | { intent: 'ask_guide'; question: string }
+  /** Chooses one of the numbered options on offer (1-based). Whether that is allowed is decided by the parser. */
+  | { intent: 'pick'; choice: number }
   | { intent: 'request_funding' }
   | { intent: 'yes' }
   | { intent: 'no' }
@@ -89,6 +91,10 @@ export function validateIntent(raw: unknown): ValidIntent {
   if (kind === 'chat') {
     const a = str(o.answer, 400);
     return a ? { intent: 'chat', answer: a } : { intent: 'clarify' };
+  }
+  if (kind === 'pick') {
+    const n = typeof o.choice === 'string' && /^\d+$/.test(o.choice.trim()) ? Number(o.choice) : o.choice;
+    return typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= 9 ? { intent: 'pick', choice: n } : { intent: 'clarify' };
   }
   if (kind === 'ask_guide') {
     const q = str(o.question, 500);

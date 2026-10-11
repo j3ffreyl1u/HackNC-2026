@@ -35,6 +35,8 @@ export interface IntentInput {
   memberNames: string[];
   pendingField?: ConstraintField;
   hasActionable: boolean;
+  /** Names of the options on offer to pick from, in order (public titles only). */
+  options?: string[];
   /** Fields the rules already captured from this message. The model should report only OTHER things. */
   alreadyKnown?: ConstraintField[];
   /** Plain facts the model may use to answer a casual question (who has said what, what is still missing). Never a budget. */
