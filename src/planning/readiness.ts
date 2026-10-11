@@ -166,9 +166,12 @@ function evaluate(state: TripState): Evaluation {
   // -- everyone gets a say in the shared basics: anyone who has not weighed in is asked whether the plan so far works
   if (origin.status === 'agreed' && duration.status === 'agreed' && region.status === 'agreed' && transport.status === 'agreed' && travelSorted(transport.value as ConstraintValues['transport'])) {
     const authors = new Set([...origin.authors, ...duration.authors, ...region.authors, ...transport.authors]);
-    for (const id of ids.filter((x) => !authors.has(x))) {
+    // Anyone who did not weigh in on EVERY shared basic is asked about the plan so far, so splitting the questions between two
+    // people never leaves one of them with a destination (or a car, or a length) they were never asked about.
+    const weighedInOnAll = (x: string) => [origin, duration, region, transport].every((r) => r.status === 'agreed' && r.authors.includes(x));
+    for (const id of ids.filter((x) => !weighedInOnAll(x))) {
       missing.push(`confirm_basics:${id}`);
-      privately('basics', id, `confirm_basics:${id}`, `Hey ${displayName(state, id)}! ${names(state, [...authors])} started planning a trip with you. So far the idea is ${describeBasics(origin.value, duration.value, region.value)}, ${(transport.value as ConstraintValues['transport']).mode === 'plane' ? 'flying' : 'with a car'}.${authorsSaid(state, [...authors])} I share who's free when with the group to find a weekend; budgets stay private. Does that work for you, or would you change anything?`);
+      privately('basics', id, `confirm_basics:${id}`, `Hey ${displayName(state, id)}! ${authors.has(id) ? "Here's the plan so far, including what the others added." : `${names(state, [...authors])} started planning a trip with you.`} So far the idea is ${describeBasics(origin.value, duration.value, region.value)}, ${(transport.value as ConstraintValues['transport']).mode === 'plane' ? 'flying' : 'with a car'}.${authorsSaid(state, [...authors].filter((a) => a !== id))} I share who's free when with the group to find a weekend; budgets stay private. Does that work for you, or would you change anything?`);
     }
   }
 

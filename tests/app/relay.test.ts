@@ -512,3 +512,26 @@ describe('the demo script', () => {
     await t.stop();
   });
 });
+
+describe('splitting the shared questions between two people', () => {
+  it('whoever did not answer every shared question is asked about the plan so far before the search', async () => {
+    const t = await live();
+    await t.say(JEFF, "let's plan a trip");
+    await t.say(MASON, 'leaving from chapel hill');
+    await t.say(MASON, 'driving');
+    await t.say(MASON, 'i have a car');
+    await t.say(MASON, '3 nights');
+    const where = await t.say(JEFF, 'Washington DC');
+    expect(where.jeff.join(' ')).toMatch(/So far the idea is/);   // Jeffrey only gave the place, so he is asked about the rest
+    const next = await t.say(MASON, 'free nov 14-16');               // Mason is asked about the place when he next texts (never out of the blue)
+    expect(next.mason.join(' ')).toMatch(/So far the idea is.*Washington/i);
+    await t.stop();
+  });
+  it("'10 hours' and 'I am fine driving for 10 hours maximum' answer how far they will drive", async () => {
+    const { extractConstraints } = await import('../../src/conversation/constraints.js');
+    const region = (t: string, pending?: 'region') => extractConstraints(t, '2026-10-11T12:00:00Z', pending).map((e) => e.value).find((v) => v.field === 'region');
+    expect(region("I'm fine driving for 10 hours maximum")).toMatchObject({ field: 'region', maxTravelMinutes: 600 });
+    expect(region('10 hours', 'region')).toMatchObject({ field: 'region', maxTravelMinutes: 600 });
+    expect(region('4 hours tops')).toMatchObject({ field: 'region', maxTravelMinutes: 240 });
+  });
+});

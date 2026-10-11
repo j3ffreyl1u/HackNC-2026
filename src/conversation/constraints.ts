@@ -145,7 +145,11 @@ function extractSentence(s: string, reference: string, pending: ConstraintField 
   else if (!pending && (m = /^from\s+([A-Za-z][A-Za-z '-]{1,30}?)\s*[.!,]*\s*$/i.exec(s.trim())) && !NOT_ORIGIN.test(m[1]!) && !NOT_A_PLACE_ANSWER.test(m[1]!)) {
     push({ field: 'origin', value: properCase(m[1]!.trim()) });
   }
-  if ((m = /\b(?:within|no more than|at most|up to|under|max(?:imum)? of)\s+(?:about\s+|around\s+)?(\d{1,2}(?:\.\d)?)\s*(?:hours?|hrs?|h)\b(?!\s*of\s+(?:sleep|work))/i.exec(s)) ?? (m = /\b(\d{1,2}(?:\.\d)?)\s*[- ]?(?:hours?|hrs?)\s+(?:drive|away|radius)\b/i.exec(s))) {
+  if ((m = /\b(?:within|no more than|at most|up to|under|max(?:imum)? of)\s+(?:about\s+|around\s+)?(\d{1,2}(?:\.\d)?)\s*(?:hours?|hrs?|h)\b(?!\s*of\s+(?:sleep|work))/i.exec(s)) ?? (m = /\b(\d{1,2}(?:\.\d)?)\s*[- ]?(?:hours?|hrs?)\s+(?:drive|away|radius)\b/i.exec(s))
+    // "I'm fine driving for 10 hours maximum", "driving up to 4 hours", "10 hours tops", or a bare "10 hours" to the drive question.
+    ?? (m = /\bdriv(?:e|ing)\s+(?:for\s+)?(?:about\s+|around\s+|up\s+to\s+|at\s+most\s+)?(\d{1,2}(?:\.\d)?)\s*(?:hours?|hrs?)\b/i.exec(s))
+    ?? (m = /\b(\d{1,2}(?:\.\d)?)\s*(?:hours?|hrs?)\s*(?:max(?:imum)?|tops|at\s+most|or\s+less)\b/i.exec(s))
+    ?? (pending === 'region' ? (m = /^(?:about\s+|around\s+|like\s+|up\s+to\s+)?(\d{1,2}(?:\.\d)?)\s*(?:hours?|hrs?)[.!\s]*$/i.exec(s.trim())) : null)) {
     push({ field: 'region', value: `within ${m![1]} hours by car`, maxTravelMinutes: Math.round(Number(m![1]) * 60) });
   } else if ((m = /\b(?:[Gg]o|[Tt]ravel|[Dd]rive|[Hh]ead|going|headed|heading|trip)\s+to\s+(?:the\s+)?((?:[A-Z][A-Za-z.'-]*)(?:\s+[A-Z][A-Za-z.'-]*){0,3})/.exec(s)) && !QUESTION_START.test(s) && !NOT_DESTINATION.test(s)) {
     push({ field: 'region', value: clean(m[1]!).replace(/^the\s+/i, '') });
