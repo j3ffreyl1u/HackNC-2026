@@ -160,4 +160,79 @@ describe('asking and telling through the bot', () => {
     expect((await t.say(JEFF, 'tell Mason')).jeff.join(' ')).toMatch(/What would you like me to tell Mason\?/);
     await t.stop();
   });
+
+  // Mason has not texted the bot at all in these: the person asking is the one who wants him contacted.
+  it('"Message Mason to start planning it" (from a real phone) texts Mason an invitation', async () => {
+    const t = await live();
+    await t.say(JEFF, 'I want to plan a trip');
+    const r = await t.say(JEFF, 'Message Mason to start planning it');
+    expect(r.mason.join(' ')).toMatch(/Hey Mason! Jeffrey wants to plan a trip with you and asked me to get you started/);
+    expect(r.jeff.join(' ')).toMatch(/Done, I messaged Mason/);
+    await t.stop();
+  });
+
+  it.each([
+    'text Mason to join', 'have Mason start planning', 'get Mason to join the planning', 'invite Mason', 'bring Mason in', 'Could you tell Mason to start planning?',
+    'ask Mason to join us', 'please message Mason to get started', 'add Mason', 'message Mason and tell him to start planning', 'text Mason and ask him to join',
+  ])('"%s" invites Mason', async (text) => {
+    const t = await live();
+    await t.say(JEFF, 'I want to plan a trip');
+    const r = await t.say(JEFF, text);
+    expect(r.mason.join(' ')).toMatch(/wants to plan a trip with you and asked me to get you started/);
+    await t.stop();
+  });
+
+  it.each([
+    ['Message Mason that I have a car', /Jeffrey wanted you to know: "I have a car"/],
+    ["text Mason I'll be a few minutes late", /Jeffrey wanted you to know: "I'll be a few minutes late"/],
+    ['send Mason a message saying we leave at 8', /Jeffrey wanted you to know: "we leave at 8"/],
+    ['message Mason: bring snacks', /Jeffrey wanted you to know: "bring snacks"/],
+    ['DM Mason hi there', /Jeffrey wanted you to know: "hi there"/],
+  ])('"%s" sends Mason the message', async (text, expected) => {
+    const t = await live();
+    await t.say(JEFF, 'I want to plan a trip');
+    const r = await t.say(JEFF, text as string);
+    expect(r.mason.join(' ')).toMatch(expected as RegExp);
+    expect(r.jeff.join(' ')).toMatch(/Done, I let Mason know/);
+    await t.stop();
+  });
+
+  it.each([
+    ['message Mason to bring snacks', /Jeffrey would like you to bring snacks\./],
+    ['remind Mason to pack a charger', /Jeffrey would like you to pack a charger\./],
+    ['tell Mason to look at the options', /Jeffrey would like you to look at the options\./],
+  ])('"%s" passes on a request', async (text, expected) => {
+    const t = await live();
+    await t.say(JEFF, 'I want to plan a trip');
+    const r = await t.say(JEFF, text as string);
+    expect(r.mason.join(' ')).toMatch(expected as RegExp);
+    await t.stop();
+  });
+
+  it('"message Mason and ask if he has a car" is a question that gets answered back', async () => {
+    const t = await live();
+    await t.say(JEFF, START);
+    await t.say(MASON, "I'm free Nov 14-17");
+    const r = await t.say(JEFF, 'message Mason and ask if he has a car');
+    expect(r.mason.join(' ')).toMatch(/Jeffrey was wondering: Does anyone have a car/);
+    expect((await t.say(MASON, 'yes')).jeff.join(' ')).toMatch(/Mason has a car\./);
+    await t.stop();
+  });
+
+  it('messaging someone who is not in the trip, or with nothing to say, is answered', async () => {
+    const t = await live();
+    await t.say(JEFF, START);
+    expect((await t.say(JEFF, 'message Bob hi')).jeff.join(' ')).toMatch(/not sure who Bob is.*Mason/);
+    expect((await t.say(JEFF, 'message Mason')).jeff.join(' ')).toMatch(/What would you like me to tell Mason\?/);
+    await t.stop();
+  });
+
+  it('ordinary sentences that start with these words are not relayed', async () => {
+    const t = await live();
+    await t.say(JEFF, START);
+    for (const text of ['have fun', 'add a hike', 'text me the plan', 'remind me later']) {
+      expect((await t.say(JEFF, text)).mason, text).toEqual([]);
+    }
+    await t.stop();
+  });
 });

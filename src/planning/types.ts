@@ -222,7 +222,7 @@ export type TripAction =
   | { kind: 'accept_candidate'; candidateId: string; revision: number }
   | { kind: 'ask_guide'; question: string }
   | { kind: 'request_funding'; topic?: 'status' | 'remind' | 'wrap_up' }
-  | { kind: 'relay'; to: string; mode: 'ask' | 'tell'; text: string; field?: string }
+  | { kind: 'relay'; to: string; mode: 'ask' | 'tell' | 'request' | 'invite'; text: string; field?: string }
   | { kind: 'fund_pay'; dollars?: number; forName?: string };
 
 export interface TripCommand {

@@ -276,11 +276,16 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
           if (!target) { replies.push(toAsker(`I'm not sure who ${relay.to} is.`)); continue; }
           const asker = member.displayName;
           const wording: Record<string, string> = { availability: Q.dates, budget: Q.budget, preferences: Q.preferences, origin: Q.origin, duration: Q.duration, region: Q.region, transport: Q.transport };
-          const body = relay.mode === 'ask'
-            ? (relay.field && wording[relay.field] ? `Hey ${target.displayName}! ${asker} was wondering: ${wording[relay.field]}` : `Hey ${target.displayName}! ${asker} would like to know: ${toSecondPerson(relay.text, asker)}${/[?.!]$/.test(relay.text) ? '' : '?'}`)
-            : `Hey ${target.displayName}! ${asker} wanted you to know: "${relay.text}"`;
+          const toTarget = target.displayName;
+          const body = relay.mode === 'invite'
+            ? `Hey ${toTarget}! ${asker} wants to plan a trip with you and asked me to get you started. Tell me where you'd be leaving from, which dates work for you, and what you like, whenever you're ready.`
+            : relay.mode === 'request'
+              ? `Hey ${toTarget}! ${asker} would like you to ${toSecondPerson(relay.text, asker)}.`
+              : relay.mode === 'ask'
+                ? (relay.field && wording[relay.field] ? `Hey ${toTarget}! ${asker} was wondering: ${wording[relay.field]}` : `Hey ${toTarget}! ${asker} would like to know: ${toSecondPerson(relay.text, asker)}${/[?.!]$/.test(relay.text) ? '' : '?'}`)
+                : `Hey ${toTarget}! ${asker} wanted you to know: "${relay.text}"`;
           replies.push(makeMessage(tripId, `relay:${message.eventId}:${index}`, { audience: { kind: 'private', memberId: target.memberId }, text: body }));
-          replies.push(toAsker(relay.mode === 'ask' ? `Done, I asked ${target.displayName}. I'll tell you what they say.` : `Done, I let ${target.displayName} know.`));
+          replies.push(toAsker(relay.mode === 'ask' ? `Done, I asked ${target.displayName}. I'll tell you what they say.` : relay.mode === 'invite' ? `Done, I messaged ${target.displayName} to get them started.` : `Done, I let ${target.displayName} know.`));
           if (relay.mode === 'ask') relayAsks.set(target.memberId, { askerId: member.memberId, ...(relay.field ? { field: relay.field } : {}) });
           continue;
         }

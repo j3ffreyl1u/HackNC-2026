@@ -319,42 +319,69 @@ export function createParser(deps: ConversationDependencies) {
     if (/^(?:please\s+)?(?:start over|restart|reset|begin again|start again|from scratch)(?:\s+please)?$/i.test(plain)) {
       return reply(msg, 'I can\'t clear a trip yet, but you can change anything by telling me, like "leaving from Raleigh", "3 nights" or "my max is $300".', 'start-over', true);
     }
-    // "ask Mason if he has a car", "tell Mason I have a car": the bot carries the message to that person, since it speaks for everyone.
-    const relay = /^(?:(?:please|can you|could you|would you|pls)\s+)*(ask|tell|let)\s+(\w+)\s+(.+)$/i.exec(plain);
-    const relayTo = relay ? ctx.others?.find((o) => o.name.toLowerCase() === relay[2]!.toLowerCase()) : undefined;
+    // The bot speaks for everyone: "ask Mason if he has a car", "tell Mason I have a car", "message Mason to start planning it",
+    // "text Mason that we leave at 8", "have Mason join", "invite Mason", "send Mason a message saying hi".
+    const relay = /^(?:(?:please|can you|could you|would you|pls)\s+)*(ask|tell|let|message|text|dm|notify|remind|have|get|invite|bring|add|send)\s+(\w+)(?:\s*[:,]\s*|\s+)?(.*)$/i.exec(plain);
     const talkativeChat = msg.visibility === 'private' || trip.mode === 'direct';
-    if (relay && !relayTo && talkativeChat && ctx.others?.length && !/^(?:me|us|everyone|everybody|them|him|her|the|a|an|my|our|you|it|this|that|all)$/i.test(relay[2]!)) {
+    const relayTo = relay ? ctx.others?.find((o) => o.name.toLowerCase() === relay[2]!.toLowerCase()) : undefined;
+    if (relay && !relayTo && talkativeChat && ctx.others?.length && /^(?:ask|tell|message|text|dm|notify|invite)$/i.test(relay[1]!) && !/^(?:me|us|everyone|everybody|them|him|her|the|a|an|my|our|you|it|this|that|all)$/i.test(relay[2]!)) {
       return reply(msg, `I'm not sure who ${relay[2]} is. I can pass things to ${list(ctx.others.map((o) => o.name))}.`, 'relay-unknown', true);
     }
-    const bareRelay = /^(?:(?:please|can you|could you|pls)\s+)*(ask|tell)\s+(\w+)$/i.exec(plain);
-    const bareTo = bareRelay ? ctx.others?.find((o) => o.name.toLowerCase() === bareRelay[2]!.toLowerCase()) : undefined;
-    if (bareRelay && bareTo && talkativeChat) return reply(msg, `What would you like me to ${bareRelay[1]!.toLowerCase()} ${bareTo.name}?`, 'relay-what', true);
-    if (relay && relayTo && (msg.visibility === 'private' || trip.mode === 'direct')) {
-      const verb = relay[1]!.toLowerCase();
-      let rest = relay[3]!.trim();
-      // "tell Mason to hurry up" is a nudge to answer, not a message to pass on.
+    if (relay && relayTo && talkativeChat) {
+      let verb = relay[1]!.toLowerCase();
+      let rest = (relay[3] ?? '').trim().replace(/[.!\s]+$/, '');
+      const invite = { kind: 'relay' as const, to: relayTo.name, mode: 'invite' as const, text: 'join the planning' };
+      const inviteWords = /\b(?:start|begin|join|get started|jump in|come on board|help)\b|\bplan(?:ning)?\b/i;
+      // Asking someone to hurry or reply is a nudge, not a message to pass on.
       if (/^(?:to\s+)?(?:hurry|reply|respond|answer|check|get back|text me|message me|finish|speed)\b|\bhurry up\b/i.test(rest)) return one(msg, ctx, { kind: 'request_plans' });
+      if (/^(?:invite|bring|add)$/.test(verb)) {
+        if (rest === '' || /^(?:in|to (?:the )?(?:trip|planning|plan|chat|group)|along|on board)$/i.test(rest)) return one(msg, ctx, invite);
+      } else if (verb === 'send') {
+        const sent = /^an?\s+(?:message|text|note|dm)\s*(?:saying|that|to say|:)?\s*(.*)$/i.exec(rest);
+        if (sent) { verb = 'tell'; rest = (sent[1] ?? '').trim(); } else verb = '';
+      } else if (/^(?:have|get|remind)$/.test(verb)) {
+        if (verb !== 'remind' && inviteWords.test(rest) && !/^to\s+\S/i.test(rest)) return one(msg, ctx, invite);   // "have Mason start planning"
+        if (!/^to\s+\S/i.test(rest)) verb = '';
+      }
       if (verb === 'let') { if (!/^know\b/i.test(rest)) return reply(msg, `I can pass things to ${relayTo.name}. Try "tell ${relayTo.name} I have a car" or "ask ${relayTo.name} if they have a car".`, 'relay-help', true); rest = rest.replace(/^know\s+/i, ''); }
-      rest = rest.replace(/^that\s+/i, '').replace(/[.!\s]+$/, '');
+      if (verb) {
+        // "message Mason and ask if he has a car" is a question.
+        const andAsk = /^and\s+ask\s+(?:him|her|them)?\s*(.*)$/i.exec(rest);
+        if (andAsk) { verb = 'ask'; rest = andAsk[1]!.trim(); }
+        // "message Mason and tell him to start planning" / "text Mason and let him know I have a car"
+        const andTell = /^and\s+(?:tell|let|say to)\s+(?:him|her|them)\s*(?:know\s+)?(.*)$/i.exec(rest);
+        if (andTell) { verb = 'tell'; rest = andTell[1]!.trim(); }
+        rest = rest.replace(/^(?:and\s+)?(?:say(?:ing)?|that|:)\s*/i, '').replace(/^that\s+/i, '');
+        // "message Mason to start planning it": a request to them, or an invitation to join in.
+        const requested = /^to\s+(\S.*)$/i.exec(rest);
+        if (requested && verb !== 'ask' && verb !== 'tell') {
+          const action = requested[1]!.trim();
+          if (inviteWords.test(action)) return one(msg, ctx, invite);
+          rest = action; verb = 'request';
+        } else if (requested && (verb === 'ask' || verb === 'tell') && inviteWords.test(requested[1]!)) {
+          return one(msg, ctx, invite);
+        } else if (requested && verb === 'tell') { rest = requested[1]!.trim(); verb = 'request'; }
+        else if (/^(?:message|text|dm|notify)$/.test(verb)) verb = rest ? 'tell' : '';
+      }
       // Budgets stay between each person and the bot, so they are never asked for or passed along.
-      if (/\$\s*\d|\bbudgets?\b|\bmax(?:imum)?\b|\bafford|\bspend(?:ing)?\b|\bdollars?\b|\bbucks\b/i.test(rest)) return reply(msg, 'Budgets stay private between each person and me, so I can\'t ask for or pass one along.', 'relay-money', true);
-      if (rest.length >= 2) {
-        const mode = verb === 'ask' ? 'ask' : 'tell';
-        const fieldOf = (t: string): string | undefined =>
-          /\b(?:car|vehicle|ride|truck|drive)\b/i.test(t) || (/\b(?:has|have|got)\s+(?:one|it)\b/i.test(t) && (ctx.pendingQuestion?.field === 'transport' || ctx.openFields?.includes('transport'))) ? 'transport'
-          : /\b(?:budget|spend|afford|max(?:imum)?)\b/i.test(t) ? 'budget'
-          : /\b(?:dates?|free|available|availability|when)\b/i.test(t) ? 'availability'
-          : /\b(?:likes?|prefer\w*|into|wants? to do|interests?)\b/i.test(t) ? 'preferences'
-          : /\b(?:nights?|how long|how many days)\b/i.test(t) ? 'duration'
-          : /\b(?:leav\w*|start\w* from|depart\w*)\b/i.test(t) ? 'origin'
-          : /\b(?:where|destination|place|go to)\b/i.test(t) ? 'region'
+      if (verb && /\$\s*\d|\bbudgets?\b|\bmax(?:imum)?\b|\bafford|\bspend(?:ing)?\b|\bdollars?\b|\bbucks\b/i.test(rest)) return reply(msg, 'Budgets stay private between each person and me, so I can\'t ask for or pass one along.', 'relay-money', true);
+      if (verb && rest.length >= 2) {
+        const mode: 'ask' | 'tell' | 'request' = verb === 'ask' ? 'ask' : verb === 'request' ? 'request' : 'tell';
+        const fieldOf = (text: string): string | undefined =>
+          /\b(?:car|vehicle|ride|truck|drive)\b/i.test(text) || (/\b(?:has|have|got)\s+(?:one|it)\b/i.test(text) && (ctx.pendingQuestion?.field === 'transport' || ctx.openFields?.includes('transport'))) ? 'transport'
+          : /\b(?:dates?|free|available|availability|when)\b/i.test(text) ? 'availability'
+          : /\b(?:likes?|prefer\w*|into|wants? to do|interests?)\b/i.test(text) ? 'preferences'
+          : /\b(?:nights?|how long|how many days)\b/i.test(text) ? 'duration'
+          : /\b(?:leav\w*|start\w* from|depart\w*)\b/i.test(text) ? 'origin'
+          : /\b(?:where|destination|place|go to)\b/i.test(text) ? 'region'
           : undefined;
         const field = mode === 'ask' ? fieldOf(rest) : undefined;
-        const action = { kind: 'relay' as const, to: relayTo.name, mode: mode as 'ask' | 'tell', text: rest, ...(field ? { field } : {}) };
+        const action = { kind: 'relay' as const, to: relayTo.name, mode, text: rest, ...(field ? { field } : {}) };
         // What the sender says about themselves while telling ("I have a car") also counts for them.
         const own = mode === 'tell' ? extractWithCoverage(rest, localReference(msg.occurredAt, trip.timezone)).items : [];
         return own.length ? fromConstraints(msg, ctx, rest, own, [action]) : one(msg, ctx, action);
       }
+      if (/^(?:ask|tell|message|text|dm|notify)$/.test(relay[1]!.toLowerCase()) && rest === '') return reply(msg, `What would you like me to ${/^ask$/i.test(relay[1]!) ? 'ask' : 'tell'} ${relayTo.name}?`, 'relay-what', true);
     }
     // "nudge Mason", "ping Mason": the same as asking for options, which nudges whoever is still missing and tells the asker.
     const nudge = /^(?:(?:please|can you|could you|pls)\s+)*(?:nudge|ping|poke|text|message)\s+(\w+)\b/i.exec(plain);
