@@ -124,7 +124,12 @@ function tripDates(c: TripCandidate, timeZone: string): string {
   return s.m === e.m ? `${MONTHS[s.m - 1]} ${s.d}-${e.d}` : `${MONTHS[s.m - 1]} ${s.d}-${MONTHS[e.m - 1]} ${e.d}`;
 }
 
-const clip = (text: string, max: number) => (text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`);
+const clip = (text: string, max: number) => {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max - 1);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > max * 0.6 ? cut.slice(0, space) : cut).replace(/[\s,;:]+$/, '')}…`;   // end on a whole word
+};
 
 /** Two short lines per option. The itinerary, costs and sources live on the trip page, not in the chat. */
 function describeOption(c: TripCandidate, rank: number, timeZone: string): string {

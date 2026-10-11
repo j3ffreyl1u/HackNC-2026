@@ -122,7 +122,7 @@ describe('select and accept', () => {
     const result = run(proposed(), 'mason', { kind: 'select_candidate', candidateId: 'b', revision: 1 });
     expect(result.state).toMatchObject({ status: 'awaiting_acceptance', selectedCandidateId: 'b', acceptances: [] });
     expect(result.replies[0]).toMatchObject({ audience: { kind: 'group' }, proposalRef: { candidateId: 'b', revision: 1 } });
-    expect(result.replies[0].text).toMatch(/each of you needs to accept/);
+    expect(result.replies[0].text).toMatch(/each of you needs to say "I'm in"/);
   });
 
   it('approval needs every participant; silence is not acceptance', () => {

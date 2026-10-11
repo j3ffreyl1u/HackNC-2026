@@ -174,9 +174,11 @@ export function createPlannerAdapter(provider: ResearchProvider, spaceId: string
     generateCandidates: async state => (await planTrip(toPlanningState(state), provider, { timeZone: state.timeZone })).candidates.map(fromCandidate),
     async research(state) {
       const result = await planTrip(toPlanningState(state), provider, { timeZone: state.timeZone });
-      const nature = result.candidates.map(c => {
+      // In chat, say something about the outdoors or driving only when there is something real to say; the page shows the rest.
+      const nature = result.candidates.flatMap(c => {
         const summary = outdoorSummary(c);
-        return `${summary.title}: ${summary.outdoorStops.length ? `Outdoor stops: ${summary.outdoorStops.map(s => s.label).join(', ')}.` : 'No outdoor stops identified in the plan tags.'} ${formatMinutes(summary.drivingMinutes)} of recorded driving${summary.unknownLegs ? `; ${summary.unknownLegs} legs have no drive estimate` : ''}. Drive home is not counted.${c.dataSource === 'fixture' ? ' Synthetic demo data.' : ''}`;
+        if (!summary.outdoorStops.length && !summary.drivingMinutes) return [];
+        return [`${summary.title}: ${summary.outdoorStops.length ? `outdoor stops: ${summary.outdoorStops.map(s => s.label).join(', ')}` : `${formatMinutes(summary.drivingMinutes)} of driving`}.`];
       });
       const comparison = drivingComparison(result.candidates);
       if (comparison) nature.push(comparison.text);

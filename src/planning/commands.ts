@@ -208,7 +208,7 @@ function selectCandidate(state: TripState, command: TripCommand, candidateId: st
   }
   const acceptances = state.selectedCandidateId === candidateId ? state.acceptances : [];
   const next: TripState = { ...state, selectedCandidateId: candidateId, status: 'awaiting_acceptance', acceptances };
-  const text = `${candidate.title} is up for approval (revision ${state.revision}). Choosing an option isn't agreeing to pay: each of you needs to accept it.`;
+  const text = `${candidate.title} is the pick. Choosing it isn't agreeing to pay, so each of you needs to say "I'm in" to lock it in.`;
   return { state: next, replies: [{ audience: GROUP, text, proposalRef: { candidateId, revision: state.revision } }], researchRequested: false };
 }
 
@@ -232,8 +232,8 @@ function acceptCandidate(state: TripState, command: TripCommand, candidateId: st
   const next: TripState = { ...state, acceptances, status: approved ? 'approved' : 'awaiting_acceptance' };
   if (already) return { state: next, replies: [], researchRequested: false };
   const text = approved
-    ? `Everyone has accepted ${candidate.title} (revision ${revision}). It's approved. Prices are estimates and nothing is booked.`
-    : `${displayName(state, command.actorId)} accepted ${candidate.title}. Still waiting on ${waiting.map((id) => displayName(state, id)).join(', ')}.`;
+    ? `Everyone's in, so ${candidate.title} is approved. Prices are estimates and nothing is booked yet.`
+    : `${displayName(state, command.actorId)} is in. Still waiting on ${waiting.map((id) => displayName(state, id)).join(', ')}.`;
   return { state: next, replies: [{ audience: GROUP, text, proposalRef: { candidateId, revision } }], researchRequested: false };
 }
 

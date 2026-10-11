@@ -94,7 +94,12 @@ function effectOf(state: TripState, candidate: TripCandidate | undefined, option
   };
 }
 
-const clip = (text: string, max: number) => (text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`);
+const clip = (text: string, max: number) => {
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max - 1);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > max * 0.6 ? cut.slice(0, space) : cut).replace(/[\s,;:]+$/, '')}…`;   // end on a whole word
+};
 
 /** "kayak.com" from a source's title or link, never the long redirect address. */
 function siteName(e: SourceEvidence): string {
