@@ -1,0 +1,105 @@
+import { describe, expect, it, vi } from 'vitest';
+import { EvidenceStore } from '../../src/research/grounding.js';
+import { createSerpApiHotels, lodgingFromHotels, serpApiConfigFromEnv, stayDates } from '../../src/research/serpapi.js';
+import { priceOption } from '../../src/research/pricing.js';
+import type { ResearchOption, ResearchRequest } from '../../src/research/types.js';
+
+// The response shape below follows SerpApi's public Google Hotels documentation (engine=google_hotels). It is NOT a
+// capture from a live call: before relying on it, run one real search and compare (see docs/research.md).
+const response = {
+  search_metadata: { status: 'Success', google_hotels_url: 'https://www.google.com/travel/search?q=hotels+in+boone' },
+  properties: [
+    { type: 'hotel', name: 'Mountain View Inn', link: 'https://mountainviewinn.example/book', rate_per_night: { lowest: '$110', extracted_lowest: 110 }, overall_rating: 4.4 },
+    { type: 'hotel', name: 'Downtown Lodge', link: 'https://downtownlodge.example', rate_per_night: { lowest: '$145', extracted_lowest: 145 } },
+    { type: 'hotel', name: 'Ridge Resort', rate_per_night: { lowest: '$320', extracted_lowest: 320 } },
+    { type: 'hotel', name: 'Ad Without Price' },
+    { type: 'hotel', name: 'Cheap Typo', rate_per_night: { lowest: '$3', extracted_lowest: 3 } },
+  ],
+};
+const ok = (body: unknown) => vi.fn(async () => new Response(JSON.stringify(body), { status: 200 })) as unknown as typeof fetch;
+const query = { query: 'Hotels in Boone, NC', checkIn: '2026-11-14', checkOut: '2026-11-16', adults: 2 };
+
+describe('createSerpApiHotels', () => {
+  it('asks Google Hotels for the stay and keeps only listings with a believable nightly price', async () => {
+    const fetchImpl = ok(response);
+    const found = await createSerpApiHotels({ apiKey: 'k', fetch: fetchImpl })(query);
+    const url = new URL((fetchImpl as unknown as ReturnType<typeof vi.fn>).mock.calls[0]![0] as string);
+    expect(url.origin + url.pathname).toBe('https://serpapi.com/search.json');
+    expect(Object.fromEntries(url.searchParams)).toMatchObject({ engine: 'google_hotels', q: 'Hotels in Boone, NC', check_in_date: '2026-11-14', check_out_date: '2026-11-16', adults: '2', currency: 'USD', api_key: 'k' });
+    expect(found?.hotels.map((h) => [h.name, h.nightlyCents])).toEqual([['Mountain View Inn', 11000], ['Downtown Lodge', 14500], ['Ridge Resort', 32000]]);
+    expect(found?.searchUrl).toBe('https://www.google.com/travel/search?q=hotels+in+boone');
+  });
+  it('returns undefined when nothing is priced', async () => {
+    expect(await createSerpApiHotels({ apiKey: 'k', fetch: ok({ properties: [{ name: 'x' }] }) })(query)).toBeUndefined();
+    expect(await createSerpApiHotels({ apiKey: 'k', fetch: ok({ error: 'Google hasn\'t returned any results for this query.' }) })(query)).toBeUndefined();
+  });
+  it('throws without ever including the key in the message, for HTTP errors, network errors and API errors', async () => {
+    const bad = [
+      vi.fn(async () => new Response('{"error":"Invalid API key. Your API key should be here: https://serpapi.com/manage-api-key"}', { status: 401 })),
+      vi.fn(async () => { throw new Error('connect failed https://serpapi.com/search.json?api_key=SECRET123'); }),
+      ok({ error: 'Your account has run out of searches.' }),
+    ];
+    for (const f of bad) {
+      const err = await createSerpApiHotels({ apiKey: 'SECRET123', fetch: f as unknown as typeof fetch })(query).catch((e) => e as Error);
+      expect(err).toBeInstanceOf(Error);
+      expect(String((err as Error).message)).not.toMatch(/SECRET123/);
+      expect(String((err as Error).stack ?? '')).not.toMatch(/SECRET123/);
+    }
+  });
+});
+
+describe('lodgingFromHotels', () => {
+  const found = { hotels: [{ name: 'Mountain View Inn', nightlyCents: 11000, url: 'https://mountainviewinn.example/book' }, { name: 'Downtown Lodge', nightlyCents: 14500, url: 'https://downtownlodge.example' }, { name: 'Ridge Resort', nightlyCents: 32000 }], searchUrl: 'https://www.google.com/travel/search?q=x' };
+  it('does the arithmetic in code: rooms for the group x nights, cheapest low, upper-middle high with taxes, every figure cited', () => {
+    const store = new EvidenceStore('2026-10-11T00:00:00.000Z');
+    const priced = lodgingFromHotels(found, 2, 3, '2026-11-14', store)!;
+    expect(priced.lowCents).toBe(11000 * 2 * 2);                       // 2 rooms for 3 people, 2 nights, cheapest listing
+    expect(priced.highCents).toBeGreaterThan(14500 * 2 * 2);           // at least the middle listing, plus taxes and fees
+    expect(priced.highCents).toBeLessThanOrEqual(Math.ceil(32000 * 2 * 2 * 1.15));
+    expect(priced.evidenceIds.length).toBeGreaterThan(0);
+    const ev = store.evidence.find((e) => e.evidenceId === priced.evidenceIds[0])!;
+    expect(ev.url).toMatch(/^https:\/\//);
+    expect(ev.claim).toMatch(/Mountain View Inn.*\$110.*Nov 14/);
+    expect(ev.uncertainty).toMatch(/not a booking|availability/i);
+  });
+  it('is unknown (undefined) with no listings, never zero', () => {
+    expect(lodgingFromHotels({ hotels: [] }, 2, 3, '2026-11-14', new EvidenceStore('x'))).toBeUndefined();
+  });
+});
+
+describe('stayDates', () => {
+  it('uses the first night of the group\'s window and the trip length', () => {
+    expect(stayDates({ startAt: '2026-11-14T05:00:00Z', endAt: '2026-11-18T05:00:00Z' }, 2, 'America/New_York')).toEqual({ checkIn: '2026-11-14', checkOut: '2026-11-16' });
+  });
+  it('refuses dates in the past', () => {
+    expect(stayDates({ startAt: '2020-01-01T00:00:00Z', endAt: '2020-01-05T00:00:00Z' }, 2, 'America/New_York', '2026-10-11')).toBeUndefined();
+  });
+});
+
+describe('priceOption with a live hotel lookup', () => {
+  const option: ResearchOption = { optionId: 'o', name: 'Boone weekend', region: 'NC mountains', tags: [], stops: [{ label: 'Hike', location: 'Boone, NC', tags: ['hiking'], hours: 3, evidenceIds: [] }], costs: [], perPersonCosts: [], evidenceIds: [], tradeoffs: [] };
+  const request: ResearchRequest = { purpose: 'plan', revision: 1, interests: [], nights: 2, groupSize: 3, window: { startAt: '2026-11-14T05:00:00Z', endAt: '2026-11-18T05:00:00Z' } };
+  const noAnswer = async (_prompt: string) => ({ output: [] });
+  it('uses the sourced hotel price and does not spend a Gemini lodging search', async () => {
+    const ask = vi.fn(noAnswer);
+    const store = new EvidenceStore('2026-10-11T00:00:00.000Z');
+    const out = await priceOption(option, request, ask, store, { typicalCosts: true, lookupLodging: async (o, r, s) => lodgingFromHotels({ hotels: [{ name: 'Mountain View Inn', nightlyCents: 11000, url: 'https://mountainviewinn.example' }] }, r.nights!, r.groupSize!, '2026-11-14', s) });
+    const lodging = out.option.costs.find((c) => c.costId === 'lodging')!;
+    expect(lodging.priceStatus).toBe('estimate'); expect(lodging.evidenceIds.length).toBeGreaterThan(0); expect(lodging.label).not.toMatch(/typical/i);
+    expect(ask.mock.calls.map((c) => String(c[0])).join('\n')).not.toMatch(/places to stay/);
+  });
+  it('falls back to Gemini, then to a labelled typical cost, when the hotel lookup finds nothing or fails', async () => {
+    for (const lookupLodging of [async () => undefined, async () => { throw new Error('quota'); }]) {
+      const out = await priceOption(option, request, vi.fn(noAnswer), new EvidenceStore('x'), { typicalCosts: true, lookupLodging });
+      expect(out.option.costs.find((c) => c.costId === 'lodging')!.label).toMatch(/typical cost/);
+    }
+  });
+});
+
+describe('serpApiConfigFromEnv', () => {
+  it('is off without a key and on with one', () => {
+    expect(serpApiConfigFromEnv({})).toBeUndefined();
+    expect(serpApiConfigFromEnv({ SERPAPI_API_KEY: '  ' })).toBeUndefined();
+    expect(serpApiConfigFromEnv({ SERPAPI_API_KEY: 'abc' })).toEqual({ apiKey: 'abc' });
+  });
+});
