@@ -3,8 +3,9 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#079ddd" />
+    <meta name="theme-color" content="#086c8c" />
     <title>Weekend, together</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='10' fill='%23086c8c'/%3E%3Cpath d='M5 18Q11 10 16 18T27 18' fill='none' stroke='%23baffeb' stroke-width='3'/%3E%3C/svg%3E" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
@@ -15,16 +16,17 @@
     </header>
     <main>
       <nav id="view-nav" class="view-nav" aria-label="Trip information">
-        <a id="view-overview" href="#overview" aria-current="page"><span aria-hidden="true">◈</span> Overview</a>
-        <a id="view-itinerary" href="#itinerary"><span aria-hidden="true">↝</span> Itinerary</a>
-        <a id="view-costs" href="#costs"><span aria-hidden="true">$</span> Costs</a>
-        <a id="view-sources" href="#sources"><span aria-hidden="true">◎</span> Sources</a>
+        <a id="view-overview" href="#overview" aria-current="page"><svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg> Overview</a>
+        <a id="view-itinerary" href="#itinerary"><svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="5" r="2"/><circle cx="18" cy="19" r="2"/><path d="M6 7v6a3 3 0 0 0 3 3h6a3 3 0 0 0 0-6H9M18 16v1"/></svg> Itinerary</a>
+        <a id="view-costs" href="#costs"><svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6V5a2 2 0 0 1 2-2h12v4H6a2 2 0 0 1 0-4M4 5v14a2 2 0 0 0 2 2h14V7H6"/><path d="M20 12h-5v5h5"/></svg> Costs</a>
+        <a id="view-sources" href="#sources"><svg class="nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 3h12a2 2 0 0 1 2 2v16H6a2 2 0 0 1-2-2V3ZM4 17h14M8 7h6M8 11h6"/></svg> Sources</a>
       </nav>
       <section class="hero">
         <canvas id="anemone" role="img" aria-label="An underwater clownfish family beside their sea anemone home. Move over the tentacles to make them bend."></canvas>
         <div class="hero-copy">
-          <h1>Your weekend,<br /><span>at a glance.</span></h1>
-          <p class="lede">Check the plan. Follow the route. See the costs. Everything your friends agreed to, in one place.</p>
+          <p class="eyebrow">YOUR SHARED TRIP</p>
+          <h1>Your weekend,<br /><span>all in one place.</span></h1>
+          <p class="lede">The route, the budget, the details. A shared place for the plan you make together.</p>
           <a class="aero-button" href="#itinerary">See the itinerary <span aria-hidden="true">↗</span></a>
         </div>
         <div class="view-controls"><button id="reef-wave" type="button">Make the anemone wave</button><button id="scene-toggle" type="button" aria-pressed="false">Enjoy the scenery</button><button id="motion-toggle" type="button" aria-pressed="false">Reef motion</button></div>
@@ -33,7 +35,7 @@
       <div id="overview-filters" class="plan-filters" aria-label="Filter displayed plans"><span>Explore your options</span><button id="filter-all" type="button" aria-pressed="true">All plans</button><button id="filter-outdoors" type="button" aria-pressed="false">With outdoor stops</button></div>
       <section id="trip" tabindex="-1" aria-live="polite"></section>
       <div id="spending-view" hidden><section id="fund" aria-live="polite" aria-label="Who covered what"></section></div>
-      <footer id="about"><span class="footer-leaf" aria-hidden="true">❧</span> Made for weekends together.<br />This page is read-only. Plan and accept with the assistant in your iMessage DMs.<br />Estimates are planning aids, not bookings or guaranteed availability. Check current details with each source.</footer>
+      <footer id="about">This page is read-only. Plan and accept with the assistant in your iMessage DMs.<br />Estimates are planning aids, not bookings or guaranteed availability. Check current details with each source.</footer>
     </main>
     <script type="module" src="./app.js"></script>
   </body>

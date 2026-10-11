@@ -103,7 +103,12 @@ function render(snapshot) {
       link.setAttribute('aria-current', c === focused ? 'page' : 'false');
       chooser.append(link);
     }
-    root.append(chooser);
+    const pickerKey = `view:${currentView}:options`;
+    const picker = disclosure(pickerKey, `Viewing: ${focused.title}`);
+    picker.className = 'option-picker';
+    for (const link of chooser.children) link.addEventListener('click', () => expandedDetails.set(pickerKey, false));
+    picker.append(chooser);
+    root.append(picker);
   }
   for (const candidate of snapshot.candidates) {
     const hasOutdoor = snapshot.nature?.summaries.some(s => s.candidateId === candidate.candidateId && s.outdoorStops.length);
@@ -122,8 +127,18 @@ function renderCandidate(candidate, snapshot) {
   card.setAttribute('aria-label', candidate.title);
   card.append(element('h3', '', candidate.title));
   if (snapshot.selectedCandidate?.candidateId === candidate.candidateId && snapshot.selectedCandidate.revision === candidate.revision) {
+    card.className += ' is-selected';
     card.append(element('p', 'selected-plan', snapshot.status === 'approved' ? 'Approved plan' : 'Selected plan · awaiting everyone’s acceptance'));
   }
+  const totals = candidate.perPersonTotals.map(t => t.highCents);
+  if (totals.length) {
+    const low = Math.min(...totals), high = Math.max(...totals);
+    const label = candidate.feasibility.unknownEssentials.length ? 'Known portion · essential prices missing' : 'Upper estimate per person';
+    const price = element('div', 'overview-price');
+    price.append(element('strong', 'price-value', low === high ? money(high) : `${money(low)}–${money(high)}`), element('span', 'price-caption', label));
+    card.append(viewPart(price, 'overview'));
+  }
+
   const dataLabel = candidate.dataSource === 'fixture' ? 'Demo data · prices made up'
     : candidate.dataSource === 'live' ? 'Estimates from web search · availability not confirmed'
     : 'Planning estimates · availability not confirmed';
@@ -165,17 +180,6 @@ function renderCandidate(candidate, snapshot) {
     card.append(viewPart(itinerary, 'itinerary'));
   }
 
-  if (candidate.costs.length) {
-    const costs = disclosure(`${candidate.candidateId}:${candidate.revision}:costs`, 'Explore the cost breakdown', currentView === 'costs');
-    for (const item of candidate.costs) {
-      const row = element('div', 'cost-row');
-      const priceLabel = item.priceStatus === 'unknown' ? 'price not found' : 'estimate';
-      row.append(element('span', '', `${item.label} (${item.costId}) | ${priceLabel}`));
-      row.append(element('strong', '', item.priceStatus === 'unknown' ? 'Price not found' : `${money(item.lowCents)} to ${money(item.highCents)}`));
-      costs.append(row);
-    }
-    card.append(viewPart(costs, 'costs'));
-  }
 
   const personCosts = element('section', 'costs');
   personCosts.append(element('h4', '', candidate.feasibility.unknownEssentials.length ? 'Known portion per person | essential prices missing' : 'Upper estimate per person'));
@@ -195,12 +199,18 @@ function renderCandidate(candidate, snapshot) {
     }
   }
   card.append(viewPart(personCosts, 'costs'));
-  const totals = candidate.perPersonTotals.map(t => t.highCents);
-  if (totals.length) {
-    const low = Math.min(...totals), high = Math.max(...totals);
-    const label = candidate.feasibility.unknownEssentials.length ? 'Known portion · essential prices missing' : 'Upper estimate per person';
-    card.append(viewPart(element('p', 'overview-price', `${low === high ? money(high) : `${money(low)}–${money(high)}`} · ${label}`), 'overview'));
+  if (candidate.costs.length) {
+    const costs = disclosure(`${candidate.candidateId}:${candidate.revision}:costs`, 'Explore the cost breakdown', currentView === 'costs');
+    for (const item of candidate.costs) {
+      const row = element('div', 'cost-row');
+      const priceLabel = item.priceStatus === 'unknown' ? 'price not found' : 'estimate';
+      row.append(element('span', '', `${item.label} · ${priceLabel}`));
+      row.append(element('strong', '', item.priceStatus === 'unknown' ? 'Price not found' : `${money(item.lowCents)} to ${money(item.highCents)}`));
+      costs.append(row);
+    }
+    card.append(viewPart(costs, 'costs'));
   }
+
 
   const accepted = snapshot.acceptances.filter((item) => item.candidateId === candidate.candidateId && item.revision === candidate.revision);
   const approved = snapshot.participants.length > 0 && accepted.length === snapshot.participants.length;
@@ -217,7 +227,7 @@ function renderCandidate(candidate, snapshot) {
   }
   card.append(viewPart(element('p', 'acceptance-note', `Acceptance: ${accepted.length} of ${snapshot.participants.length} for this exact revision${approved ? ' | all accepted' : ''}.`), 'overview'));
   if (candidate.feasibility.unknownEssentials.length) {
-    card.append(element('p', '', `Unverified essentials: ${candidate.feasibility.unknownEssentials.join(', ')}`));
+    card.append(element('p', '', `Unverified essentials: ${candidate.feasibility.unknownEssentials.map(id => candidate.costs.find(cost => cost.costId === id)?.label ?? id).join(', ')}`));
   }
 
   const sources = disclosure(`${candidate.candidateId}:${candidate.revision}:sources`, `Research sources (${candidate.evidence.length})`, currentView === 'sources');
@@ -322,6 +332,7 @@ async function refreshFund(revision) {
     fundRoot.append(element('h2', '', 'Who covered what'));
     fundRoot.append(element('p', 'fund-label', fund.mode === 'nessie' ? 'Simulated money · Nessie sandbox accounts · no real money' : 'Simulated money · local demo · no real money'));
     if (fund.status === 'not_ready') { fundRoot.append(element('p', '', fund.reason)); return; }
+    if (lastSnapshot?.selectedCandidate?.revision === revision) fundRoot.append(element('p', 'fund-label', `Spending for the selected plan: ${lastSnapshot.selectedCandidate.title}`));
     const shares = fund.members.map((person) => person.fairShareDollars);
     const lowShare = shares.length ? Math.min(...shares) : 0;
     const highShare = shares.length ? Math.max(...shares) : 0;

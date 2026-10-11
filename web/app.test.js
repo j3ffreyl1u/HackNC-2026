@@ -302,3 +302,12 @@ it('a specific-option link shows that option and returning home restores the ove
   expect(p.visibleTrip()).toContain('Approved plan');
   expect(state.selectedCandidate.candidateId).toBe('first');
 });
+
+it('keeps spending tied to the selected plan while another option is being viewed', async () => {
+  const selected = candidate({ candidateId: 'accepted', title: 'Accepted park weekend' });
+  const other = candidate({ candidateId: 'alternative', title: 'Alternative city weekend' });
+  const p = await page(ledger(), undefined, { snapshot: { ...snapshot, candidates: [selected, other], selectedCandidate: selected }, hash: '#costs/alternative' });
+  expect(p.visibleTrip()).toContain('Alternative city weekend');
+  expect(text(p.fund)).toContain('Spending for the selected plan: Accepted park weekend');
+  expect(text(p.fund)).not.toContain('Spending for the selected plan: Alternative city weekend');
+});
