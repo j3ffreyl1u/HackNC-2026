@@ -236,6 +236,59 @@ describe('starting a conversation, and DMs never get silence', () => {
   });
 });
 
+describe('friendly, customer-service style replies', () => {
+  const dm = (text: string, extra = {}) => msg({ visibility: 'private', spaceId: 'dm-mason', text, ...extra });
+  const ack = (r: ParseResult) => (r.kind === 'commands' ? r.clarification?.text ?? '' : '');
+
+  it('in a DM, recorded facts get a warm "got it" that repeats what was understood and invites correction', async () => {
+    const { service } = setup();
+    const r = await service.parseInbound(dm("I'm leaving from Chapel Hill, 2 nights, I have a car, I'm free Nov 14-16, my max is $250, I like hiking and a town visit"));
+    expect(updates(r).map((u) => u.field).sort()).toEqual(['availability', 'budget', 'duration', 'origin', 'preferences', 'transport']);
+    const t = ack(r);
+    expect(t).toMatch(/^Got it: /);
+    for (const bit of ['leaving from Chapel Hill', '2 nights', "there's a car", "you're free Nov 14-16", 'your max is $250 (just between us)', "you're into hiking and town visit"]) expect(t).toContain(bit);
+    expect(t).toMatch(/Tell me if I got anything wrong/);
+    expect(r.kind === 'commands' && r.clarification?.audience).toEqual({ kind: 'private', memberId: 'mason' });
+  });
+  it('in a group it stays quiet and never repeats a budget publicly', async () => {
+    const { service } = setup();
+    const r = await service.parseInbound(msg({ text: "I'm free Nov 14-16 and my max is $250" }));
+    expect(r.kind).toBe('commands');
+    expect(r.kind === 'commands' && r.clarification).toBeUndefined();
+  });
+  it('apologises and offers examples when it does not understand a DM', async () => {
+    const { service } = setup({}, () => ({ intent: 'none' }));
+    expect(text(await service.parseInbound(dm('asdfgh')))).toMatch(/^Sorry, I didn't catch that one/);
+  });
+  it('locks in a confirmed budget with a thank-you, privately', async () => {
+    const { service } = setup({ pendingConfirmation: { field: 'budget', valueCents: 25000 } });
+    const r = await service.parseInbound(dm('Yes it is'));
+    expect(updates(r)[0]).toMatchObject({ field: 'budget', value: 25000, certainty: 'confirmed' });
+    expect(ack(r)).toMatch(/Locked in, your max is \$250\. Thanks/);
+  });
+  it('a hedged budget gets a polite confirm question that explains how to answer', async () => {
+    const { service } = setup();
+    expect(text(await service.parseInbound(dm('My budget might be around $250')))).toMatch(/Just so I get it right: is \$250 your firm max.*Say "yes" or "my max is \$X"/);
+  });
+  it('understands iMessage curly apostrophes and "I\u2019ve got a car"', async () => {
+    const { service } = setup();
+    const r = await service.parseInbound(msg({ text: 'I\u2019ve got a car and I\u2019m free Nov 14-16' }));
+    expect(updates(r).map((u) => u.field).sort()).toEqual(['availability', 'transport']);
+    expect(updates(r).find((u) => u.field === 'transport')).toMatchObject({ vehicleAvailable: true });
+    expect(cmds(await service.parseInbound(msg({ text: 'Hey let\u2019s plan a trip' })))[0]!.action.kind).toBe('request_plans');
+    expect(updates(await service.parseInbound(msg({ text: 'I don\u2019t have a car' })))[0]).toMatchObject({ vehicleAvailable: false });
+  });
+  it('never uses em dashes or stacked exclamation marks in what it says', async () => {
+    const { service } = setup({ actionable: [accept], pendingConfirmation: { field: 'budget', valueCents: 25000 } });
+    const samples = [dm('yes'), dm('no'), dm('pick cand-z'), dm('accept cand-a v1'), dm("can't do Oct 17-19"), dm('I might spend up to $200'), dm('Alex budget is $50')];
+    for (const m of samples) {
+      const r = await service.parseInbound({ ...m, eventId: `x${Math.random()}` });
+      const t = text(r) + ack(r);
+      expect(t, m.text).not.toMatch(/\u2014|!!/);
+    }
+  });
+});
+
 describe('gating', () => {
   it('ignores unknown senders and unrelated groups', async () => {
     const { service } = setup();

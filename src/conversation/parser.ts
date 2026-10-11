@@ -9,7 +9,7 @@ import type {
   TripConversationContext,
 } from './contracts-local.js';
 import { extractConstraints, HEDGE, type Extracted } from './constraints.js';
-import { assertTimeZone, toIntervalWindows } from './dates.js';
+import { assertTimeZone, formatWindow, toIntervalWindows } from './dates.js';
 import { validateIntent } from './intent.js';
 import { formatCents } from './money.js';
 import type { ConversationDependencies } from './types.js';
@@ -25,7 +25,24 @@ const GUIDE = /^(?:guide|ask guide|\/guide)\s*[:\-]?\s+(.{3,500})$/is;
 const SELECT = new RegExp(`^(?:pick|choose|select|go with|vote(?: for)?|i vote(?: for)?)\\s+(?:option\\s+|plan\\s+)?${ID}(?:\\s+v(\\d+))?$`, 'i');
 const ACCEPT = new RegExp(`^accept\\s+${ID}\\s+v(\\d+)$`, 'i');
 
-const HELP = 'I can note your budget, free dates and preferences, show trip options, or answer trip questions. Try "my max is $200" or "free Oct 17-19", or say "let\'s plan a trip" to get started.';
+const HELP = "Sorry, I didn't catch that one. I can note your budget, free dates and what you're into, show trip options, or answer trip questions. Try \"my max is $200\" or \"free Oct 17-19\", or say \"let's plan a trip\" to get started.";
+
+const money = (cents: number) => `$${(cents / 100).toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
+const list = (items: string[]) => (items.length <= 1 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`);
+
+/** One friendly clause per recorded fact. Only used in private chats, so echoing the sender's own budget is fine. */
+function ackPart(v: ConstraintValue, tentative: boolean): string {
+  switch (v.field) {
+    case 'budget': return `your max is ${money(v.value)} (just between us)`;
+    case 'availability': return `you're free ${v.value.filter((w): w is { start: string; end: string } => 'start' in w).map(formatWindow).join(' or ')}`;
+    case 'duration': return `${v.value} night${v.value === 1 ? '' : 's'}`;
+    case 'origin': return `leaving from ${v.value}`;
+    case 'region': return v.value;
+    case 'transport': return v.vehicleAvailable === true ? "there's a car" : v.vehicleAvailable === false ? 'no car for you' : `transport: ${v.value}`;
+    case 'preferences': return v.value.includes('no preference') ? 'no strong preferences' : `you ${tentative ? 'might be' : "'re"} into ${list(v.value)}`.replace("you 're", "you're");
+    case 'must_dos': return v.value.length ? `must-haves: ${list(v.value)}` : 'no must-haves';
+  }
+}
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 export function createParser(deps: ConversationDependencies) {
@@ -84,31 +101,39 @@ export function createParser(deps: ConversationDependencies) {
     const asks: string[] = [];
     let private_ = false;
     let hedgedBudget: number | undefined;
+    const acks: string[] = [];
 
     for (const item of items) {
       const v = item.value;
       if (v.field === 'budget' && mentionsOtherMember(text, msg.senderId)) {
         // Nobody can set another member's budget, and a message that names someone else is ambiguous.
-        asks.push('I can only record a budget from the person it belongs to. Ask them to tell me directly, or say "my max is $X" for your own.');
+        asks.push("I can only take a budget from the person it's for, so I haven't noted that one. Ask them to text me their own, or tell me yours with \"my max is $X\".");
         private_ = true;
         continue;
       }
       if (v.field === 'availability' && item.negative) {
-        asks.push('Which dates ARE you free? For example "free Oct 24-26".');
+        asks.push('Got it, those dates are out. Which dates are you free? Something like "free Oct 24-26" works.');
         continue;
       }
       // Budgets and dates commit people to something, so tentative wording is a question, not a record.
       if ((v.field === 'budget' || v.field === 'availability') && item.hedged) {
         if (v.field === 'budget') {
-          asks.push(`Is ${formatCents(v.value).replace(/\.00$/, '')} your firm maximum for the whole trip, including food and travel? Say "my max is $X" to lock it in.`);
+          asks.push(`Just so I get it right: is ${formatCents(v.value).replace(/\.00$/, '')} your firm max for the whole trip, including food and travel? Say "yes" or "my max is $X" and I'll lock it in.`);
           private_ = true;
           hedgedBudget = v.value;
         } else {
-          asks.push('Which dates can you actually do? Tell me plainly, e.g. "free Oct 17-19".');
+          asks.push('I want to get the dates right. Which ones can you actually do? Something like "free Oct 17-19" works.');
         }
         continue;
       }
       commands.push(updateCommand(msg, ctx, v, item.hedged));
+      acks.push(ackPart(v, item.hedged));
+    }
+    // In a one-on-one chat, silence feels like being ignored: say what we noted. Groups stay quiet.
+    const talkative = msg.visibility === 'private' || trip.mode === 'direct';
+    if (talkative && acks.length) {
+      asks.unshift(`Got it: ${list(acks)}.${asks.length ? '' : ' Tell me if I got anything wrong.'}`);
+      private_ = true;
     }
 
     const clarification = asks.length ? replyMessage(msg, asks.join('\n'), 'clarify', private_) : undefined;
@@ -131,10 +156,10 @@ export function createParser(deps: ConversationDependencies) {
     if (!match && /^\d{1,2}$/.test(token)) match = pool[Number(token) - 1];
     const verb = kind === 'accept' ? 'accept' : 'pick';
     if (!match) {
-      return reply(msg, `I don't have "${token}" waiting for you to ${verb}. ${pool.length ? `Options: ${pool.map((a, i) => `${i + 1}. ${a.description}`).join('; ')}.` : 'Nothing is waiting on you right now.'}`, 'noplan');
+      return reply(msg, `Hmm, I don't see "${token}" waiting on you to ${verb}. ${pool.length ? `Here's what's open: ${pool.map((a, i) => `${i + 1}. ${a.description}`).join('; ')}.` : "Nothing's waiting on you right now."}`, 'noplan');
     }
     if (revision !== undefined && revision !== match.revision) {
-      return reply(msg, `That's an older version (v${revision}). The current plan is v${match.revision}, so please review it and reply "${kind === 'accept' ? 'accept' : 'pick'} ${match.candidateId} v${match.revision}".`, 'stale');
+      return reply(msg, `That's an older version (v${revision}), sorry! The latest is v${match.revision}. Take a look and reply "${kind === 'accept' ? 'accept' : 'pick'} ${match.candidateId} v${match.revision}" when you're ready.`, 'stale');
     }
     return one(msg, ctx, kind === 'accept'
       ? { kind: 'accept_candidate', candidateId: match.candidateId, revision: match.revision }
@@ -145,21 +170,22 @@ export function createParser(deps: ConversationDependencies) {
     const pending = ctx.pendingConfirmation;
     if (pending && ctx.actionable.length > 0) {
       // A bare yes/no could answer either question. Never guess: a plan acceptance is a financial commitment.
-      return reply(msg, `Quick check, I have two questions open: is ${formatCents(pending.valueCents).replace(/\.00$/, '')} your firm maximum, and the plan awaiting you. Say "my max is $X" for the budget, or "accept <id> v<n>" / "pick <id>" for the plan.`, 'which2', true);
+      return reply(msg, `Quick check, I've got two things open: is ${formatCents(pending.valueCents).replace(/\.00$/, '')} your firm max, and the plan waiting on you? Say "my max is $X" for the budget, or "accept <id> v<n>" / "pick <id>" for the plan.`, 'which2', true);
     }
     if (pending) {
-      if (!yes) return reply(msg, 'No problem. What is your firm maximum for the whole trip, including food and travel?', 'budget-no', true);
+      if (!yes) return reply(msg, "No problem! What's your firm max for the whole trip, including food and travel?", 'budget-no', true);
       // They confirmed the exact amount we asked about, so it is recorded as confirmed (it is still their own budget).
-      return { kind: 'command', command: updateCommand(msg, ctx, { field: 'budget', value: pending.valueCents }, false) };
+      const locked = updateCommand(msg, ctx, { field: 'budget', value: pending.valueCents }, false);
+      return { kind: 'commands', commands: [locked], clarification: replyMessage(msg, `Locked in, your max is ${money(pending.valueCents)}. Thanks, and that stays between us.`, 'locked', true) };
     }
     const list = ctx.actionable;
     if (list.length === 0) return { kind: 'ignored', reason: 'nothing to answer' };
     if (!yes) {
-      return reply(msg, "No problem, I haven't recorded an acceptance. What would you change: dates, budget, or the activities?", 'no');
+      return reply(msg, "No worries, I haven't recorded an acceptance. What would you want to change: the dates, the budget, or the activities?", 'no');
     }
     if (list.length > 1) {
       const lines = list.map((a, i) => `${i + 1}. ${a.description} (${a.candidateId} v${a.revision})`);
-      return reply(msg, `I have more than one thing waiting on you:\n${lines.join('\n')}\nWhich one? Reply "accept <id> v<version>" or "pick <id>".`, 'which');
+      return reply(msg, `I've got more than one thing waiting on you:\n${lines.join('\n')}\nWhich one do you mean? Reply "accept <id> v<version>" or "pick <id>".`, 'which');
     }
     const only = list[0]!;
     return one(msg, ctx, only.kind === 'accept'
@@ -195,7 +221,8 @@ export function createParser(deps: ConversationDependencies) {
   }
 
   async function parseText(msg: InboundMessage, override?: TripConversationContext): Promise<ParseResult> {
-    const text = (msg.text ?? '').trim();
+    // iMessage types curly apostrophes and quotes; our rules expect plain ones.
+    const text = (msg.text ?? '').replace(/[\u2018\u2019\u02BC]/g, "'").replace(/[\u201C\u201D]/g, '"').trim();
     if (!text) return { kind: 'ignored', reason: 'empty message' };
     const ctx = override ?? (await deps.getConversationContext(msg.senderId, msg.spaceId));
 
@@ -238,9 +265,9 @@ export function createParser(deps: ConversationDependencies) {
       case 'ask_guide':
         return one(msg, ctx, { kind: 'ask_guide', question: intent.question });
       case 'request_funding':
-        return hedged ? reply(msg, 'To set up contribution requests, say it plainly: "request contributions".', 'hedge') : one(msg, ctx, { kind: 'request_funding' });
+        return hedged ? reply(msg, 'Happy to set up contribution requests. Just say "request contributions" so I know you mean it.', 'hedge') : one(msg, ctx, { kind: 'request_funding' });
       case 'yes':
-        if (hedged) return reply(msg, 'Just to be sure: do you accept? Reply "yes" to confirm or "no" to decline.', 'hedge');
+        if (hedged) return reply(msg, 'Just to be sure: are you good with this plan? Reply "yes" to accept or "no" if not.', 'hedge');
         return resolveAnswer(msg, ctx, true);
       case 'no':
         return resolveAnswer(msg, ctx, false);

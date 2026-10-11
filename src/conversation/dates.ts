@@ -147,3 +147,12 @@ export function toIntervalWindows(windows: ParsedWindow[], timeZone: string): In
     timeZone,
   }));
 }
+
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** "Nov 14-16", "Nov 30 - Dec 2", "Nov 14" from inclusive YYYY-MM-DD dates, for friendly replies. */
+export function formatWindow(w: ParsedWindow): string {
+  const [, sm, sd] = w.start.split('-').map(Number) as [number, number, number];
+  const [, em, ed] = w.end.split('-').map(Number) as [number, number, number];
+  if (w.start === w.end) return `${MON[sm - 1]} ${sd}`;
+  return sm === em ? `${MON[sm - 1]} ${sd}-${ed}` : `${MON[sm - 1]} ${sd} - ${MON[em - 1]} ${ed}`;
+}

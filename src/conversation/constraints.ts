@@ -79,9 +79,9 @@ function extractSentence(s: string, reference: string, pending: ConstraintField 
     const maxTravelMinutes = parseMaxTravelMinutes(value);
     push({ field: 'region', value, ...(maxTravelMinutes !== undefined ? { maxTravelMinutes } : {}) });
   }
-  if (/\bi\s+(?:have|got)\s+(?:a\s+|my\s+)?(?:own\s+)?(?:car|vehicle|truck|suv)\b|\bi\s+can\s+drive\b|\bi(?:'ll| will)\s+drive\b/i.test(s)) push({ field: 'transport', value: 'own_vehicle', vehicleAvailable: true });
+  if (/\bi(?:'ve|\s+have|\s+got)\s+(?:got\s+)?(?:a\s+|my\s+)?(?:own\s+)?(?:car|vehicle|truck|suv)\b|\bi\s+can\s+drive\b|\bi(?:'ll| will)\s+drive\b/i.test(s)) push({ field: 'transport', value: 'own_vehicle', vehicleAvailable: true });
   else if (!s.includes('?') && THIRD_PERSON_VEHICLE.test(s)) push({ field: 'transport', value: 'own_vehicle', vehicleAvailable: true });
-  else if (/\bi\s+(?:don'?t|do not)\s+have\s+(?:a\s+)?(?:car|vehicle)\b|\bno car\b/i.test(s)) push({ field: 'transport', value: 'no_vehicle', vehicleAvailable: false });
+  else if (/\bi\s+(?:don'?t|do not)\s+have\s+(?:a\s+)?(?:car|vehicle)\b|\bno car\b|\bi\s+(?:can'?t|cannot)\s+drive\b/i.test(s)) push({ field: 'transport', value: 'no_vehicle', vehicleAvailable: false });
 
   if (/\b(?:no (?:real )?preferences?|don'?t (?:really )?care|i'?m (?:easy|flexible|open to anything))\b/i.test(s)) {
     push({ field: 'preferences', value: ['no preference'] });
