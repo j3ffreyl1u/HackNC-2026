@@ -49,6 +49,7 @@ function splitItems(raw: string): string[] {
   const items = raw
     .split(/\s*(?:,|&|\band\b|\bor\b)\s*/i)
     .map(clean)
+    .map((s) => s.replace(/^(?:eat|see|visit|do|try|explore|check out|go to|go)\s+(?=\S)/i, ''))   // "eat yummy food" is about yummy food
     .filter((s) => s.length > 1 && s.length <= 60 && !GENERIC.test(s));
   return [...new Set(items)].slice(0, 10);
 }

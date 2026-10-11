@@ -66,3 +66,9 @@ describe('reactions are not places', () => {
     expect(extractConstraints('Asheville', '2026-10-11T12:00:00Z', 'region').map((e) => e.value)).toEqual([{ field: 'region', value: 'Asheville' }]);
   });
 });
+
+describe('likings are the thing liked, not the verb', () => {
+  it('"I want to go to museums and eat yummy food"', () => {
+    expect(extractConstraints('I want to go to museums and eat yummy food', '2026-10-11T12:00:00Z', 'preferences').map((e) => e.value)).toEqual([{ field: 'preferences', value: ['museums', 'yummy food'] }]);
+  });
+});
