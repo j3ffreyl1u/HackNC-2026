@@ -5,6 +5,9 @@ let hasSnapshot = false;
 let displayedRevision;
 let lastSnapshot;
 let snapshotFingerprint;
+let fundFingerprint;
+let fundRequestId = 0;
+let fundDisabled = false;
 let outdoorOnly = false;
 const expandedDetails = new Map();
 
@@ -140,7 +143,7 @@ function renderCandidate(candidate, snapshot) {
   return card;
 }
 
-async function refresh() {
+async function refresh(retryChangedPlan = true) {
   try {
     const response = await fetch(`/api/trips/${encodeURIComponent(tripId)}/snapshot`, { cache: 'no-store' });
     if (!response.ok) throw new Error(response.status === 404 ? 'Trip not found.' : 'Could not refresh the plan.');
@@ -153,8 +156,11 @@ async function refresh() {
     hasSnapshot = true;
     status.className = 'status';
     status.textContent = 'Latest saved plan · refreshed just now';
-    await refreshFund(snapshot.revision);
+    const planChanged = await refreshFund(snapshot.revision);
+    if (planChanged && retryChangedPlan) await refresh(false);
   } catch (error) {
+    fundRequestId += 1; // An older bank response cannot restore numbers after a failed plan refresh.
+    showFundNotice('Cost tracking is unavailable. Reconnecting; previous amounts are hidden.');
     status.className = 'status error';
     status.textContent = hasSnapshot ? 'Showing the last saved plan; reconnecting...' : `${error.message} Retrying...`;
   }
@@ -165,35 +171,65 @@ window.setInterval(refresh, 5000);
 
 const CATEGORY_NAMES = { accommodation: 'Lodging', fuel_parking_tolls: 'Gas, parking and tolls', food: 'Food', activities: 'Activities', taxes_fees: 'Taxes and fees', other: 'Other' };
 const categoryName = (category) => CATEGORY_NAMES[category] ?? category.replaceAll('_', ' ');
-const dollars = (amount) => money(amount * 100);
+const dollars = (amount) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(amount);
+
+function showFundNotice(message) {
+  const fundRoot = document.querySelector('#fund');
+  fundFingerprint = undefined;
+  fundRoot.replaceChildren();
+  fundRoot.hidden = fundDisabled;
+  if (fundDisabled) return;
+  fundRoot.append(element('h2', '', 'Who covered what'));
+  fundRoot.append(element('p', 'fund-label', 'Simulated money only. The bot calculates; it never moves money.'));
+  fundRoot.append(element('p', 'fund-notice', message));
+}
 
 async function refreshFund(revision) {
   const fundRoot = document.querySelector('#fund');
+  const requestId = ++fundRequestId;
   try {
     const response = await fetch(`/api/trips/${encodeURIComponent(tripId)}/fund`, { cache: 'no-store' });
+    if (requestId !== fundRequestId || displayedRevision !== revision) return;
+    if (response.status === 409) {
+      showFundNotice('The plan changed. Refreshing cost tracking for the latest revision.');
+      return true;
+    }
     if (!response.ok) throw new Error();
     const fund = await response.json();
-    if (displayedRevision !== revision || fund.revision !== revision) return;
+    if (requestId !== fundRequestId || displayedRevision !== revision) return;
+    if (fund.revision !== revision) {
+      showFundNotice('The plan changed. Refreshing cost tracking for the latest revision.');
+      return true;
+    }
+    const fingerprint = JSON.stringify(fund);
+    if (fingerprint === fundFingerprint) return;
+    fundFingerprint = fingerprint;
+    fundDisabled = fund.status === 'disabled';
+    fundRoot.hidden = fundDisabled;
     fundRoot.replaceChildren();
-    if (fund.status === 'disabled') return;
+    if (fundDisabled) return;
     fundRoot.append(element('h2', '', 'Who covered what'));
-    fundRoot.append(element('p', 'fund-label', fund.mode === 'nessie' ? 'Nessie sandbox · each friend\'s own simulated account, no real money' : 'Local simulation · no real money'));
+    fundRoot.append(element('p', 'fund-label', fund.mode === 'nessie' ? 'Simulated money · Nessie sandbox accounts · no real money' : 'Simulated money · local demo · no real money'));
     if (fund.status === 'not_ready') { fundRoot.append(element('p', '', fund.reason)); return; }
-    const each = fund.members.length > 0 ? Math.round(fund.sharedSpentDollars / fund.members.length) : 0;
+    const shares = fund.members.map((person) => person.fairShareDollars);
+    const lowShare = shares.length ? Math.min(...shares) : 0;
+    const highShare = shares.length ? Math.max(...shares) : 0;
+    const shareText = lowShare === highShare ? dollars(lowShare) : `${dollars(lowShare)}–${dollars(highShare)}`;
     fundRoot.append(element('p', 'fund-total', fund.sharedSpentDollars === 0
       ? `Nothing shared yet · the plan expects about ${dollars(fund.expectedEachDollars)} each`
-      : `${dollars(fund.sharedSpentDollars)} of shared costs so far · about ${dollars(each)} each`));
+      : `${dollars(fund.sharedSpentDollars)} of shared costs so far · ${shareText} per person`));
     fundRoot.append(element('p', '', 'Anyone can pay for anything. This page adds it up from each person\'s own transactions, so nobody has to split a bill on the spot.'));
     const biggest = Math.max(1, ...fund.members.map((m) => Math.max(m.coveredDollars, m.fairShareDollars)));
     for (const person of fund.members) {
       const block = element('div', 'fund-person');
-      const head = element('div', 'cost-row');
+      const head = element('div', 'fund-person-row');
       const net = person.netDollars === 0 ? 'even' : person.netDollars > 0 ? `is owed ${dollars(person.netDollars)}` : `owes ${dollars(-person.netDollars)}`;
-      head.append(element('span', '', person.name), element('strong', '', `covered ${dollars(person.coveredDollars)} · ${net}`));
+      head.append(element('span', 'fund-name', person.name), element('strong', 'fund-net', net));
+      const share = element('p', 'fund-share', `Covered ${dollars(person.coveredDollars)} · fair share ${dollars(person.fairShareDollars)}`);
       const meter = element('progress', 'fund-meter');
       meter.max = biggest; meter.value = Math.min(person.coveredDollars, biggest);
       meter.setAttribute('aria-label', `${person.name} has covered ${dollars(person.coveredDollars)} of shared costs`);
-      block.append(head, meter);
+      block.append(head, share, meter);
       if (person.byCategory.length > 0) block.append(element('p', 'fund-chips', person.byCategory.map((c) => `${categoryName(c.category)} ${dollars(c.dollars)}`).join(' · ')));
       fundRoot.append(block);
     }
@@ -206,14 +242,15 @@ async function refreshFund(revision) {
       }
     }
     fundRoot.append(element('h3', '', 'If the trip ended now'));
-    fundRoot.append(element('p', '', fund.transfers.length === 0 ? (fund.sharedSpentDollars === 0 ? 'Nobody owes anything yet.' : 'Everyone is even.') : fund.transfers.map((t) => `${t.from} sends ${t.to} ${dollars(t.dollars)}`).join(' · ')));
+    fundRoot.append(element('p', '', fund.transfers.length === 0 ? (fund.sharedSpentDollars === 0 ? 'Nobody owes anything yet.' : 'Everyone is even.') : fund.transfers.map((t) => `${t.from} would owe ${t.to} ${dollars(t.dollars)}`).join(' · ')));
     const notes = [];
     if (fund.unclassifiedDollars > 0) notes.push(`${dollars(fund.unclassifiedDollars)} had no category, so it is left out.`);
     if (fund.unattributedDollars > 0) notes.push(`${dollars(fund.unattributedDollars)} came from an account that is not on this trip.`);
     notes.push('Food stays personal. The bot only watches and calculates; it never moves money.');
     fundRoot.append(element('p', 'fund-label', notes.join(' ')));
   } catch {
-    fundRoot.replaceChildren(element('p', '', 'Cost tracking is unavailable. Retry shortly; no simulated fallback is shown.'));
+    if (requestId !== fundRequestId || displayedRevision !== revision) return;
+    showFundNotice('Cost tracking is unavailable. Retrying shortly; previous amounts are hidden.');
   }
 }
 

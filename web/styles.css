@@ -171,3 +171,21 @@ body { background:radial-gradient(ellipse at 45% 0%,#87fff4a8,transparent 45%),l
 .hero .aero-button { background:linear-gradient(#0d6597,#0e6e9e 46%,#05537e 50%,#07628e); color:white; }
 .candidate::before { display:none; }
 @media(max-width:760px) { .view-controls button { font-size:.75rem; }.hero-copy { margin-bottom:130px; }.view-controls { padding:8px; }.hero { min-height:1020px; } }
+
+/* Shared spending remains readable as names and balances wrap on small screens. */
+#fund[hidden] { display:none; }
+#fund { overflow-wrap:anywhere; }
+.fund-label { color:#315563; }
+.fund-person { padding:14px 0; border-top:1px solid #bad5e1; }
+.fund-person-row { display:flex; align-items:baseline; justify-content:space-between; gap:8px 16px; flex-wrap:wrap; }
+.fund-name { font-size:1rem; font-weight:700; }
+.fund-net { color:#174965; font-variant-numeric:tabular-nums; }
+#fund .fund-share { margin:5px 0 8px; color:#315563; }
+#fund .cost-row > * { min-width:0; }
+.fund-notice { margin-bottom:0; }
+@media(max-width:620px) {
+  #fund .cost-row { display:grid; grid-template-columns:minmax(0,1fr); gap:2px; }
+  #fund .cost-row strong { margin-left:0; text-align:left; }
+  .fund-person-row { gap:4px 12px; }
+  #fund .fund-total { font-size:1.1rem !important; }
+}

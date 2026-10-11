@@ -16,3 +16,19 @@ Reef theme supersedes the stock-background and generic tilt presentation: the he
 Impeccable polish preserved the large anemone geometry and read-only product behavior. Fish now have dorsal/ventral fins, fin rays, radial body shading, a blue-tang marking and layered eyes. Hover proximity is evaluated along the tentacle curve so stems respond as well as tips. The mobile control strip no longer overlaps the introduction; the plan area has a light readable surface. A single design detector pass found contrast/text-size problems and aesthetic warnings; the concrete readability/layout issues were corrected, while underwater bloom and glossy glass remain intentional parts of the pinned Frutiger Aero brief.
 
 Two bounded headless Edge inspection rounds used an isolated static preview server with an empty synthetic snapshot at 1440x1000 and 390x844. Final round: no JavaScript errors, no horizontal overflow, motion-off disabled the wave control, system reduced motion disabled the motion toggle, and pointer movement changed the rendered canvas. Screenshots are local under data/reef-desktop.png and data/reef-mobile.png. No live chat, bank or Gemini provider was invoked. This is visual/interaction verification, not a rerun of domain tests or a claim of full provider integration.
+
+
+P0 task 1, spending-panel review (2026-10-11): worked in the separate `HackNC-2026-web` worktree on `Mason-frontend/page`, based on `80c6dd5`, reusing installed packages through the brief's symlink. Port 3000 was occupied, so offline demos used 3100–3104 with scratch databases. No provider credentials, phone listener, research or bank calls were used.
+
+The panel separates each name/net from covered amount/fair share, uses whole dollars, displays the actual fair-share range when rounding differs by person, and phrases settlement as amounts people "would owe". Simulated-money and read-only wording remain visible in successful and unavailable states. Small-screen rules wrap names/balances and stack category rows. Unchanged ledgers preserve DOM nodes. Snapshot/network failures and mismatched revisions clear previous numbers; delayed old responses cannot restore them. A 409/mismatch triggers one immediate plan refetch, then the normal poll. Disabled tracking hides the entire section.
+
+All four actual offline `/fund` responses were passed through the real page script in a Node VM with a DOM boundary double and compared with their rendered text:
+- `sample`: $200 shared; Mason is owed $43, Alex owes $7, Jordan owes $36; Alex's personal food is excluded.
+- `empty`: "Nothing shared yet", nobody owes anything, and the plan estimate is separately labelled.
+- `uneven`: $400 shared; Mason is owed $251, Alex owes $118, Jordan owes $133; $80 without a recognised category is reported outside the split.
+- `even`: $180 shared; each covered $60 and everyone is even.
+- `DEMO_FUND=off`: an empty, hidden panel.
+
+Stopping the owned demo server after a successful render produced an actual network failure: the renderer showed tracking unavailable, preserved the simulated-money label, and removed all prior amounts/names. Ten frontend regression tests cover text, hiding, failures, revision mismatch, delayed responses and unchanged polling. Full suite: 1,464 passed, one expected failure, two skipped; typecheck/build and diff whitespace checks passed.
+
+Visual limits: browser control was unavailable (no connected browser; native Computer Use permission was not granted). Neither 1440x1000 nor 390x844 was screenshot-verified for this change. Horizontal overflow, real browser rendering, and the stopped-server behavior in an open browser remain unchecked. CSS reading and the DOM boundary tests do not establish visual correctness. No new artwork or external assets were added.
