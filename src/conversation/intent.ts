@@ -10,6 +10,8 @@ export type ValidIntent =
   | { intent: 'yes' }
   | { intent: 'no' }
   | { intent: 'clarify' }
+  /** A casual question the model answered from the facts it was given. Checked by safeChatAnswer before it is sent. */
+  | { intent: 'chat'; answer: string }
   /** The language service did not answer (quota, outage, timeout). Not the same as "I couldn't tell what you meant". */
   | { intent: 'unavailable' }
   | { intent: 'none' };
@@ -84,6 +86,10 @@ export function validateIntent(raw: unknown): ValidIntent {
   const kind = o.intent;
   if (typeof kind !== 'string') return { intent: 'clarify' };
   if (SIMPLE.has(kind)) return { intent: kind } as ValidIntent;
+  if (kind === 'chat') {
+    const a = str(o.answer, 400);
+    return a ? { intent: 'chat', answer: a } : { intent: 'clarify' };
+  }
   if (kind === 'ask_guide') {
     const q = str(o.question, 500);
     return q ? { intent: 'ask_guide', question: q } : { intent: 'clarify' };
@@ -93,4 +99,18 @@ export function validateIntent(raw: unknown): ValidIntent {
     return items.length ? { intent: 'constraints', items } : { intent: 'clarify' };
   }
   return { intent: 'clarify' };
+}
+
+/**
+ * A model-written reply to a casual question is only sent if it stays inside what it was given: no dollar sign, no number
+ * that is not in the facts or the question, no em dash, short, and no leftover markup. Otherwise the caller sends plain help.
+ */
+export function safeChatAnswer(answer: string, allowedText: string): string | null {
+  const text = answer.trim();
+  if (!text || text.length > 400 || /\$|\u2014|\u2013|[*_`#<>]/.test(text) || /shout if that'?s off/i.test(text)) return null;
+  const digits = (t: string) => t.match(/\d+/g) ?? [];
+  const allowed = new Set(digits(allowedText));
+  if (digits(text).some((d) => !allowed.has(d))) return null;
+  if ((text.match(/[.!?](?:\s|$)/g) ?? []).length > 3) return null;
+  return text;
 }

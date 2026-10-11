@@ -37,6 +37,8 @@ export interface IntentInput {
   hasActionable: boolean;
   /** Fields the rules already captured from this message. The model should report only OTHER things. */
   alreadyKnown?: ConstraintField[];
+  /** Plain facts the model may use to answer a casual question (who has said what, what is still missing). Never a budget. */
+  facts?: string[];
 }
 
 /** Untrusted model output. Always validated by `validateIntent` before use. */

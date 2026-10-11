@@ -11,7 +11,7 @@ import type {
 import { extractWithCoverage, HEDGE, TRIVIAL, type Extracted } from './constraints.js';
 import { assertTimeZone, formatWindow, toIntervalWindows } from './dates.js';
 import { guestProviderUserId, isGuest, parseJoinCode } from './join.js';
-import { validateIntent } from './intent.js';
+import { safeChatAnswer, validateIntent } from './intent.js';
 import { formatCents } from './money.js';
 import type { ConversationDependencies } from './types.js';
 
@@ -60,6 +60,22 @@ function ackPart(v: ConstraintValue, tentative: boolean): string {
 /** "chapel hill" -> "Chapel Hill": only words typed in lower case, so "NC" and "DC" stay as written. */
 const titleCase = (text: string) => text.replace(/\b([a-z])([a-z.']*)/g, (word, first: string, rest: string) => (['of', 'the', 'and', 'in', 'on', 'by'].includes(word) ? word : first.toUpperCase() + rest));
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** Plain facts the model may use to answer a casual question. Only what is already fine to repeat: never a budget amount. */
+function chatFacts(ctx: TripConversationContext): string[] {
+  const word: Record<string, string> = { availability: 'free dates', budget: 'a maximum budget', preferences: 'what they like', origin: 'the starting city', region: 'where to go', duration: 'how many nights', transport: 'a car', must_dos: 'must-haves' };
+  const facts: string[] = [];
+  const status = { gathering: 'still gathering everyone\'s details', researching: 'looking up trip options right now', proposed: 'options have been sent and are waiting for picks', awaiting_acceptance: 'a plan was picked and is waiting for everyone\'s OK', approved: 'the plan is approved' }[ctx.status ?? 'gathering'];
+  facts.push(`Trip status: ${status}.`);
+  for (const o of ctx.others ?? []) {
+    const missing = o.missing.map((m) => word[m] ?? m);
+    facts.push(`${o.name} has said: ${o.shared.length ? o.shared.join(' and ') : 'nothing yet'}. ${o.name} ${missing.length ? `has not given: ${missing.join(', ')}` : 'has given everything needed (the budget stays private)'}.`);
+  }
+  const needed = [...new Set([...(ctx.pendingQuestion ? [ctx.pendingQuestion.field] : []), ...(ctx.openFields ?? [])].map((f) => word[f] ?? f))];
+  facts.push(needed.length ? `Still needed from the person asking: ${needed.join(', ')}.` : 'Nothing else is needed from the person asking right now.');
+  if (ctx.actionable.length) facts.push('There are options waiting for the person asking to pick or approve.');
+  return facts;
+}
 
 export function createParser(deps: ConversationDependencies) {
   const { trip } = deps;
@@ -349,6 +365,7 @@ export function createParser(deps: ConversationDependencies) {
     if (extracted.length && unmatched.length === 0) return fromConstraints(msg, ctx, text, extracted, requested);
     const handoffText = extracted.length ? unmatched.join(' ') : text;
 
+    const facts = chatFacts(ctx);
     const raw = await deps.intentModel.interpret({
       text: handoffText,
       occurredAt: msg.occurredAt,
@@ -358,6 +375,7 @@ export function createParser(deps: ConversationDependencies) {
       memberNames: trip.members.map((m) => m.displayName),
       ...(ctx.pendingQuestion ? { pendingField: ctx.pendingQuestion.field } : {}),
       hasActionable: ctx.actionable.length > 0,
+      facts,
     });
     const intent = validateIntent(raw);
     const hedged = HEDGE.test(handoffText);
@@ -379,6 +397,11 @@ export function createParser(deps: ConversationDependencies) {
         return msg.visibility === 'private' || trip.mode === 'direct'
           ? reply(msg, HELP, 'help')
           : { kind: 'ignored', reason: 'not addressed to the assistant' };
+      case 'chat': {
+        if (!(msg.visibility === 'private' || trip.mode === 'direct')) return { kind: 'ignored', reason: 'casual chat in a group' };
+        const answer = safeChatAnswer(intent.answer, `${facts.join(' ')} ${handoffText}`);
+        return reply(msg, answer ?? HELP, answer ? 'chat' : 'help', true);
+      }
       case 'unavailable':
         // Same rule as an unclear message: in a group, friends talking are none of our business even when the service is down.
         return msg.visibility === 'private' || trip.mode === 'direct'

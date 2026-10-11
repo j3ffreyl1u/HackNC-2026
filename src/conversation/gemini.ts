@@ -13,7 +13,7 @@ const BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 export const INTENT_SCHEMA = {
   type: 'object',
   properties: {
-    intent: { type: 'string', enum: ['constraints', 'request_plans', 'ask_guide', 'request_funding', 'yes', 'no', 'clarify', 'none'] },
+    intent: { type: 'string', enum: ['constraints', 'request_plans', 'ask_guide', 'request_funding', 'yes', 'no', 'clarify', 'chat', 'none'] },
     items: {
       type: 'array',
       description: 'For intent=constraints: facts the SENDER states about THEMSELVES or the trip.',
@@ -33,6 +33,7 @@ export const INTENT_SCHEMA = {
       },
     },
     question: { type: 'string', description: 'For intent=ask_guide: the travel question, verbatim.' },
+    answer: { type: 'string', description: 'For intent=chat: a short, friendly reply of one or two plain sentences, using only the Facts.' },
   },
   required: ['intent'],
 } as const;
@@ -44,8 +45,10 @@ export function buildPrompt(input: IntentInput): string {
     'Intents: constraints (the sender states their OWN budget, free dates, preferences, must-dos/dietary/accessibility, vehicle access, or trip origin/region/length),',
     'request_plans (asks the assistant to start planning, or to show or research trip options, e.g. "let\'s plan a trip"), ask_guide (asks a travel question about the trip, e.g. weather, what to do, where to eat),',
     'request_funding (asks to set up contribution requests), yes / no (answers a pending acceptance question), none (ordinary chat, jokes, talk between friends).',
+    'chat (a casual question or remark to the assistant that is not a command and can be answered from the Facts below, e.g. "is Mason planning?", "do you need anything else from me?", "what can you do?"): put a short friendly reply in answer, one or two plain sentences like a friend organizing the trip. Use ONLY the Facts. Never guess, never state a dollar amount, never reveal anyone\'s budget. If the Facts do not cover it, say you are not sure and offer what you can do: take a budget, free dates and likes, show trip options, answer trip questions. Do not use the phrase "shout if that\'s off".',
     'Rules: only record what the sender says about themselves; never record another person\'s budget or dates. Budget is the sender\'s all-in maximum, as digits in dollars ("two hundred bucks" -> "200"); never guess an amount that is not stated.',
     'Use explicit YYYY-MM-DD dates only when the message makes them unambiguous; otherwise omit the item.',
+    'The assistant is an AI trip-planning helper and can say so. In a one-on-one chat, friendly small talk or a joke aimed at the assistant ("lol this is fun", "you\'re funny") is chat: reply warmly in one short sentence and, if it fits, say what you can do next.',
     'This is a one-on-one chat with the assistant, so a message is "none" ONLY if it is unrelated small talk. Questions about the trip, asking what the plan is, or asking for ideas are never "none".',
     'Examples: "any ideas?" -> request_plans. "so what\'s the plan" -> request_plans. "what do you have for us" -> request_plans. "where should we eat" -> ask_guide with the question.',
     'If the last question was about a car, any answer that someone in the group has or can bring one ("Mason has one", "yes", "my friend does") is transport with vehicleAvailable true, and "nobody" / "no" is false. A car owned by any member counts for the whole group.',
@@ -55,6 +58,7 @@ export function buildPrompt(input: IntentInput): string {
     `Group members: ${input.memberNames.join(', ') || 'unknown'}.`,
     input.alreadyKnown?.length ? `Already captured from this message (do NOT report these again): ${input.alreadyKnown.join(', ')}. The text below is only the part that was not understood.` : 'Interpret the whole message.',
     `Last question asked of the sender: ${input.pendingField ?? 'none'}. ${input.hasActionable ? 'A plan awaits their answer.' : ''}`,
+    input.facts?.length ? `Facts (the only things you may use for a chat answer): ${input.facts.join(' | ')}` : 'Facts: none.',
     `Message: ${JSON.stringify(input.text)}`,
   ].join('\n');
 }

@@ -32,7 +32,7 @@ export function parseMaxTravelMinutes(text: string): number | undefined {
 }
 
 /** Short replies that are not a place even when a place was asked for: a change of subject, a date, or a liking. */
-const NOT_A_PLACE_ANSWER = /^(?:cancel|never ?mind|nvm|stop|quit|skip|idk|not sure|no idea|later|nothing|none|n\/a|ok(?:ay)?|sure|thanks|thank you|hello|hi|hey)$|\b(?:weekends?|weeks?|months?|days?|today|tomorrow|tonight|next|this|monday|tuesday|wednesday|thursday|friday|saturday|sunday|mostly|mainly|probably|maybe|just|only|really|kind of|whatever|anything|food|foods|nights?|monuments?|museums?|histor(?:y|ical)|hiking|nightlife|sightseeing|restaurants?|breweries|brewery|shopping|nature|outdoors?|relax(?:ing)?)\b/i;
+const NOT_A_PLACE_ANSWER = /^(?:cancel|never ?mind|nvm|stop|quit|skip|idk|not sure|no idea|later|nothing|none|n\/a|ok(?:ay)?|sure|thanks|thank you|hello|hi|hey)$|\b(?:weekends?|weeks?|months?|days?|today|tomorrow|tonight|next|this|monday|tuesday|wednesday|thursday|friday|saturday|sunday|mostly|mainly|probably|maybe|just|only|really|kind of|whatever|anything|food|foods|nights?|monuments?|museums?|histor(?:y|ical)|hiking|nightlife|sightseeing|restaurants?|breweries|brewery|shopping|nature|outdoors?|relax(?:ing)?|looks?|sounds?|seems?|good|fine|perfect|awesome|lol|lmao|haha|ok(?:ay)?|yes|yeah|yep|thanks|everything|how|what|why|does|this|that)\b/i;
 /** "I like the second one better" is about the options, not something the person likes doing. */
 const PICK_TALK = /\b(?:the\s+)?(?:first|second|third|1st|2nd|3rd|last|other)\s+(?:one|option|plan)\b|\b(?:option|plan)\s+\d\b|\bone\s+better\b/i;
 const NOT_A_PLACE = /\b(i|we|you|he|she|they|has|have|had|is|are|was|am|can|will|would|want|like|need|car|trip|my|our|it|not|but|with|for|please|thanks|yes|no)\b/i;
@@ -154,6 +154,8 @@ function pendingAnswer(text: string, reference: string, pending: ConstraintField
     case 'preferences':
     case 'must_dos': {
       if (t.length > 200 || t.includes('?')) return null;
+      // A question without its question mark, or a reaction ("everything looks good", "sounds great") is not something they like.
+      if (/^(?:lol|lmao|haha+|omg|wow|ha+)\b/i.test(t) || /^(?:how|what|when|where|why|who|which|can|could|do|does|did|is|are|will|would|should|any)\b/i.test(t) || /\b(?:looks?|sounds?|seems?|is|are)\s+(?:good|great|fine|perfect|right|correct|ok(?:ay)?|awesome)\b|^(?:ok(?:ay)?|sure|cool|great|perfect|nice|awesome|thanks|thank you|yes|yep|yeah|yup|no problem)[.!]*$/i.test(t)) return null;
       if (/^(?:none|nothing|no)[.!]*$/i.test(t)) return { value: { field: pending, value: pending === 'preferences' ? ['no preference'] : [] }, hedged: false };
       // "I want to have fun and learn about historical museums" is about historical museums, not the whole sentence.
       let core = t.replace(/^(?:i|we)(?:\s+really)?\s+(?:want to|wanna|would like to|'d like to|like to|like|love|enjoy|prefer|am into|are into|'m into|'re into)\s+/i, '');
