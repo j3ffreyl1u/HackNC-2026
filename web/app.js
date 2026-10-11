@@ -2,6 +2,19 @@ const tripId = new URLSearchParams(window.location.search).get('trip') || 'chape
 const status = document.querySelector('#status');
 const root = document.querySelector('#trip');
 let hasSnapshot = false;
+let displayedRevision;
+let lastSnapshot;
+let snapshotFingerprint;
+let outdoorOnly = false;
+const expandedDetails = new Map();
+
+function disclosure(key, title, initiallyOpen = false) {
+  const details = element('details', 'costs plan-disclosure');
+  details.open = expandedDetails.get(key) ?? initiallyOpen;
+  details.append(element('summary', '', title));
+  details.addEventListener('toggle', () => expandedDetails.set(key, details.open));
+  return details;
+}
 
 function element(tag, className, text) {
   const node = document.createElement(tag);
@@ -20,6 +33,8 @@ function dateRange(startAt, endAt) {
 }
 
 function render(snapshot) {
+  lastSnapshot = snapshot;
+  displayedRevision = snapshot.revision;
   root.replaceChildren();
   const heading = element('div', 'trip-heading');
   heading.append(element('h2', '', "The group's plan"));
@@ -29,11 +44,15 @@ function render(snapshot) {
   const people = element('div', 'people');
   for (const person of snapshot.participants) people.append(element('span', 'person', person.displayName));
   root.append(people);
+  if (snapshot.nature?.comparison) root.append(element('p', 'nature-comparison', snapshot.nature.comparison));
 
   const candidates = element('div', 'candidate-grid');
-  for (const candidate of snapshot.candidates) candidates.append(renderCandidate(candidate, snapshot));
+  for (const candidate of snapshot.candidates) {
+    const hasOutdoor = snapshot.nature?.summaries.some(s => s.candidateId === candidate.candidateId && s.outdoorStops.length);
+    if (!outdoorOnly || hasOutdoor) candidates.append(renderCandidate(candidate, snapshot));
+  }
   if (candidates.childElementCount) root.append(candidates);
-  else root.append(element('div', 'empty', 'Your group is gathering dates, budgets, and ideas. Plan options will appear here when they are ready.'));
+  else root.append(element('div', 'empty', outdoorOnly && snapshot.candidates.length ? 'No current plans have tagged outdoor stops. Choose All plans to see the other options.' : 'Your group is gathering dates, budgets, and ideas. Plan options will appear here when they are ready.'));
 }
 
 function renderCandidate(candidate, snapshot) {
@@ -41,11 +60,19 @@ function renderCandidate(candidate, snapshot) {
   card.append(element('h3', '', candidate.title));
   card.append(element('p', '', `Plan ${candidate.candidateId} | revision ${candidate.revision} | ${candidate.dataSource === 'fixture' ? 'Synthetic fixture' : 'Live/manual estimates'}`));
   card.append(element('div', 'date', dateRange(candidate.startAt, candidate.endAt)));
+  const nature = snapshot.nature?.summaries.find(item => item.candidateId === candidate.candidateId);
+  if (nature) {
+    const section = element('section', 'nature-summary');
+    section.append(element('h4', '', 'A little time outdoors'));
+    for (const stop of nature.outdoorStops) section.append(element('p', '', `${stop.label} · ${stop.location}`));
+    if (!nature.outdoorStops.length) section.append(element('p', '', 'No outdoor stops identified in the plan tags.'));
+    section.append(element('p', '', `${nature.drivingMinutes} minutes of recorded driving${nature.unknownLegs ? `; ${nature.unknownLegs} legs are unestimated` : ''}. Drive home is not counted.${candidate.dataSource === 'fixture' ? ' Synthetic demo data.' : ''}`));
+    card.append(section);
+  }
   for (const tradeoff of candidate.tradeoffs) card.append(element('p', '', tradeoff));
 
   if (candidate.itinerary.length) {
-    const itinerary = element('section', 'costs');
-    itinerary.append(element('h4', '', 'Itinerary and map links'));
+    const itinerary = disclosure(`${candidate.candidateId}:${candidate.revision}:itinerary`, 'Itinerary and map links', true);
     for (const item of candidate.itinerary) {
       const row = element('div', 'cost-row');
       row.append(element('span', '', `${item.location} | ${dateRange(item.startAt, item.endAt)}`));
@@ -64,8 +91,7 @@ function renderCandidate(candidate, snapshot) {
   }
 
   if (candidate.costs.length) {
-    const costs = element('section', 'costs');
-    costs.append(element('h4', '', 'Cost breakdown | range'));
+    const costs = disclosure(`${candidate.candidateId}:${candidate.revision}:costs`, 'Explore the cost breakdown');
     for (const item of candidate.costs) {
       const row = element('div', 'cost-row');
       row.append(element('span', '', `${item.label} (${item.costId}) | ${item.priceStatus}`));
@@ -95,8 +121,7 @@ function renderCandidate(candidate, snapshot) {
     card.append(element('p', '', `Unverified essentials: ${candidate.feasibility.unknownEssentials.join(', ')}`));
   }
 
-  const sources = element('section', 'sources');
-  sources.append(element('h4', '', 'Research sources'));
+  const sources = disclosure(`${candidate.candidateId}:${candidate.revision}:sources`, `Research sources (${candidate.evidence.length})`);
   for (const evidence of candidate.evidence) {
     const link = document.createElement('a');
     link.className = 'source';
@@ -120,10 +145,15 @@ async function refresh() {
     const response = await fetch(`/api/trips/${encodeURIComponent(tripId)}/snapshot`, { cache: 'no-store' });
     if (!response.ok) throw new Error(response.status === 404 ? 'Trip not found.' : 'Could not refresh the plan.');
     const snapshot = await response.json();
-    render(snapshot);
+    const fingerprint = JSON.stringify(snapshot);
+    if (fingerprint !== snapshotFingerprint) {
+      render(snapshot);
+      snapshotFingerprint = fingerprint;
+    }
     hasSnapshot = true;
     status.className = 'status';
-    status.textContent = `Updated just now | ${snapshot.fundingStatus === 'disabled' ? 'No funding enabled' : `Funding ${snapshot.fundingStatus}`}`;
+    status.textContent = 'Latest saved plan · refreshed just now';
+    await refreshFund(snapshot.revision);
   } catch (error) {
     status.className = 'status error';
     status.textContent = hasSnapshot ? 'Showing the last saved plan; reconnecting...' : `${error.message} Retrying...`;
@@ -132,3 +162,75 @@ async function refresh() {
 
 refresh();
 window.setInterval(refresh, 5000);
+
+async function refreshFund(revision) {
+  const fundRoot = document.querySelector('#fund');
+  try {
+    const response = await fetch(`/api/trips/${encodeURIComponent(tripId)}/fund`, { cache: 'no-store' });
+    if (!response.ok) throw new Error();
+    const fund = await response.json();
+    if (displayedRevision !== revision || fund.revision !== revision) return;
+    fundRoot.replaceChildren();
+    if (fund.status === 'disabled') return;
+    fundRoot.append(element('h2', '', 'Our shared trip fund'));
+    fundRoot.append(element('p', 'fund-label', fund.mode === 'nessie' ? 'Nessie sandbox · simulated transactions, no real money' : 'Local simulation · no real money'));
+    if (fund.status === 'not_ready') { fundRoot.append(element('p', '', fund.reason)); return; }
+    fundRoot.append(element('p', 'fund-total', `${money(fund.collectedDollars * 100)} of ${money(fund.neededDollars * 100)} collected`));
+    const progress = element('progress', 'fund-meter');
+    progress.max = Math.max(1, fund.neededDollars); progress.value = Math.min(fund.collectedDollars, progress.max);
+    progress.setAttribute('aria-label', 'Shared contributions collected');
+    fundRoot.append(progress);
+    fundRoot.append(element('p', '', `${fund.status.replaceAll('_', ' ')} · ${fund.missingCount} contributions still incomplete · revision ${fund.revision}`));
+    fundRoot.append(element('p', '', `Remaining after completed purchases: ${money(fund.remainingDollars * 100)}. Calculated from transactions, not the sandbox account balance.`));
+    for (const row of fund.spending.byCategory) {
+      const line = element('div', 'cost-row');
+      line.append(element('span', '', row.category.replaceAll('_', ' ')), element('strong', '', `${money(row.spentDollars * 100)} / ${money(row.plannedDollars * 100)} · ${row.state}`));
+      fundRoot.append(line);
+    }
+    fundRoot.append(element('p', '', `Unclassified spending: ${money(fund.spending.unclassifiedDollars * 100)}. Earlier-revision deposits: ${money(fund.staleDollars * 100)}. Unattributed deposits: ${money(fund.unattributedDollars * 100)}. These deposits do not count toward current contributions.`));
+  } catch {
+    fundRoot.replaceChildren(element('p', '', 'Fund unavailable. Retry shortly; no simulated fallback is shown.'));
+  }
+}
+
+function setupInteractions() {
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const motionButton = document.querySelector('#motion-toggle');
+  let motionPreference = true;
+  try { motionPreference = localStorage.getItem('weekend-motion') !== 'off'; } catch { /* Storage is optional. */ }
+  const syncMotion = () => {
+    const enabled = motionPreference && !reduced.matches;
+    document.body.dataset.motion = enabled ? 'on' : 'off';
+    motionButton.setAttribute('aria-pressed', String(enabled));
+    motionButton.textContent = reduced.matches ? 'Reduced motion enabled' : enabled ? 'Reef motion: on' : 'Reef motion: off';
+    motionButton.disabled = reduced.matches;
+
+  };
+  motionButton.addEventListener('click', () => {
+    motionPreference = !motionPreference;
+    try { localStorage.setItem('weekend-motion', motionPreference ? 'on' : 'off'); } catch { /* Storage is optional. */ }
+    syncMotion();
+  });
+  reduced.addEventListener('change', syncMotion);
+  syncMotion();
+  const sceneButton = document.querySelector('#scene-toggle');
+  const hero = document.querySelector('.hero');
+  const heroCopy = document.querySelector('.hero-copy');
+  sceneButton.addEventListener('click', () => {
+    const scenic = hero.classList.toggle('scenery-mode');
+    heroCopy.inert = scenic;
+    heroCopy.setAttribute('aria-hidden', String(scenic));
+    sceneButton.setAttribute('aria-pressed', String(scenic));
+    sceneButton.textContent = scenic ? 'Show the introduction' : 'Enjoy the scenery';
+  });
+  for (const [id, value] of [['filter-all', false], ['filter-outdoors', true]]) {
+    document.querySelector(`#${id}`).addEventListener('click', () => {
+      outdoorOnly = value;
+      document.querySelector('#filter-all').setAttribute('aria-pressed', String(!value));
+      document.querySelector('#filter-outdoors').setAttribute('aria-pressed', String(value));
+      if (lastSnapshot) render(lastSnapshot);
+    });
+  }
+}
+setupInteractions();
+import './reef.js';

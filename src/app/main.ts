@@ -1,4 +1,4 @@
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { resolve, dirname } from 'node:path';
 import { loadDemoTrip, loadEnrolledTrip, enrollmentWarnings } from './fixture.js';
@@ -13,20 +13,27 @@ import { LiveResearchDisplay, createLivePlanner } from './live-research.js';
 import { loadAppConfig, loadEnvironmentFile } from './config.js';
 import { createHttpServer } from './server.js';
 import { SqliteTripRepository } from '../storage/sqlite-repository.js';
+import { createNessieReader } from '../funding/nessie-reader.js';
+import { createFundService } from '../funding/service.js';
 
 export async function startApp(): Promise<() => Promise<void>> {
   await loadEnvironmentFile();
   const config = loadAppConfig();
-  if (config.calendarMode !== 'manual' || config.fundingMode !== 'disabled') {
-    throw new Error('Calendar and funding extensions are not integrated. Select manual calendar and disabled funding.');
+  if (config.calendarMode !== 'manual') {
+    throw new Error('Calendar extension is not integrated. Select manual calendar.');
   }
+  const merchantCategories = config.fundingMode === 'nessie' && process.env.NESSIE_MERCHANTS_PATH ? JSON.parse(await readFile(process.env.NESSIE_MERCHANTS_PATH, 'utf8')) as Record<string, string> : {};
+  if (!merchantCategories || Array.isArray(merchantCategories) || typeof merchantCategories !== 'object' || Object.values(merchantCategories).some(value => typeof value !== 'string')) throw new Error('Nessie merchant categories must be an ID-to-string object.');
   const trip = config.chatMode === 'photon' ? await loadEnrolledTrip(config.tripConfigPath) : await loadDemoTrip(config.tripConfigPath);
   if (config.chatMode === 'photon') for (const warning of enrollmentWarnings(trip.enrollment)) console.warn(warning);
   if (config.chatMode === 'photon' && ((trip.enrollment.mode !== 'direct' && trip.enrollment.groupSpaceId.startsWith('mock-')) || trip.enrollment.participants.some(p => p.providerUserId.startsWith('mock-')))) throw new Error('Live chat needs a trip config with actual enrolled provider identities and, in group mode, the actual group space ID.');
   await mkdir(dirname(config.databasePath), { recursive: true });
   const repository = SqliteTripRepository.open(config.databasePath);
   const display = config.researchMode === 'gemini' ? new LiveResearchDisplay(process.env.GEMINI_API_KEY!, process.env.GEMINI_MODEL || 'gemini-3.8-flash', `http://127.0.0.1:${config.port}`) : undefined;
-  const server = createHttpServer({ repository, researchDisplay: display });
+  const fundService = config.fundingMode === 'disabled' ? undefined : createFundService(config.fundingMode === 'nessie'
+    ? createNessieReader({ baseUrl: process.env.NESSIE_BASE_URL!, apiKey: process.env.NESSIE_API_KEY!, accountId: process.env.NESSIE_ACCOUNT_ID!, merchantCategories })
+    : { read: async () => ({ deposits: [], purchases: [] }) }, config.fundingMode, config.fundingMode === 'nessie' ? Number(process.env.NESSIE_PLAN_REVISION) : undefined);
+  const server = createHttpServer({ repository, researchDisplay: display, fundService });
   let runtime: ReturnType<typeof createApplicationRuntime> | undefined;
   try {
     await repository.bootstrapTrip(trip.enrollment, trip.state);
@@ -34,12 +41,16 @@ export async function startApp(): Promise<() => Promise<void>> {
     const stored = (await repository.loadTrip(enrollment.tripId))!;
     if (!stored.roster) await repository.commitEvent({ eventId: `roster-migration:${enrollment.tripId}`, expectedRevision: stored.revision, state: { ...stored, timeZone: trip.state.timeZone, roster: enrollment.participants.map(p => ({ memberId: p.memberId, displayName: p.displayName, consented: Boolean(p.consentedAt) })) }, messages: [] });
     const chat = await createChatAdapter(enrollment, trip.state.timeZone ?? 'America/New_York', config.chatMode);
-    const planner = display ? createLivePlanner(display, enrollment.groupSpaceId)
-      : config.researchMode === 'live' ? createPlannerAdapter(createResearchProvider({ mode: 'live', live: createGeminiProvider(geminiConfigFromEnv(process.env)!) }), enrollment.groupSpaceId)
-      : createPlannerAdapter(createResearchProvider({ mode: 'mock', fixtures: defaultFixtures }), enrollment.groupSpaceId);
+    const fundContext = fundService ? async (state: import('../contracts/index.js').TripState) => {
+      const result = await fundService.inspect(state);
+      return result.funding ? { remainingDollars: result.remainingDollars! } : undefined;
+    } : undefined;
+    const planner = display ? createLivePlanner(display, enrollment.groupSpaceId, { fundContext })
+      : config.researchMode === 'live' ? createPlannerAdapter(createResearchProvider({ mode: 'live', live: createGeminiProvider(geminiConfigFromEnv(process.env)!) }), enrollment.groupSpaceId, { fundContext })
+      : createPlannerAdapter(createResearchProvider({ mode: 'mock', fixtures: defaultFixtures }), enrollment.groupSpaceId, { fundContext });
     // Phones can only open the trip page if this is an address they can reach (set PUBLIC_BASE_URL to a tunnel or LAN address).
     const planUrl = `${(process.env.PUBLIC_BASE_URL?.trim() || `http://127.0.0.1:${config.port}`).replace(/\/+$/, '')}/?trip=${encodeURIComponent(enrollment.tripId)}`;
-    runtime = createApplicationRuntime({ repository, conversation: chat.conversation, planner, tripId: enrollment.tripId, planUrl,
+    runtime = createApplicationRuntime({ repository, conversation: chat.conversation, planner, tripId: enrollment.tripId, fundService, planUrl,
       ...(config.voiceMode === 'gemini' ? { voice: createGeminiVoice({ apiKey: process.env.GEMINI_API_KEY!, model: process.env.GEMINI_VOICE_MODEL || process.env.GEMINI_INTENT_MODEL || process.env.GEMINI_MODEL || 'gemini-3.8-flash', onError: () => console.error('Voice rewrite failed; sent the original text.') }) } : {}) });
     await runtime.start();
     const port = await server.listen(config.port);

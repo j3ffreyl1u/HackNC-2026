@@ -8,6 +8,7 @@ import { checkReadiness, openQuestionKeys, outstandingForOthers } from '../plann
 import { recordQuestions } from '../planning/questions.js';
 import type { ResearchProvider } from '../research/types.js';
 import type { PlannerAdapter } from './runtime.js';
+import { outdoorSummary, drivingComparison, formatMinutes } from '../planning/nature.js';
 
 export function toPlanningState(state: C.TripState): B.TripState {
   const records = state.memberConstraints.map(r => ({ ...toPlanningUpdate(r), recordedAt: r.updatedAt, revision: (r as { revision?: number }).revision ?? state.revision }));
@@ -101,7 +102,7 @@ function fromState(b: B.TripState, previous: C.TripState): C.TripState {
   };
 }
 
-export function createPlannerAdapter(provider: ResearchProvider, spaceId: string): PlannerAdapter {
+export function createPlannerAdapter(provider: ResearchProvider, spaceId: string, options: { fundContext?: (state: C.TripState) => Promise<{ remainingDollars: number } | undefined> } = {}): PlannerAdapter {
   const replies = (items: B.TripReply[]): C.OutboundMessage[] => items.map((r, i) => ({ ...r, text: r.text, deliveryId: `planner:${i}`, audience: r.audience.kind === 'group' ? { kind: 'group', spaceId } : r.audience }));
   return {
     applyCommand(state, command, options) {
@@ -173,7 +174,15 @@ export function createPlannerAdapter(provider: ResearchProvider, spaceId: string
     generateCandidates: async state => (await planTrip(toPlanningState(state), provider, { timeZone: state.timeZone })).candidates.map(fromCandidate),
     async research(state) {
       const result = await planTrip(toPlanningState(state), provider, { timeZone: state.timeZone });
-      return { revision: result.revision, candidates: result.candidates.map(fromCandidate), replies: replies(result.replies) };
+      const nature = result.candidates.map(c => {
+        const summary = outdoorSummary(c);
+        return `${summary.title}: ${summary.outdoorStops.length ? `Outdoor stops: ${summary.outdoorStops.map(s => s.label).join(', ')}.` : 'No outdoor stops identified in the plan tags.'} ${formatMinutes(summary.drivingMinutes)} of recorded driving${summary.unknownLegs ? `; ${summary.unknownLegs} legs have no drive estimate` : ''}. Drive home is not counted.${c.dataSource === 'fixture' ? ' Synthetic demo data.' : ''}`;
+      });
+      const comparison = drivingComparison(result.candidates);
+      if (comparison) nature.push(comparison.text);
+      const messages = [...result.replies];
+      if (nature.length) messages.push({ audience: { kind: 'group' }, text: nature.join('\n') });
+      return { revision: result.revision, candidates: result.candidates.map(fromCandidate), replies: replies(messages) };
     },
     install(state, revision, candidates) {
       const before = toPlanningState(state);
@@ -181,7 +190,8 @@ export function createPlannerAdapter(provider: ResearchProvider, spaceId: string
       return { ...result, state: result.state === before ? state : fromState(result.state, state), replies: replies(result.replies) };
     },
     async guide(state, question, now) {
-      const answer = await answerGuideQuestion(toPlanningState(state), question, provider, { now });
+      const fund = await options.fundContext?.(state);
+      const answer = await answerGuideQuestion(toPlanningState(state), question, provider, { now, ...(fund ? { fund } : {}) });
       // Chat gets the short version: a few lines and the site names, not the full text with long source links.
       return answer.short ?? answer.text;
     },
