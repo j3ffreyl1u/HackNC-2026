@@ -472,6 +472,13 @@ describe('relaying what someone else said', () => {
   it('says not yet, without a stray "Yes", when nothing has been shared', async () => {
     expect(text(await ask('is Alex planning?'))).toBe("Not yet, Alex hasn't told me anything. I'm still waiting on Alex's dates, preferences and budget.");
   });
+  it('never saves a budget as something someone likes ("I like sightseeing and food, my max is $400")', async () => {
+    const r = await setup().service.parseInbound(msg({ text: 'I like sightseeing and food, my max is $400', visibility: 'private' }));
+    const json = JSON.stringify(r);
+    expect(json).toMatch(/sightseeing/);
+    expect(json).not.toMatch(/"value":\[[^\]]*(?:max|\$)[^\]]*\]/);
+    expect(json).toMatch(/40000/);
+  });
   it('answers no when the person has given everything', async () => {
     const done = setup({ others: [{ memberId: 'mason', name: 'Mason', shared: ['is free Nov 14-17', 'is into food'], missing: [] }] } as never).service;
     expect(text(await done.parseInbound(msg({ text: 'did Mason finish?', visibility: 'private' })))).toBe("Yes, Mason has finished. Mason is free Nov 14-17 and is into food. I have Mason's budget too, but I keep that one private.");

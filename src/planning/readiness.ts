@@ -51,7 +51,7 @@ function formatWindows(windows: readonly { startAt: string; endAt: string }[]): 
 function authorsSaid(state: TripState, ids: readonly string[]): string {
   const parts = ids.map((id) => {
     const windows = effectiveAvailability(state, id);
-    const prefs = statedPreferences(state, id);
+    const prefs = statedPreferences(state, id)?.filter((v) => !/\$|\d|\b(?:budget|max(?:imum)?)\b/i.test(v));   // never repeat anything that mentions money
     const bits: string[] = [];
     if (windows && windows.length > 0) bits.push(`is free ${formatWindows(windows)}`);
     if (prefs && prefs.length > 0 && !prefs.includes('no preference')) bits.push(`is into ${prefs.join(' and ')}`);

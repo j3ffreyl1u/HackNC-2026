@@ -513,7 +513,8 @@ function othersShared(state: TripState, actorId: string): Array<{ memberId: stri
     const dates = latest('availability');
     if (dates && dates.field === 'availability') shared.push(`is free ${dates.value.map((w) => dayRange(w.startAt, w.endAt, w.timeZone)).join(' and ')}`); else missing.push('dates');
     const prefs = latest('preferences');
-    if (prefs && prefs.field === 'preferences') shared.push(prefs.value.includes('no preference') ? 'has no strong preferences' : `is into ${prefs.value.join(' and ')}`); else missing.push('preferences');
+    const likes = prefs && prefs.field === 'preferences' ? prefs.value.filter((v) => !/\$|\d|\b(?:budget|max(?:imum)?)\b/i.test(v)) : [];   // never repeat anything that mentions money
+    if (prefs && prefs.field === 'preferences' && likes.length > 0) shared.push(likes.includes('no preference') ? 'has no strong preferences' : `is into ${likes.join(' and ')}`); else missing.push('preferences');
     const must = latest('must_dos');
     if (must && must.field === 'must_dos' && must.value.length > 0) shared.push(`has must-haves: ${must.value.join(', ')}`);
     if (!latest('budget')) missing.push('budget');
