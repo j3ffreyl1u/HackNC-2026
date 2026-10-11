@@ -40,7 +40,7 @@ export const corpus: Case[] = [
   c('my limit is 180 dollars', { budget: 18000 }),
   c("I've only got $150 to spend on this", { budget: 15000 }),
   c('I can do 200', { budget: 20000 }, false, { soft: true }),
-  c('200 max', { budget: 20000 }, false),
+  c('200 max', { budget: 20000 }),   // read by rule since the loop tests ("350 max" is common)
   c('my limit is three hundred dollars', { budget: 30000 }, false),
   c("ok so I can only really afford like two hundred bucks for this whole thing", { budget: 20000 }, false),
   c('I can swing $225 all in', { budget: 22500 }),

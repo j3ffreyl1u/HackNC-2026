@@ -65,3 +65,14 @@ describe('a few more everyday messages', () => {
     expect(await ask('add it to my calendar')).toMatch(/can't add things to a calendar/);
   });
 });
+
+describe('everyday phrasings found in the last loop', () => {
+  it('"350 max", "from durham", "want the mountains" are read by rule; questions about a drive are not an origin', async () => {
+    const { extractConstraints } = await import('../../src/conversation/constraints.js');
+    const v = (t: string) => extractConstraints(t, REF).map((e) => e.value);
+    expect(v('from durham. 350 max. free nov 21-23')).toEqual(expect.arrayContaining([{ field: 'budget', value: 35000 }, { field: 'origin', value: 'Durham' }]));
+    expect(v('starting from chapel hill, want the mountains, 2 nights')).toContainEqual({ field: 'region', value: 'mountains' });
+    expect(v("what's the drive from durham").some((x) => x.field === 'origin')).toBe(false);
+    expect(v('bye').some((x) => x.field === 'region' || x.field === 'origin')).toBe(false);
+  });
+});

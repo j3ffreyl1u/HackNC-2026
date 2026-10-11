@@ -17,7 +17,7 @@ import { formatCents } from './money.js';
 import type { ConversationDependencies } from './types.js';
 
 const APPROVE_REACTIONS = new Set(['👍', '👍🏻', '👍🏼', '👍🏽', '👍🏾', '👍🏿', '❤️', '❤', '✅', '✔️', 'like', 'love', 'thumbsup', '+1']);
-const YES = /^(?:(?:yes|yep|yeah|yup|sure)(?:[ ,]+(?:it is|that is|that'?s right|that'?s it|correct|exactly|please|firm))?|ok|okay|accept|accepted|i accept|i'?m in(?:\s+too)?|me too|i'?m down|count me in|sounds good|works for me|let'?s do it|do it|confirm|confirmed|correct|that'?s right|exactly)[.!]*$/i;
+const YES = /^(?:(?:ok(?:ay)?|yeah|yes|alright|sure)[, ]+)?(?:(?:yes|yep|yeah|yup|sure)(?:[ ,]+(?:it is|that is|that'?s right|that'?s it|correct|exactly|please|firm))?|ok|okay|accept|accepted|i accept|i'?m in(?:\s+too)?|me too|i'?m down|count me in|sounds good|works for me|let'?s do it|do it|confirm|confirmed|correct|that'?s right|exactly)[.!]*$/i;
 /** "yes that works", "sounds good to me", "all good": agreement, as long as nothing in it asks for a change. */
 const AGREES_START = /^(?:yes|yeah|yep|yup|yea|sure|ok|okay|absolutely|definitely|totally|sounds|that works|that'?ll work|works|all good|fine|good|perfect|great|i'?m (?:good|fine|down|in)|let'?s do it|love it|looks good)\b/i;
 const CHANGE_WORDS = /\b(?:but|actually|instead|rather|except|though|however|no|not|don'?t|doesn'?t|can'?t|wait|hold on|change)\b/i;
