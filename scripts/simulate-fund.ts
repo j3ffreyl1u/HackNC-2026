@@ -4,6 +4,14 @@ import { resolve } from 'node:path';
 import { depositTag } from '../src/planning/funding.js';
 
 interface Simulation { revision: number; deposits: Array<{ memberId: string; dollars: number }>; purchases: Array<{ merchantId?: string; category?: string; dollars: number }> }
+/**
+ * The body for creating a simulated merchant. `category` is a plain string: the live sandbox answers a list with
+ * 400 "str type expected" (checked 2026-10-11), so it must not be wrapped in an array.
+ */
+export function merchantBody(category: string, address: Record<string, string>) {
+  return { name: `SIMULATED ${category}`, category, address, geocode: { lat: 35.9132, lng: -79.0558 } };
+}
+
 export function simulationPayloads(raw: unknown, date: string) {
   const input = raw as Simulation;
   if (!input || !Number.isSafeInteger(input.revision) || input.revision < 0 || !Array.isArray(input.deposits) || !Array.isArray(input.purchases)) throw new Error('Invalid simulated fund manifest.');
@@ -37,7 +45,7 @@ async function run() {
   const customer = { first_name: 'SIMULATED', last_name: 'Trip Group', address };
   const account = { type: 'Checking', nickname: `SIMULATED trip revision ${input.revision}`, rewards: 0, balance: 0 };
   if (!args.includes('--execute')) {
-    console.log(JSON.stringify({ ...(provision ? { customer, account, merchants: input.purchases.map(p => ({ name: `SIMULATED ${p.category}`, category: [p.category], address, geocode: { lat: 35.9132, lng: -79.0558 } })) } : {}), transactions: payloads }, null, 2));
+    console.log(JSON.stringify({ ...(provision ? { customer, account, merchants: input.purchases.map(p => merchantBody(p.category!, address)) } : {}), transactions: payloads }, null, 2));
     console.log('Preview only. --execute posts once; rerunning creates duplicates.'); return;
   }
   const env = process.env;
@@ -65,7 +73,7 @@ async function run() {
     const customerId = createdId(await post('customers', customer));
     accountId = createdId(await post(`customers/${encodeURIComponent(customerId)}/accounts`, account));
     for (const p of input.purchases) {
-      p.merchantId = createdId(await post('merchants', { name: `SIMULATED ${p.category}`, category: [p.category], address, geocode: { lat: 35.9132, lng: -79.0558 } }));
+      p.merchantId = createdId(await post('merchants', merchantBody(p.category!, address)));
       merchantCategories[p.merchantId] = p.category!;
     }
     await mkdir('data', { recursive: true });
