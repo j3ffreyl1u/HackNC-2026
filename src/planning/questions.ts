@@ -1,8 +1,9 @@
 import { participantIds } from './state.js';
+import { Q } from './wording.js';
 import type { ConstraintField, PendingQuestion, ReadinessQuestion, TripState } from './types.js';
 
 /** The exact words for a missing budget. Asked privately, since a limit may be sensitive. */
-export const BUDGET_QUESTION = "What's your maximum total for this trip, including food and travel?";
+export const BUDGET_QUESTION: string = Q.budget;
 
 /** Questions go out one at a time per person; this is kept for callers that import it. */
 export const MAX_QUESTIONS_PER_TURN = 1;

@@ -8,6 +8,7 @@ import {
   statedPreferences,
 } from './constraints.js';
 import { formatUsd } from './money.js';
+import { Q } from './wording.js';
 import { BUDGET_QUESTION, TOPIC_ORDER, fieldForKey, selectQuestions, type QuestionCandidate } from './questions.js';
 import { displayName, participants, participantIds } from './state.js';
 import type { ConstraintValues, ReadinessQuestion, ReadinessResult, TripState } from './types.js';
@@ -101,7 +102,7 @@ function evaluate(state: TripState): Evaluation {
   const origin = resolveGroupField(state, 'origin');
   if (origin.status === 'unset') {
     missing.push('origin');
-    group('basics', 'origin', origin.tentativeOnly ? 'Just to confirm: is that where you will all be leaving from?' : 'Where are you all leaving from?');
+    group('basics', 'origin', origin.tentativeOnly ? Q.originConfirm : Q.origin);
   } else if (origin.status === 'conflict') {
     conflicts.push('origin');
     const options = origin.positions.map((p) => `${displayName(state, p.memberId)} is leaving from ${(p.value as ConstraintValues['origin']).city}`);
@@ -111,7 +112,7 @@ function evaluate(state: TripState): Evaluation {
   const duration = resolveGroupField(state, 'duration');
   if (duration.status === 'unset') {
     missing.push('duration');
-    group('basics', 'duration', duration.tentativeOnly ? 'Just to confirm: how many nights is the trip?' : 'How many nights are you thinking?');
+    group('basics', 'duration', duration.tentativeOnly ? Q.durationConfirm : Q.duration);
   } else if (duration.status === 'conflict') {
     conflicts.push('duration');
     const options = duration.positions.map((p) => `${displayName(state, p.memberId)} is thinking ${nightsText((p.value as ConstraintValues['duration']).nights)}`);
@@ -121,7 +122,7 @@ function evaluate(state: TripState): Evaluation {
   const region = resolveGroupField(state, 'region');
   if (region.status === 'unset') {
     missing.push('region');
-    group('basics', 'region', 'Got a place in mind, or how far are you up for driving?');
+    group('basics', 'region', Q.region);
   } else if (region.status === 'conflict') {
     conflicts.push('region');
     const options = region.positions.map((p) => {
@@ -135,13 +136,13 @@ function evaluate(state: TripState): Evaluation {
   const transport = resolveGroupField(state, 'transport');
   if (transport.status === 'unset') {
     missing.push('transport');
-    group('basics', 'transport', 'Does anyone have a car we can take?');
+    group('basics', 'transport', Q.transport);
   } else if (transport.status === 'conflict') {
     conflicts.push('transport');
     group('basics', 'conflict:transport', 'I have conflicting answers about whether you have a car. Does anyone have one for the trip?');
   } else if (!(transport.value as ConstraintValues['transport']).vehicleAvailable) {
     missing.push('vehicle');
-    group('basics', 'vehicle', "I can only plan road trips for now, so I need a car. Could anyone drive or borrow one?");
+    group('basics', 'vehicle', Q.vehicle);
   }
 
   // -- everyone gets a say in the shared basics: anyone who has not weighed in is asked whether the plan so far works
@@ -157,11 +158,11 @@ function evaluate(state: TripState): Evaluation {
   const missingDates = ids.filter((id) => effectiveAvailability(state, id) === undefined);
   for (const id of missingDates) missing.push(`availability:${id}`);
   // Each person is asked about their own dates, privately, so nobody else's phone gets the question.
-  for (const id of missingDates) privately('dates', id, `availability:${id}`, 'Which dates could you do for the trip?');
+  for (const id of missingDates) privately('dates', id, `availability:${id}`, Q.dates);
   for (const id of ids) {
     if (effectiveAvailability(state, id) !== undefined && hasUnconfirmedChange(state, id, 'availability')) {
       conflicts.push(`availability_unconfirmed:${id}`);
-      privately('dates', id, `availability_unconfirmed:${id}`, 'You mentioned some different dates. Are your usable dates still the ones you gave before, or have they changed?');
+      privately('dates', id, `availability_unconfirmed:${id}`, Q.datesChanged);
     }
   }
   if (missingDates.length === 0 && ids.length >= MIN_PARTICIPANTS && duration.status === 'agreed') {
@@ -209,14 +210,14 @@ function evaluate(state: TripState): Evaluation {
   for (const id of ids) {
     if (hasUnconfirmedChange(state, id, 'must_dos')) {
       conflicts.push(`must_dos_unconfirmed:${id}`);
-      privately('preferences', id, `must_dos_unconfirmed:${id}`, 'You mentioned something that sounds like a must-have. Is it a firm requirement for the trip?');
+      privately('preferences', id, `must_dos_unconfirmed:${id}`, Q.mustHaveConfirm);
     }
   }
 
   // -- preferences: a stated list, or an explicit "no preference"
   const quiet = ids.filter((id) => statedPreferences(state, id) === undefined);
   for (const id of quiet) missing.push(`preferences:${id}`);
-  for (const id of quiet) privately('preferences', id, `preferences:${id}`, 'What would you like out of this trip? "No preference" is a fine answer.');
+  for (const id of quiet) privately('preferences', id, `preferences:${id}`, Q.preferences);
 
   return { missing, conflicts, candidates };
 }
