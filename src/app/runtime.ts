@@ -239,6 +239,12 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
           replies.push(makeMessage(tripId, `auto-plan:${message.eventId}`, { audience: { kind: 'group', spaceId: enrollment.groupSpaceId }, text: "I have what I need from everyone, so I'm looking up options now. Give me a minute." }));
         }
       }
+      // Someone changed a shared detail the others already had? Tell them, so nobody plans around the old one.
+      for (const text of basicsChangeNotes(state, nextState, member.memberId)) {
+        for (const other of (state.roster ?? []).filter((m) => m.memberId !== member.memberId && m.consented)) {
+          replies.push(makeMessage(tripId, `changed:${message.eventId}:${other.memberId}:${text.slice(0, 12)}`, { audience: { kind: 'private', memberId: other.memberId }, text }));
+        }
+      }
       if (parsed.kind === 'commands' && parsed.clarificationQuestion) {
         replies.push(makeMessage(tripId, `clarification:${message.eventId}`, {
           audience: message.visibility === 'private'
@@ -411,6 +417,25 @@ function othersShared(state: TripState, actorId: string): Array<{ memberId: stri
     if (!latest('budget')) missing.push('budget');
     return { memberId: m.memberId, name: m.displayName, shared, missing };
   });
+}
+
+/** A short heads-up for each shared basic (starting city, length, place, car) that someone just changed from a value that was already set. */
+function basicsChangeNotes(before: TripState, after: TripState, actorId: string): string[] {
+  const who = before.roster?.find((m) => m.memberId === actorId)?.displayName ?? 'Someone';
+  const was = sharedBasics(before);
+  const now = sharedBasics(after);
+  const open = (field: string) => after.pendingQuestions.some((q) => q.questionId.startsWith(`conflict:${field}`));
+  const notes: string[] = [];
+  for (const b of now) {
+    const a = was.find((x) => x.field === b.field);
+    if (!a || JSON.stringify(a) === JSON.stringify(b) || open(b.field)) continue;   // new, unchanged, or already being sorted out as a disagreement
+    const ask = " Shout if that doesn't work for you.";
+    if (b.field === 'origin') notes.push(`${who} changed the starting point to ${b.value}.${ask}`);
+    else if (b.field === 'duration') notes.push(`${who} changed the trip to ${b.value} night${b.value === 1 ? '' : 's'}.${ask}`);
+    else if (b.field === 'region') notes.push(`${who} changed the place to ${b.value}.${ask}`);
+    else if (b.field === 'transport' && b.vehicleAvailable === false) notes.push(`Heads up, ${who} says there isn't a car after all.${ask}`);
+  }
+  return notes;
 }
 
 /** A friendly line for a disagreement that has just been settled. */

@@ -271,4 +271,24 @@ describe('first live DM scenario, end to end (A parser + C runtime + B planner, 
     expect((await broken.say(JEFF, 'I want to plan a trip')).jeff).toEqual(['Where are you all leaving from?']);   // falls back to the original
     await broken.stop();
   });
+
+  it('when one person changes a shared detail the other has not weighed in on, the other is told (and the one who changed it is not)', async () => {
+    const t = await live();
+    await t.say(JEFF, "I'm leaving from Chapel Hill, 2 nights, I want to go to Asheville, I have a car, I'm free Nov 14-17, my max is $500, I like hiking");
+    await t.say(MASON, "I'm free Nov 14-17");   // Mason has joined in but has not weighed in on the basics
+    const r = await t.say(JEFF, 'actually make it 3 nights');
+    expect(r.mason.some((x) => /Jeffrey changed the trip to 3 nights\. Shout if that doesn't work for you\./.test(x))).toBe(true);
+    expect(r.jeff.some((x) => /changed the trip to/.test(x))).toBe(false);
+    await t.stop();
+  });
+
+  it('when one person changes a detail the other already agreed to, it becomes a disagreement they both settle', async () => {
+    const t = await live();
+    await t.say(JEFF, "I'm leaving from Chapel Hill, 2 nights, I want to go to Asheville, I have a car, I'm free Nov 14-17, my max is $500, I like hiking");
+    await t.say(MASON, 'I want to plan a trip');
+    await t.say(MASON, 'yes that works');
+    const r = await t.say(JEFF, 'actually make it 3 nights');
+    for (const who of [r.jeff, r.mason]) expect(who.some((x) => /Jeffrey is thinking 3 nights and Mason is thinking 2 nights\. Which should we go with\?/.test(x))).toBe(true);
+    await t.stop();
+  });
 });
