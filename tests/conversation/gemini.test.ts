@@ -28,9 +28,27 @@ describe('gemini intent model', () => {
       (async () => { throw new Error('net'); }) as unknown as typeof fetch,
       (async () => { throw new DOMException('timed out', 'TimeoutError'); }) as unknown as typeof fetch,
     ]) {
-      const model = createGeminiIntentModel({ apiKey: 'k', model: 'm', fetchImpl: f });
+      const model = createGeminiIntentModel({ apiKey: 'k', model: 'm', fetchImpl: f, retryDelayMs: 0 });
       expect(validateIntent(await model.interpret(input)).intent).toBe('unavailable');
     }
+  });
+  it('tries once more after a temporary failure before saying it is unavailable', async () => {
+    let calls = 0;
+    const flaky = (async () => {
+      calls += 1;
+      if (calls === 1) return new Response('slow down', { status: 429 });
+      return new Response(JSON.stringify({ output_text: JSON.stringify({ intent: 'pick', choice: 1 }) }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const model = createGeminiIntentModel({ apiKey: 'k', model: 'm', fetchImpl: flaky, retryDelayMs: 0 });
+    expect(validateIntent(await model.interpret(input)).intent).toBe('pick');
+    expect(calls).toBe(2);
+  });
+  it('does not retry a rejected request (a client error will not fix itself)', async () => {
+    let calls = 0;
+    const bad = (async () => { calls += 1; return new Response('bad request', { status: 400 }); }) as unknown as typeof fetch;
+    const model = createGeminiIntentModel({ apiKey: 'k', model: 'm', fetchImpl: bad, retryDelayMs: 0 });
+    expect(validateIntent(await model.interpret(input)).intent).toBe('unavailable');
+    expect(calls).toBe(1);
   });
   it('frames the message as data, names no budgets, and describes the trip intents', () => {
     const p = buildPrompt(input);

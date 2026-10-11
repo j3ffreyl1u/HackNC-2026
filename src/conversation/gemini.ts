@@ -88,6 +88,8 @@ export interface GeminiOptions {
   model: string;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
+  /** Wait before the single retry after a temporary failure. */
+  retryDelayMs?: number;
   onError?: (err: unknown) => void;
 }
 
@@ -112,6 +114,12 @@ export function createGeminiIntentModel(opts: GeminiOptions): IntentModel {
           if (!res.ok) throw new Error(`Gemini HTTP ${res.status}`);
         } catch (err) {
           opts.onError?.(err); // never includes the API key or message text
+          // A busy moment (rate limit, server hiccup, timeout) usually clears in a second: try once more before telling anyone.
+          const status = /Gemini HTTP (\d+)/.exec(String((err as Error)?.message ?? ''))?.[1];
+          if (!retried && (status === undefined || status === '429' || Number(status) >= 500)) {
+            await new Promise((resolve) => setTimeout(resolve, opts.retryDelayMs ?? 1500));
+            return attempt(true);
+          }
           // The service itself did not answer (quota, outage, network, timeout). Say so, rather than blaming the message.
           return { intent: 'unavailable' };
         }
