@@ -1,6 +1,6 @@
 import { reprice } from './budget.js';
 import { ConstraintError, effectiveAvailability, effectiveBudget, effectiveMustDos, recordConstraint, resolveGroupField, validateUpdate } from './constraints.js';
-import { checkReadiness, openQuestionKeys } from './readiness.js';
+import { checkReadiness, describeGaps, openQuestionKeys } from './readiness.js';
 import { clearAnsweredQuestions, recordQuestions } from './questions.js';
 import { displayName, participantIds } from './state.js';
 import type {
@@ -37,6 +37,9 @@ const toReplies = (questions: readonly ReadinessQuestion[]): TripReply[] =>
 /** Ask what is still missing, remembering the questions so they are not repeated too soon. */
 function askAboutGaps(state: TripState, now: string): { state: TripState; replies: TripReply[] } {
   const cleared = clearAnsweredQuestions(state, openQuestionKeys(state));
+  // Several commands from one message share a timestamp. Anything already asked at this instant belongs to the
+  // same turn, and one turn asks at most two questions.
+  if (cleared.pendingQuestions.some((q) => q.askedAt === now)) return { state: cleared, replies: [] };
   const { questions } = checkReadiness(cleared, { now });
   return { state: recordQuestions(cleared, questions, now), replies: toReplies(questions) };
 }
@@ -170,7 +173,7 @@ function requestPlans(state: TripState, command: TripCommand, now: string): Appl
   const readiness = checkReadiness(state, { now });
   if (!readiness.ready) {
     const asked = askAboutGaps(state, now);
-    const reply = asked.replies.length > 0 ? asked.replies : [{ audience: { kind: 'private', memberId: command.actorId } as const, text: "I'm not ready to plan yet. I'm still waiting on a few details." }];
+    const reply = asked.replies.length > 0 ? asked.replies : [{ audience: GROUP, text: describeGaps(state, readiness) }];
     return {
       state: asked.state,
       replies: reply,

@@ -6,7 +6,7 @@ Status as of 2026-10-10. Everything here is pure TypeScript with no database, ch
 
 | Export | File | Purpose |
 | --- | --- | --- |
-| `checkReadiness(state, { now? })` | `src/planning/readiness.ts` | Deterministic checklist: `{ ready, missing, conflicts, questions }`. At most two related questions, none repeated within 12 hours. |
+| `checkReadiness(state, { now? })` | `src/planning/readiness.ts` | Deterministic checklist: `{ ready, missing, conflicts, questions }`. At most two related questions, none repeated within 12 hours. `applyCommand` also asks at most two per turn: commands sharing one timestamp (one message) ask once. A `request_plans` with nothing new to ask replies with `describeGaps` (who and what is missing, no values), never silence. |
 | `applyCommand(state, command, { now? })` | `src/planning/commands.ts` | Domain transitions. Returns `{ state, replies, researchRequested, rejection? }`. |
 | `installCandidates(state, researchedAtRevision, candidates)` | `src/planning/commands.ts` | Installs researched candidates; discards results for an older revision (`STALE_REVISION`). |
 | `validateCandidate(state, candidate)` | `src/planning/budget.ts` | Hard-limit check: caps, dates, duration, must-dos, drive limit. Returns `{ feasible, violations, unknownEssentials }`. |
