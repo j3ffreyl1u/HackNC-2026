@@ -458,14 +458,24 @@ describe('relaying what someone else said', () => {
     expect(reply).toMatch(/Still waiting on Mason's budget/);
     expect(reply).not.toMatch(/\$|\d{3,}/);
   });
-  it.each(['Is Mason planning?', 'is mason still planning', 'has Mason finished?', 'is Mason done yet'])('"%s" gets a yes, what Mason has given, and what is still open', async (t) => {
-    const reply = text(await ask(t));
+  it.each(['Is Mason planning?', 'is mason still planning'])('"%s" is yes while Mason is still going, with what they gave and what is open', async (q) => {
+    const reply = text(await ask(q));
     expect(reply).toMatch(/^Yes, Mason is still planning\. Mason is free Nov 14-17 and is into food and museums\. However, I'm still waiting on Mason's budget\./);
     expect(reply).not.toMatch(/\$|\d{3,}/);
   });
+  it.each(['has Mason finished?', 'is Mason done yet', 'did Mason finish'])('"%s" is not yet while Mason is still going', async (q) => {
+    expect(text(await ask(q))).toMatch(/^Not yet, Mason is still planning\. Mason is free Nov 14-17/);
+  });
+  it.each(["how is masons planning going?", "how's Mason's planning going", 'how is mason planning going'])('"%s" is a status question about Mason', async (t) => {
+    expect(text(await ask(t))).toMatch(/^Mason is still planning\. Mason is free Nov 14-17/);
+  });
+  it('says not yet, without a stray "Yes", when nothing has been shared', async () => {
+    expect(text(await ask('is Alex planning?'))).toBe("Not yet, Alex hasn't told me anything. I'm still waiting on Alex's dates, preferences and budget.");
+  });
   it('answers no when the person has given everything', async () => {
     const done = setup({ others: [{ memberId: 'mason', name: 'Mason', shared: ['is free Nov 14-17', 'is into food'], missing: [] }] } as never).service;
-    expect(text(await done.parseInbound(msg({ text: 'is Mason planning?', visibility: 'private' })))).toBe('No, Mason has finished. Mason is free Nov 14-17 and is into food.');
+    expect(text(await done.parseInbound(msg({ text: 'did Mason finish?', visibility: 'private' })))).toBe("Yes, Mason has finished. Mason is free Nov 14-17 and is into food. I have Mason's budget too, but I keep that one private.");
+    expect(text(await done.parseInbound(msg({ text: 'is Mason planning?', visibility: 'private' })))).toBe("No, Mason is done planning. Mason is free Nov 14-17 and is into food. I have Mason's budget too, but I keep that one private.");
   });
   it('says so plainly when someone has said nothing', async () => {
     expect(text(await ask('what did Alex say?'))).toMatch(/^Alex hasn't told me anything yet\. Still waiting on Alex's dates, preferences and budget\./);
