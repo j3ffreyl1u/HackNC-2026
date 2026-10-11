@@ -3,6 +3,18 @@ const status = document.querySelector('#status');
 const root = document.querySelector('#trip');
 let hasSnapshot = false;
 let displayedRevision;
+let lastSnapshot;
+let snapshotFingerprint;
+let outdoorOnly = false;
+const expandedDetails = new Map();
+
+function disclosure(key, title, initiallyOpen = false) {
+  const details = element('details', 'costs plan-disclosure');
+  details.open = expandedDetails.get(key) ?? initiallyOpen;
+  details.append(element('summary', '', title));
+  details.addEventListener('toggle', () => expandedDetails.set(key, details.open));
+  return details;
+}
 
 function element(tag, className, text) {
   const node = document.createElement(tag);
@@ -21,6 +33,7 @@ function dateRange(startAt, endAt) {
 }
 
 function render(snapshot) {
+  lastSnapshot = snapshot;
   displayedRevision = snapshot.revision;
   root.replaceChildren();
   const heading = element('div', 'trip-heading');
@@ -34,9 +47,12 @@ function render(snapshot) {
   if (snapshot.nature?.comparison) root.append(element('p', 'nature-comparison', snapshot.nature.comparison));
 
   const candidates = element('div', 'candidate-grid');
-  for (const candidate of snapshot.candidates) candidates.append(renderCandidate(candidate, snapshot));
+  for (const candidate of snapshot.candidates) {
+    const hasOutdoor = snapshot.nature?.summaries.some(s => s.candidateId === candidate.candidateId && s.outdoorStops.length);
+    if (!outdoorOnly || hasOutdoor) candidates.append(renderCandidate(candidate, snapshot));
+  }
   if (candidates.childElementCount) root.append(candidates);
-  else root.append(element('div', 'empty', 'Your group is gathering dates, budgets, and ideas. Plan options will appear here when they are ready.'));
+  else root.append(element('div', 'empty', outdoorOnly && snapshot.candidates.length ? 'No current plans have tagged outdoor stops. Choose All plans to see the other options.' : 'Your group is gathering dates, budgets, and ideas. Plan options will appear here when they are ready.'));
 }
 
 function renderCandidate(candidate, snapshot) {
@@ -56,8 +72,7 @@ function renderCandidate(candidate, snapshot) {
   for (const tradeoff of candidate.tradeoffs) card.append(element('p', '', tradeoff));
 
   if (candidate.itinerary.length) {
-    const itinerary = element('section', 'costs');
-    itinerary.append(element('h4', '', 'Itinerary and map links'));
+    const itinerary = disclosure(`${candidate.candidateId}:${candidate.revision}:itinerary`, 'Itinerary and map links', true);
     for (const item of candidate.itinerary) {
       const row = element('div', 'cost-row');
       row.append(element('span', '', `${item.location} | ${dateRange(item.startAt, item.endAt)}`));
@@ -76,8 +91,7 @@ function renderCandidate(candidate, snapshot) {
   }
 
   if (candidate.costs.length) {
-    const costs = element('section', 'costs');
-    costs.append(element('h4', '', 'Cost breakdown | range'));
+    const costs = disclosure(`${candidate.candidateId}:${candidate.revision}:costs`, 'Explore the cost breakdown');
     for (const item of candidate.costs) {
       const row = element('div', 'cost-row');
       row.append(element('span', '', `${item.label} (${item.costId}) | ${item.priceStatus}`));
@@ -107,8 +121,7 @@ function renderCandidate(candidate, snapshot) {
     card.append(element('p', '', `Unverified essentials: ${candidate.feasibility.unknownEssentials.join(', ')}`));
   }
 
-  const sources = element('section', 'sources');
-  sources.append(element('h4', '', 'Research sources'));
+  const sources = disclosure(`${candidate.candidateId}:${candidate.revision}:sources`, `Research sources (${candidate.evidence.length})`);
   for (const evidence of candidate.evidence) {
     const link = document.createElement('a');
     link.className = 'source';
@@ -132,7 +145,11 @@ async function refresh() {
     const response = await fetch(`/api/trips/${encodeURIComponent(tripId)}/snapshot`, { cache: 'no-store' });
     if (!response.ok) throw new Error(response.status === 404 ? 'Trip not found.' : 'Could not refresh the plan.');
     const snapshot = await response.json();
-    render(snapshot);
+    const fingerprint = JSON.stringify(snapshot);
+    if (fingerprint !== snapshotFingerprint) {
+      render(snapshot);
+      snapshotFingerprint = fingerprint;
+    }
     hasSnapshot = true;
     status.className = 'status';
     status.textContent = 'Latest saved plan · refreshed just now';
@@ -175,3 +192,80 @@ async function refreshFund(revision) {
     fundRoot.replaceChildren(element('p', '', 'Fund unavailable. Retry shortly; no simulated fallback is shown.'));
   }
 }
+
+function setupInteractions() {
+  const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const finePointer = window.matchMedia('(hover: hover) and (pointer: fine)');
+  const motionButton = document.querySelector('#motion-toggle');
+  let motionPreference = true;
+  try { motionPreference = localStorage.getItem('weekend-motion') !== 'off'; } catch { /* Storage is optional. */ }
+  let activeSurface;
+  let pendingFrame;
+  let latestPoint;
+  const resetSurface = () => {
+    if (activeSurface) {
+      activeSurface.style.removeProperty('--tilt-x');
+      activeSurface.style.removeProperty('--tilt-y');
+      activeSurface.style.removeProperty('--light-x');
+      activeSurface.style.removeProperty('--light-y');
+      activeSurface = undefined;
+    }
+  };
+  const syncMotion = () => {
+    const enabled = motionPreference && !reduced.matches;
+    document.body.dataset.motion = enabled ? 'on' : 'off';
+    motionButton.setAttribute('aria-pressed', String(enabled));
+    motionButton.textContent = reduced.matches ? 'Reduced motion enabled' : enabled ? '3D effects: on' : '3D effects: off';
+    motionButton.disabled = reduced.matches;
+    if (!enabled) resetSurface();
+  };
+  motionButton.addEventListener('click', () => {
+    motionPreference = !motionPreference;
+    try { localStorage.setItem('weekend-motion', motionPreference ? 'on' : 'off'); } catch { /* Storage is optional. */ }
+    syncMotion();
+  });
+  reduced.addEventListener('change', syncMotion);
+  syncMotion();
+  document.addEventListener('pointermove', event => {
+    if (document.body.dataset.motion !== 'on' || !finePointer.matches) return;
+    const surface = event.target.closest?.('.hero, .candidate');
+    if (!surface) { resetSurface(); return; }
+    if (surface !== activeSurface) { resetSurface(); activeSurface = surface; }
+    latestPoint = { x: event.clientX, y: event.clientY, surface };
+    if (pendingFrame) return;
+    pendingFrame = requestAnimationFrame(() => {
+      pendingFrame = undefined;
+      const point = latestPoint;
+      if (!activeSurface || point.surface !== activeSurface) return;
+      const rect = activeSurface.getBoundingClientRect();
+      const x = Math.max(0, Math.min(1, (point.x - rect.left) / rect.width));
+      const y = Math.max(0, Math.min(1, (point.y - rect.top) / rect.height));
+      const depth = activeSurface.matches('.hero') ? 1.5 : 2.5;
+      activeSurface.style.setProperty('--tilt-x', `${(0.5 - y) * depth}deg`);
+      activeSurface.style.setProperty('--tilt-y', `${(x - 0.5) * depth}deg`);
+      activeSurface.style.setProperty('--light-x', `${x * 100}%`);
+      activeSurface.style.setProperty('--light-y', `${y * 100}%`);
+    });
+  });
+  document.documentElement.addEventListener('pointerleave', resetSurface);
+  window.addEventListener('blur', resetSurface);
+  const sceneButton = document.querySelector('#scene-toggle');
+  const hero = document.querySelector('.hero');
+  const heroCopy = document.querySelector('.hero-copy');
+  sceneButton.addEventListener('click', () => {
+    const scenic = hero.classList.toggle('scenery-mode');
+    heroCopy.inert = scenic;
+    heroCopy.setAttribute('aria-hidden', String(scenic));
+    sceneButton.setAttribute('aria-pressed', String(scenic));
+    sceneButton.textContent = scenic ? 'Show the introduction' : 'Enjoy the scenery';
+  });
+  for (const [id, value] of [['filter-all', false], ['filter-outdoors', true]]) {
+    document.querySelector(`#${id}`).addEventListener('click', () => {
+      outdoorOnly = value;
+      document.querySelector('#filter-all').setAttribute('aria-pressed', String(!value));
+      document.querySelector('#filter-outdoors').setAttribute('aria-pressed', String(value));
+      if (lastSnapshot) render(lastSnapshot);
+    });
+  }
+}
+setupInteractions();
