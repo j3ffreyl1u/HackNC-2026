@@ -99,6 +99,7 @@ describe('first live DM scenario, end to end (A parser + C runtime + B planner, 
     const toJeffrey = steps.flatMap((r) => r.jeff).filter((x) => datesQuestion.test(x));
     expect(toMason.length).toBeGreaterThan(0);   // Mason gets his question
     expect(toJeffrey).toEqual([]);               // Jeffrey already gave his dates, so he is not asked
+    expect(steps.flatMap((r) => r.jeff).filter((x) => /^Mason,/.test(x))).toEqual([]); // and nothing addressed to Mason reaches him
     for (const q of toMason) expect(q).not.toMatch(/Mason|Jeffrey/); // addressed by routing, not by name
     await t.stop();
   });
