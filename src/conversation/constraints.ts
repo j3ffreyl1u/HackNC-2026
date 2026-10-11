@@ -1,5 +1,5 @@
 import type { ConstraintField, ConstraintValue } from './contracts-local.js';
-import { parseDateWindows } from './dates.js';
+import { mentionsWholeMonth, parseDateWindows } from './dates.js';
 import { parseDollarsToCents } from './money.js';
 
 /** Tentative language never becomes a locked-in budget or date window. */
@@ -122,7 +122,7 @@ function extractSentence(s: string, reference: string, pending: ConstraintField 
   }
   // A message that is only a date range ("11/14-11/16", "Nov 14th - 16th") answers "when are you free?" even without a cue word.
   const dateOnly = s.replace(/(?<=\d)(?:st|nd|rd|th)\b/gi, '').replace(/\b(?:also|plus|or|mon(?:day)?|tue(?:s|sday)?|wed(?:nesday)?|thu(?:r|rs|rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?|jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?|to|through|thru|until|till|and|the|from|st|nd|rd|th)\b/gi, '').replace(/[\d/\-–—.,\s]+/g, '') === '';
-  if (windows.length && (AVAIL_WORDS.test(s) || pending === 'availability' || NEGATIVE.test(s) || dateOnly)) {
+  if (windows.length && (AVAIL_WORDS.test(s) || pending === 'availability' || NEGATIVE.test(s) || dateOnly || mentionsWholeMonth(s))) {
     if (!mixedNegative && NEGATIVE.test(s) && !/\b(free|available)\b/i.test(s.replace(/\b(not|n't) (free|available)/gi, ''))) push({ field: 'availability', value: windows }, { negative: true });
     else push({ field: 'availability', value: windows });
   }
@@ -135,7 +135,7 @@ function extractSentence(s: string, reference: string, pending: ConstraintField 
   }
   else if (!s.includes('?') && /\blong weekend\b/i.test(s)) push({ field: 'duration', value: 3 });
   else if (!s.includes('?') && /\b(?:a|quick|short|just a|over a)\s+weekend(?!\s+of\b)|\bweekend\s+(?:trip|getaway)\b/i.test(s) && !windows.length) push({ field: 'duration', value: 2 });
-  if (!QUESTION_START.test(s) && !s.includes('?') && ((m = /\b(?:leav(?:e|ing)|depart(?:ing)?|start(?:ing)?|driv(?:e|ing)|coming|going)\s+from\s+([A-Za-z][A-Za-z .'-]{1,40}?)(?=[,.;!?]|\s+(?:and|but|on|at|around|with|to|for|in|if|tomorrow|today|tonight|next|this|after|before|early|late|by|when|then|so|since|because|until|till|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b|$)/i.exec(s)) ?? (m = /\b(?:origin|departing city)\s*(?:is|:)\s*([A-Za-z][A-Za-z .'-]{1,40})/i.exec(s)))) {
+  if (!QUESTION_START.test(s) && !s.includes('?') && ((m = /\b(?:leav(?:e|ing)|depart(?:ing)?|start(?:ing)?|driv(?:e|ing)|coming|going|trip)\s+from\s+([A-Za-z][A-Za-z .'-]{1,40}?)(?=[,.;!?]|\s+(?:and|but|on|at|around|with|to|for|in|if|tomorrow|today|tonight|next|this|after|before|early|late|by|when|then|so|since|because|until|till|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b|$)/i.exec(s)) ?? (m = /\b(?:origin|departing city)\s*(?:is|:)\s*([A-Za-z][A-Za-z .'-]{1,40})/i.exec(s)))) {
     const place = m![1]!.trim();
     if (!NOT_ORIGIN.test(place)) push({ field: 'origin', value: place === place.toLowerCase() ? properCase(place) : place });
   }
@@ -155,6 +155,9 @@ function extractSentence(s: string, reference: string, pending: ConstraintField 
   } else if ((m = /\b(?:want|wanna|'d like|would like)\s+to\s+(?:visit|see)\s+((?:[A-Z][A-Za-z.'-]*)(?:\s+[A-Z][A-Za-z.'-]*){0,3})(?=[\s,.;!?]|$)/.exec(s)) && !QUESTION_START.test(s)) {
     visited = clean(m[1]!);
     push({ field: 'region', value: visited });
+  } else if (/\btrip\s+from\s/i.test(s) && (m = /(?:,|\band)\s*to\s+(?:the\s+)?([A-Za-z][A-Za-z.'-]{2,}(?:\s+[A-Za-z][A-Za-z.'-]{2,}){0,2})\s*(?=[,.;!?]|$)/.exec(s)) && !NOT_DESTINATION.test(s)) {
+    // "a trip from Chapel Hill, 2 nights, to washington": the "to" clause of a from-to list is where they want to go.
+    push({ field: 'region', value: m[1] === m[1]!.toLowerCase() ? properCase(m[1]!) : m[1]! });
   } else if (/\b(?:any|whatever)\s+distance\b|\bdrive\s+(?:anywhere|as far as)\b|\bdon'?t\s+mind\s+(?:driving|how far)\b/i.test(s)) {
     push({ field: 'region', value: 'any distance by car', maxTravelMinutes: 1440 });
   } else if ((m = /\b(?:destination|region|area)\s*(?:is|:)\s*([A-Za-z][A-Za-z ,.'-]{1,40})/i.exec(s))) {

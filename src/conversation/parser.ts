@@ -17,6 +17,8 @@ import { formatCents } from './money.js';
 import type { ConversationDependencies } from './types.js';
 
 const APPROVE_REACTIONS = new Set(['👍', '👍🏻', '👍🏼', '👍🏽', '👍🏾', '👍🏿', '❤️', '❤', '✅', '✔️', 'like', 'love', 'thumbsup', '+1']);
+/** Flying: this planner only plans road trips, so it says so instead of agreeing to something it cannot price. */
+const FLYING = /\b(?:fly|flying|flew|flight|flights|plane|airport|airfare|airline)\b/i;
 /** Taking back one's own yes to the plan. Only meaningful while a plan is up for approval or approved. */
 const WITHDRAW = /^(?:i'?m out|im out|count me out|i'?m not in(?: anymore)?|i'?m no longer in|take (?:back |away )?my (?:yes|acceptance|approval|ok)(?: back)?|(?:i )?withdraw(?: my (?:yes|acceptance|approval))?|i (?:have )?changed my mind|i take it back)$/i;
 const YES = /^(?:(?:ok(?:ay)?|yeah|yes|alright|sure)[, ]+)?(?:(?:yes|yep|yeah|yup|sure)(?:[ ,]+(?:it is|that is|that'?s right|that'?s it|correct|exactly|please|firm))?|ok|okay|accept|accepted|i accept|i'?m in(?:\s+too)?|me too|i'?m down|count me in|sounds good|works for me|let'?s do it|do it|confirm|confirmed|correct|that'?s right|exactly)[.!]*$/i;
@@ -32,7 +34,7 @@ const NO = /^(no|nope|nah|decline|i decline|not for me|not now|no thanks|pass)[.
 const WRONG = /^(?:(?:no|nope|nah)[ ,]+)?(?:that'?s|that is|it'?s|it is|this is)?\s*(?:not right|not correct|wrong|incorrect|not what i (?:said|meant))[.!]*$/i;
 const ID = '([A-Za-z0-9][\\w:.\\-]*)';
 const REQUEST_PLANS = /^(?:(?:please|pls|ok|okay|alright|so)[,\s]+)?(?:(?:can|could) you\s+)?(?:(?:show|give|get|send)\s+(?:me\s+|us\s+)?(?:the\s+|some\s+|a few\s+|a couple of\s+|a couple\s+)?(?:trip\s+)?(?:options|plans|proposals|itineraries|ideas)|(?:pull|put) together\s+(?:a\s+|some\s+)?(?:(?:few|couple of|couple)\s+)?(?:trip\s+)?(?:options|plans|ideas)(?:\s+for us)?|(?:plan|research)\s+(?:it|this|the trip|our trip)|find\s+(?:us\s+)?(?:trip\s+)?options|what are (?:our|the) options|(?:(?:let'?s|lets|can we|could we|we should|i want to|we want to|i'?d like to)\s+)?(?:start|begin|get started)(?:\s+(?:on\s+)?(?:planning|plan))?(?:\s+(?:a|the|our|this))?(?:\s+(?:road\s+)?trip)?|(?:let'?s|lets|can we|could we|we should|i want to|we want to|i'?d like to)\s+plan(?:\s+(?:a|the|our|this))?(?:\s+(?:road\s+)?trip)?(?:\s+together)?)$/i;
-const STATUS = /^(?:(?:so\s+)?(?:what'?s|whats|how'?s|hows)\s+(?:the\s+)?(?:status|progress|plan|it going)(?:\s+(?:so far|looking|going))?|where (?:are we|do we stand)(?:\s+(?:at|on this))?|what do you have(?:\s+so far)?|any (?:updates?|news|progress)|status(?: update)?)$/i;
+const STATUS = /^(?:(?:so\s+)?(?:what'?s|whats|what is)\s+(?:happening|going on|up with (?:the |our )?(?:trip|plan))(?:\s+(?:right now|now|so far|with (?:the |our )?(?:trip|plan)))?|(?:so\s+)?(?:what'?s|whats|how'?s|hows)\s+(?:the\s+)?(?:status|progress|plan|it going)(?:\s+(?:so far|looking|going))?|where (?:are we|do we stand)(?:\s+(?:at|on this))?|what do you have(?:\s+so far)?|any (?:updates?|news|progress)|status(?: update)?)$/i;
 const ABOUT_SOMEONE = /^(?:so\s+)?(?:what(?:'s|s| did| has| does| is)\s+(\w+)\s+(?:say|said|tell you|told you|put|give you|gave you|send|sent|want|think|thinking|saying)|(?:did|has)\s+(\w+)\s+(?:answer|reply|respond|text|say anything|send anything|tell you anything)|(?:any word from|have you heard from|heard from|anything from)\s+(\w+)|how(?:'s| is)\s+(\w+)\s+doing|how(?:'s| is)\s+(\w+?)(?:'s|s)?\s+(?:planning|progress)(?:\s+going)?|(?:is|has|did)\s+(\w+)\s+(?:still\s+)?(?:planning|done|finished|finish|ready|all set|set|in|on board|there|responded|replied)(?:\s+(?:planning|yet|so far))?)(?:\s+(?:yet|so far))?$/i;
 const GREETING = /^(?:hi|hey|hello|yo|hiya|good (?:morning|afternoon|evening))\b[,!.\s]*/i;
 const REQUEST_FUNDING = /^(?:request|start|set up|send)\s+(?:the\s+)?(?:contributions?|funding|contribution requests)$/i;
@@ -74,7 +76,8 @@ function ackPart(v: ConstraintValue, tentative: boolean): string {
     case 'availability': return `you're free ${v.value.filter((w): w is { start: string; end: string } => 'start' in w).map(formatWindow).join(' or ')}`;
     case 'duration': return `${v.value} night${v.value === 1 ? '' : 's'}`;
     case 'origin': return `leaving from ${titleCase(v.value)}`;
-    case 'region': return /^(?:within|any)\b/.test(v.value) ? v.value : /\b(?:beach(?:es)?|coast|mountains?|lakes?|shore|countryside)\b/i.test(v.value) ? (/^the\b/i.test(v.value) ? v.value : `the ${v.value}`) : titleCase(v.value);
+    // "going to" so a destination is never read as a second starting point ("leaving from Chapel Hill and Washington").
+    case 'region': return /^(?:within|any)\b/.test(v.value) ? v.value : `going to ${/\b(?:beach(?:es)?|coast|mountains?|lakes?|shore|countryside)\b/i.test(v.value) ? (/^the\b/i.test(v.value) ? v.value : `the ${v.value}`) : titleCase(v.value)}`;
     case 'transport': return v.vehicleAvailable === true ? "there's a car" : v.vehicleAvailable === false ? 'no car for you' : `transport: ${v.value}`;
     case 'preferences': if (v.value.length > 0 && v.value.every((x) => x.startsWith('not:'))) return `I'll drop ${list(v.value.map((x) => x.slice(4)))} from what you're into`;
       return v.value.includes('no preference') ? 'no strong preferences' : `you ${tentative ? 'might be' : "'re"} into ${list(v.value)}`.replace("you 're", "you're");
@@ -711,6 +714,9 @@ export function createParser(deps: ConversationDependencies) {
       return one(msg, ctx, target.kind === 'accept'
         ? { kind: 'accept_candidate', candidateId: target.candidateId, revision: target.revision }
         : { kind: 'select_candidate', candidateId: target.candidateId, revision: target.revision });
+    }
+    if (FLYING.test(text) && !/\bfly[- ]?fishing\b/i.test(text) && (msg.visibility === 'private' || trip.mode === 'direct')) {
+      return reply(msg, "I can only plan road trips right now, so I can't look up flights or airfare. I'll plan the trip as a drive. If that's too far, name somewhere closer, like \"going to Asheville\".", 'no-flights', true);
     }
     if ((ctx.status === 'awaiting_acceptance' || ctx.status === 'approved') && WITHDRAW.test(text.replace(/[?!.\s]+$/, ''))) return one(msg, ctx, { kind: 'withdraw_acceptance' });
     if (THUMBS.test(text)) {
