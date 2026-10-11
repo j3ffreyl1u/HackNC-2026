@@ -235,4 +235,92 @@ describe('asking and telling through the bot', () => {
     }
     await t.stop();
   });
+
+  // The conversation from the real phone, once a plan is picked and one person has said "I'm in".
+  async function waitingOnMason() {
+    const t = await live();
+    await t.say(JEFF, "I'm leaving from Chapel Hill, 2 nights, NC mountains, I have a car, I'm free Nov 14-17, my max is $340, I like hiking");
+    for (const m of ['hey', 'sounds good', "I'm free Nov 14-17, my max is $310, I like food"]) await t.say(MASON, m);
+    await t.say(JEFF, 'option 1');
+    await t.say(JEFF, "I'm in");
+    return t;
+  }
+
+  it('"remind Mason to lock it in" asks Mason for the I\'m in, naming the plan', async () => {
+    const t = await waitingOnMason();
+    const r = await t.say(JEFF, 'Can you remind mason to lock it in');
+    expect(r.mason.join(' ')).toMatch(/Hey Mason! Jeffrey is in on .+ and is waiting on you\. Say "I'm in" to lock it in\./);
+    expect(r.jeff.join(' ')).toMatch(/Done, I let Mason know/);
+    expect((await t.say(JEFF, 'remind Mason')).mason.join(' ')).toMatch(/waiting on you\. Say "I'm in"/);
+    await t.stop();
+  });
+
+  it.each(['Has he done it', 'Has he said ok', 'Has Mason confirmed?', 'Did Mason approve it', "Can you ask if he's done it", 'Yes ask if Mason has done it', 'Ask if Mason has confirmed the option for the trip', 'is Mason in', 'check whether he has locked it in'])('"%s" is answered exactly, without bothering Mason', async (text) => {
+    const t = await waitingOnMason();
+    const r = await t.say(JEFF, text);
+    expect(r.jeff.join(' ')).toMatch(/Not yet, Mason hasn't said "I'm in" on .+\. Want me to remind them\?/);
+    expect(r.mason).toEqual([]);
+    await t.stop();
+  });
+
+  it('"Did I confirm" and "who\'s left" are exact too, and the answer changes once Mason says I\'m in', async () => {
+    const t = await waitingOnMason();
+    expect((await t.say(JEFF, 'Did I confirm')).jeff.join(' ')).toMatch(/Yes, you're in on .+\. Still waiting on Mason\./);
+    expect((await t.say(JEFF, "who's left?")).jeff.join(' ')).toMatch(/still waiting on Mason/);
+    expect((await t.say(JEFF, 'are we done?')).jeff.join(' ')).toMatch(/Not yet/);
+    await t.say(MASON, "I'm in");
+    expect((await t.say(JEFF, 'Has he said ok')).jeff.join(' ')).toMatch(/Yes, Mason is in, and so is everyone else/);
+    expect((await t.say(JEFF, 'are we done?')).jeff.join(' ')).toMatch(/Yes, everyone is in/);
+    await t.stop();
+  });
+
+  it('someone who has not said I\'m in is told so, and what is waiting on them', async () => {
+    const t = await waitingOnMason();
+    expect((await t.say(MASON, 'did I confirm?')).mason.join(' ')).toMatch(/Not yet\. Say "I'm in" to lock in/);
+    expect((await t.say(MASON, 'has Jeffrey said ok?')).mason.join(' ')).toMatch(/Yes, Jeffrey is in\. Still waiting on you\./);
+    await t.stop();
+  });
+
+  it('"Yes pass to Mason and ask" says what is missing instead of nodding along', async () => {
+    const t = await waitingOnMason();
+    expect((await t.say(JEFF, 'Yes pass to Mason and ask')).jeff.join(' ')).toMatch(/What would you like me to ask Mason\?/);
+    await t.stop();
+  });
+
+  it('"ask if he has a car" works without a name when there is one other person, and with leading yes/ok', async () => {
+    const t = await live();
+    await t.say(JEFF, START);
+    await t.say(MASON, "I'm free Nov 14-17");
+    expect((await t.say(JEFF, 'Can you ask if he has a car')).mason.join(' ')).toMatch(/Jeffrey was wondering: Does anyone have a car/);
+    expect((await t.say(JEFF, 'ok tell him I will bring snacks')).mason.join(' ')).toMatch(/Jeffrey wanted you to know: "I will bring snacks"/);
+    await t.stop();
+  });
+
+  it('"Did you tell Mason that I have a car?" is answered from what was sent, not taken as a new fact', async () => {
+    const t = await live();
+    await t.say(JEFF, 'I want to plan a trip');
+    const before = await t.say(JEFF, 'Did you tell Mason that I have a car?');
+    expect(before.jeff.join(' ')).toMatch(/No, I haven't sent Mason anything about that yet\./);
+    expect(before.jeff.join(' ')).not.toMatch(/we have a car|Got it/);
+    await t.say(JEFF, 'tell Mason I have a car');
+    expect((await t.say(JEFF, 'Did you tell Mason that I have a car?')).jeff.join(' ')).toMatch(/Yes, I told Mason: "I have a car"\./);
+    expect((await t.say(JEFF, 'did you ask him anything?')).jeff.join(' ')).toMatch(/No, I haven't sent Mason anything yet|Yes, I/);
+    await t.say(JEFF, 'ask Mason if he has a car');
+    expect((await t.say(JEFF, 'What did you tell Mason?')).jeff.join(' ')).toMatch(/So far I told Mason: "I have a car"; and asked Mason: "if he has a car"\./);
+    expect((await t.say(JEFF, 'Did Mason get my message?')).jeff.join(' ')).toMatch(/So far I .*I can't see whether they've read it/);
+    await t.stop();
+  });
+
+  it('nudging Mason once a plan is picked asks for the I\'m in, and never starts a new search or drops the pick', async () => {
+    const t = await waitingOnMason();
+    for (const text of ['tell mason hurry up and say im in', 'tell Mason to hurry up', 'nudge Mason', 'ping mason']) {
+      const r = await t.say(JEFF, text);
+      expect(r.mason.join(' '), text).toMatch(/waiting on you\. Say "I'm in" to lock it in\./);
+      expect(r.mason.join(' ') + r.jeff.join(' '), text).not.toMatch(/Good news|found two trips|Option 1/);
+    }
+    // the pick is still there: Mason can say I'm in and the plan is approved
+    expect((await t.say(MASON, "I'm in")).jeff.join(' ')).toMatch(/approved/i);
+    expect((await t.say(JEFF, 'tell Mason to hurry up')).jeff.join(' ')).toMatch(/already in on/);
+    await t.stop();
+  });
 });

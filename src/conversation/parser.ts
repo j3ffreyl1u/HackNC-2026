@@ -93,6 +93,7 @@ function chatFacts(ctx: TripConversationContext): string[] {
   const needed = [...new Set([...(ctx.pendingQuestion ? [ctx.pendingQuestion.field] : []), ...(ctx.openFields ?? [])].map((f) => word[f] ?? f))];
   facts.push(needed.length ? `Still needed from the person asking: ${needed.join(', ')}.` : 'Nothing else is needed from the person asking right now.');
   if (ctx.actionable.length) facts.push('There are options waiting for the person asking to pick or approve.');
+  if (ctx.approval) facts.push(`The picked plan is ${ctx.approval.title}. Said "I'm in": ${ctx.approval.youIn ? 'the person asking' : 'not the person asking'}${ctx.approval.inNames.length ? ` (people in: ${ctx.approval.inNames.join(', ')})` : ''}. Still waiting on: ${[...(ctx.approval.youIn ? [] : ['the person asking']), ...ctx.approval.waitingNames].join(', ') || 'nobody'}.`);
   facts.push('How plans change: when anyone changes the dates, the number of nights, the place, the starting city, the car, or their own maximum budget, the old options are dropped and a fresh search starts. Budgets are private, so never say whose budget changed or by how much; say only that someone changed a detail or a limit.');
   return facts;
 }
@@ -290,7 +291,9 @@ export function createParser(deps: ConversationDependencies) {
     // "What did Mason say?": the bot is the go-between, so it repeats what is fine to repeat (never a budget).
     const about = ABOUT_SOMEONE.exec(plain);
     const aboutName = about ? (about[1] ?? about[2] ?? about[3] ?? about[4] ?? about[5] ?? about[6])?.toLowerCase() : undefined;
-    const person = aboutName ? ctx.others?.find((o) => o.name.toLowerCase() === aboutName || o.name.toLowerCase().startsWith(`${aboutName} `)) : undefined;
+    // While a plan waits on people to say "I'm in", "is Mason in?" or "has he finished?" is about that, and is answered below.
+    const aboutApproval = Boolean(ctx.approval) && (about?.[5] !== undefined || about?.[6] !== undefined);
+    const person = aboutName && !aboutApproval ? ctx.others?.find((o) => o.name.toLowerCase() === aboutName || o.name.toLowerCase().startsWith(`${aboutName} `)) : undefined;
     if (person) {
       const list = (items: string[]) => items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items.at(-1)}` : items[0]!;
       if (about?.[5] !== undefined || about?.[6] !== undefined) {
@@ -319,10 +322,82 @@ export function createParser(deps: ConversationDependencies) {
     if (/^(?:please\s+)?(?:start over|restart|reset|begin again|start again|from scratch)(?:\s+please)?$/i.test(plain)) {
       return reply(msg, 'I can\'t clear a trip yet, but you can change anything by telling me, like "leaving from Raleigh", "3 nights" or "my max is $300".', 'start-over', true);
     }
+    // Leading filler ("yes ask if...", "ok and tell him...") does not change what is being asked.
+    const lean = plain.replace(/^(?:(?:yes|yeah|yep|yup|ok(?:ay)?|sure|please|pls|also|and|so|then|now|well|hey|actually)[,.!]?\s+)+/i, '');
+    const talkativeChat = msg.visibility === 'private' || trip.mode === 'direct';
+    const everyoneElse = ctx.others ?? [];
+    const personFor = (word: string) => {
+      const w = word.toLowerCase();
+      return everyoneElse.find((o) => o.name.toLowerCase() === w) ?? (/^(?:he|she|they|him|her|them)$/.test(w) && everyoneElse.length === 1 ? everyoneElse[0] : undefined);
+    };
+    const joinNames = (names: string[]) => list(names);
+    // Exact answers about who has said "I'm in" on the picked plan.
+    if (ctx.approval && talkativeChat) {
+      const ap = ctx.approval;
+      const V = String.raw`(?:say|said|confirm(?:ed)?|approve(?:d)?|accept(?:ed)?|agree(?:d)?|lock(?:ed)?(?:\s+it)?(?:\s+in)?|done(?:\s+it)?|finish(?:ed)?|ok(?:ay)?|okayed|gone\s+for\s+it|go\s+for\s+it|answer(?:ed)?|respond(?:ed)?|repl(?:y|ied)|decid(?:e|ed)|signed\s+off|do(?:ne)?\s+it)`;
+      const gap = String.raw`(?:already\s+|yet\s+|also\s+|actually\s+|really\s+)?`;
+      const otherQ = new RegExp(String.raw`^(?:has|have|did|is|was)\s+(\w+)\s+${gap}(?:(?:been|got)\s+)?${V}\b`, 'i').exec(lean)
+        ?? new RegExp(String.raw`^(?:(?:can|could|would)\s+you\s+)?(?:ask|check|see|find\s+out|tell\s+me|let\s+me\s+know)\s+(?:if|whether)\s+(\w+)(?:'s|\s+(?:has|have|had|is|was|did))\s+${gap}(?:(?:has|have|had|is|was|did|been)\s+)?${V}\b`, 'i').exec(lean)
+        ?? /^(?:is|are)\s+(\w+)\s+(?:in|done|ready|locked\s+in|on\s+board)\b/i.exec(lean);
+      const who = otherQ ? personFor(otherQ[1]!) : undefined;
+      if (otherQ && who) {
+        if (ap.waitingNames.includes(who.name)) return reply(msg, `Not yet, ${who.name} hasn't said "I'm in" on ${ap.title}. Want me to remind them? Just say "remind ${who.name}".`, 'approval-other', true);
+        const left = [...ap.waitingNames.filter((n) => n !== who.name), ...(ap.youIn ? [] : ['you'])];
+        return reply(msg, left.length === 0 ? `Yes, ${who.name} is in, and so is everyone else. ${ap.title} is approved.` : `Yes, ${who.name} is in. Still waiting on ${joinNames(left)}.`, 'approval-other', true);
+      }
+      if (new RegExp(String.raw`^(?:did|have)\s+i\s+${gap}${V}\b`, 'i').test(lean) || /^am\s+i\s+(?:in|locked\s+in|done|confirmed|good)\b/i.test(lean)) {
+        return reply(msg, ap.youIn
+          ? (ap.waitingNames.length ? `Yes, you're in on ${ap.title}. Still waiting on ${joinNames(ap.waitingNames)}.` : `Yes, you're in, and so is everyone else. ${ap.title} is approved.`)
+          : `Not yet. Say "I'm in" to lock in ${ap.title}.`, 'approval-me', true);
+      }
+      if (/^(?:who(?:'s|\s+is)?\s+(?:still\s+)?(?:left|waiting|missing|needs?\s+to\s+(?:confirm|say\s+ok|approve|accept))|are\s+we\s+(?:done|locked\s+in|all\s+in|good|set|approved)|is\s+(?:it|the\s+(?:trip|plan))\s+(?:approved|confirmed|locked\s+in|done|set))\b/i.test(lean)) {
+        const waitingAll = [...(ap.youIn ? [] : ['you']), ...ap.waitingNames];
+        return reply(msg, waitingAll.length === 0 ? `Yes, everyone is in, so ${ap.title} is approved.` : `Not yet. ${ap.title} is picked, and I'm still waiting on ${joinNames(waitingAll)}.`, 'approval-all', true);
+      }
+      // "remind Mason": the plan is waiting on them, so ask for the "I'm in".
+      const nudgeOnly = /^(?:please\s+)?(?:remind|nudge|ping)\s+(\w+)$/i.exec(lean);
+      const nudged = nudgeOnly ? personFor(nudgeOnly[1]!) : undefined;
+      if (nudged && ap.waitingNames.includes(nudged.name)) return one(msg, ctx, { kind: 'relay', to: nudged.name, mode: 'request', text: "lock it in" });
+    }
+    // What the bot has already passed on: "did you tell Mason that I have a car?", "what did you tell Mason?", "did Mason get my message?".
+    if (talkativeChat && (ctx.relays?.length || everyoneElse.length)) {
+      const sent = (ctx.relays ?? []).filter((r) => r.byMe);
+      const sayIt = (r: { withName: string; kind: string; text: string }) => r.kind === 'tell' ? `told ${r.withName}: "${r.text}"` : r.kind === 'ask' ? `asked ${r.withName}: "${r.text}"` : r.kind === 'request' ? `asked ${r.withName} to ${r.text}` : `messaged ${r.withName} to get them started`;
+      const didYou = /^(?:did|have)\s+you\s+(?:already\s+|actually\s+|really\s+|even\s+|just\s+)?(?:tell|told|ask|asked|message|messaged|text|texted|dm|let|send|sent|pass|passed|remind|reminded|invite|invited|notify|notified|contact|contacted|reach|reached)\b(?:\s+out)?(?:\s+to)?\s*(\w+)?(?:\s+(.*))?$/i.exec(lean);
+      const whatDid = /^what\s+(?:did|have)\s+you\s+(?:tell|told|ask|asked|say|said\s+to|send|sent(?:\s+to)?|message|messaged|text|texted)\s+(\w+)$/i.exec(lean);
+      const gotIt = /^(?:did|has)\s+(\w+)\s+(?:get|got|receive|received|see|seen|read)\s+(?:my|the|that|our)\s+(?:message|text|note|msg)$/i.exec(lean);
+      const about = (didYou ?? whatDid ?? gotIt)?.[1];
+      const target = about ? personFor(about) ?? (everyoneElse.length === 1 && /^(?:if|whether|about|that|him|her|them)$/i.test(about) ? everyoneElse[0] : undefined) : (everyoneElse.length === 1 ? everyoneElse[0] : undefined);
+      if (target && (didYou || whatDid || gotIt)) {
+        const mine = sent.filter((r) => r.withName === target.name);
+        if (whatDid || (gotIt && !didYou)) {
+          return reply(msg, mine.length === 0 ? `I haven't sent ${target.name} anything yet.` : `So far I ${mine.slice(-3).map(sayIt).join('; and ')}.${gotIt ? " I can't see whether they've read it, but I'll tell you when they answer." : ''}`, 'relay-history', true);
+        }
+        const claim = (didYou![2] ?? '').toLowerCase().replace(/^(?:that|about|if|whether)\s+/, '');
+        const words = claim.match(/[a-z']{3,}/g)?.filter((w) => !['that', 'have', 'has', 'about', 'the', 'with', 'and', 'for', 'you', 'him', 'her', 'them', 'was', 'were', 'his', 'she', 'they', 'anything', 'something', 'everything', 'any', 'yet', 'already', 'ever', target.name.toLowerCase()].includes(w)) ?? [];
+        const hit = mine.filter((r) => words.length === 0 || words.some((w) => r.text.toLowerCase().includes(w)));
+        return reply(msg, hit.length > 0
+          ? `Yes, I ${sayIt(hit[hit.length - 1]!)}.`
+          : `No, I haven't sent ${target.name} anything${words.length ? ' about that' : ''} yet. Say "tell ${target.name} ..." with what you want them to know and I'll send it.`, 'relay-history', true);
+      }
+      // "pass it to Mason and ask": the rest of the message never came.
+      const passTo = /^(?:pass|send|forward|relay)\s+(?:this\s+|that\s+|it\s+|the\s+message\s+)?(?:on\s+)?to\s+(\w+)(?:\s+and\s+(ask|tell|say))?$/i.exec(lean);
+      const passPerson = passTo ? personFor(passTo[1]!) : undefined;
+      if (passTo && passPerson) return reply(msg, `What would you like me to ${(passTo[2] ?? 'tell').toLowerCase() === 'ask' ? 'ask' : 'tell'} ${passPerson.name}?`, 'relay-what', true);
+    }
     // The bot speaks for everyone: "ask Mason if he has a car", "tell Mason I have a car", "message Mason to start planning it",
     // "text Mason that we leave at 8", "have Mason join", "invite Mason", "send Mason a message saying hi".
-    const relay = /^(?:(?:please|can you|could you|would you|pls)\s+)*(ask|tell|let|message|text|dm|notify|remind|have|get|invite|bring|add|send)\s+(\w+)(?:\s*[:,]\s*|\s+)?(.*)$/i.exec(plain);
-    const talkativeChat = msg.visibility === 'private' || trip.mode === 'direct';
+    const relayRaw = /^(?:(?:please|can you|could you|would you|pls)\s+)*(ask|tell|let|message|text|dm|notify|remind|have|get|invite|bring|add|send)\s+(\w+)(?:\s*[:,]\s*|\s+)?(.*)$/i.exec(lean);
+    // "ask if he's done it" has no name: with one other person it can only mean them, and "ask if Mason has..." names them later on.
+    const STOP = /^(?:if|whether|about|what|when|where|how|why|who|which|to|for|that|him|her|them|he|she|they)$/i;
+    const relay = relayRaw && STOP.test(relayRaw[2]!) && talkativeChat
+      ? (() => {
+          const pronoun = /^(?:him|her|them)$/i.test(relayRaw[2]!);
+          const text = pronoun ? (relayRaw[3] ?? '').trim() : `${relayRaw[2]} ${relayRaw[3] ?? ''}`.trim();
+          const named = everyoneElse.find((o) => new RegExp(`\\b${o.name}\\b`, 'i').test(text)) ?? (everyoneElse.length === 1 ? everyoneElse[0] : undefined);
+          return named ? ([relayRaw[0], relayRaw[1], named.name, text] as unknown as RegExpExecArray) : relayRaw;
+        })()
+      : relayRaw;
     const relayTo = relay ? ctx.others?.find((o) => o.name.toLowerCase() === relay[2]!.toLowerCase()) : undefined;
     if (relay && !relayTo && talkativeChat && ctx.others?.length && /^(?:ask|tell|message|text|dm|notify|invite)$/i.test(relay[1]!) && !/^(?:me|us|everyone|everybody|them|him|her|the|a|an|my|our|you|it|this|that|all)$/i.test(relay[2]!)) {
       return reply(msg, `I'm not sure who ${relay[2]} is. I can pass things to ${list(ctx.others.map((o) => o.name))}.`, 'relay-unknown', true);
@@ -333,7 +408,15 @@ export function createParser(deps: ConversationDependencies) {
       const invite = { kind: 'relay' as const, to: relayTo.name, mode: 'invite' as const, text: 'join the planning' };
       const inviteWords = /\b(?:start|begin|join|get started|jump in|come on board|help)\b|\bplan(?:ning)?\b/i;
       // Asking someone to hurry or reply is a nudge, not a message to pass on.
-      if (/^(?:to\s+)?(?:hurry|reply|respond|answer|check|get back|text me|message me|finish|speed)\b|\bhurry up\b/i.test(rest)) return one(msg, ctx, { kind: 'request_plans' });
+      if (/^(?:to\s+)?(?:hurry|reply|respond|answer|check|get back|text me|message me|finish|speed)\b|\bhurry up\b/i.test(rest)) {
+        // Once a plan is picked, a nudge asks for the "I'm in". It must never start a new search and throw the pick away.
+        if (ctx.approval) {
+          return ctx.approval.waitingNames.includes(relayTo.name)
+            ? one(msg, ctx, { kind: 'relay', to: relayTo.name, mode: 'request', text: 'lock it in' })
+            : reply(msg, `${relayTo.name} is already in on ${ctx.approval.title}.`, 'approval-other', true);
+        }
+        return one(msg, ctx, { kind: 'request_plans' });
+      }
       if (/^(?:invite|bring|add)$/.test(verb)) {
         if (rest === '' || /^(?:in|to (?:the )?(?:trip|planning|plan|chat|group)|along|on board)$/i.test(rest)) return one(msg, ctx, invite);
       } else if (verb === 'send') {
@@ -385,7 +468,10 @@ export function createParser(deps: ConversationDependencies) {
     }
     // "nudge Mason", "ping Mason": the same as asking for options, which nudges whoever is still missing and tells the asker.
     const nudge = /^(?:(?:please|can you|could you|pls)\s+)*(?:nudge|ping|poke|text|message)\s+(\w+)\b/i.exec(plain);
-    if (nudge && ctx.others?.some((o) => o.name.toLowerCase() === nudge[1]!.toLowerCase())) return one(msg, ctx, { kind: 'request_plans' });
+    if (nudge && ctx.others?.some((o) => o.name.toLowerCase() === nudge[1]!.toLowerCase())) {
+      if (ctx.approval) return ctx.approval.waitingNames.includes(nudge[1]!) || ctx.approval.waitingNames.some((n) => n.toLowerCase() === nudge[1]!.toLowerCase()) ? one(msg, ctx, { kind: 'relay', to: ctx.others!.find((o) => o.name.toLowerCase() === nudge[1]!.toLowerCase())!.name, mode: 'request', text: 'lock it in' }) : reply(msg, `${nudge[1]} is already in on ${ctx.approval.title}.`, 'approval-other', true);
+      return one(msg, ctx, { kind: 'request_plans' });
+    }
     // Paying into the simulated fund: "pay my share", "let me chip in $50", "cover Mason's share", "put in $60 for Jeffrey". The app asks for a yes before anything is added.
     const lead = "(?:(?:please|pls|ok(?:ay)?|so)\\s+)*(?:(?:can|could|may|should|shall|would)\\s+(?:i|we)\\s+|let\\s*me\\s+|lemme\\s+|time\\s+to\\s+|(?:i|we)(?:'ll|\\s+will|'d like to|\\s+would like to|\\s+want to|\\s+wanna|\\s+should|\\s+can|\\s+gotta|\\s+need to|\\s+have to)?\\s+)?";
     const tail = "(?:\\s+(?:now|please|pls|today|too|as well|also|real quick|right now))*[?!.]*$";

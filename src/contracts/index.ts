@@ -200,6 +200,8 @@ export interface PendingQuestion {
 
 export interface TripState {
   /** Internal warning keys by approved revision; never part of the public snapshot. */
+  /** What the bot passed between people at their request (newest last), so it can answer "did you tell Mason?". */
+  relayLog?: Array<{ fromId: MemberId; toId: MemberId; kind: 'ask' | 'tell' | 'request' | 'invite'; text: string; at: string }>;
   fundingNoticeKeys?: Record<string, string[]>;
   pendingConfirmations?: Record<MemberId, { field: 'budget'; valueCents: number }>;
   costConfirmations?: Array<{ actorId: MemberId; candidateId: string; costId: string; revision: number; sourceMessageId: string; confirmedAt: string }>;
@@ -263,6 +265,8 @@ export interface ConversationContext {
   confirmBasics?: SharedConstraintValue[];
   openFields?: ConstraintField[];
   others?: Array<{ memberId: string; name: string; shared: string[]; missing: string[] }>;
+  relays?: Array<{ withName: string; byMe: boolean; kind: 'ask' | 'tell' | 'request' | 'invite'; text: string }>;
+  approval?: { title: string; inNames: string[]; waitingNames: string[]; youIn: boolean };
 }
 
 export interface ConversationService {

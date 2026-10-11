@@ -179,7 +179,7 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
         payPending.clear();
         relayAsks.clear();
         try { await fundService?.forget?.(); } catch { /* the next approved plan gets its account either way */ }
-        const { selectedCandidateId: _selected, fundingNoticeKeys: _keys, pendingConfirmations: _confirmations, costConfirmations: _costs, itineraryConfirmations: _items, ...kept } = state;
+        const { selectedCandidateId: _selected, relayLog: _relays, fundingNoticeKeys: _keys, pendingConfirmations: _confirmations, costConfirmations: _costs, itineraryConfirmations: _items, ...kept } = state;
         const blank: TripState = { ...kept, revision: state.revision + 1, status: 'gathering', memberConstraints: [], groupConstraints: [], candidates: [], acceptances: [], pendingQuestions: [], fundingStatus: fundService_disabled(fundService) ? 'disabled' : 'unknown' };
         const told = (state.roster ?? enrollment.participants.map((p) => ({ memberId: p.memberId, displayName: p.displayName, consented: true }))).filter((m) => m.consented)
           .map((m) => makeMessage(tripId, `fresh-restart:${message.eventId}:${m.memberId}`, { audience: { kind: 'private', memberId: m.memberId }, text: m.memberId === member.memberId ? 'Fresh start! I cleared everything, so we are starting from scratch. Text me whenever you want to plan a trip.' : `Fresh start! ${member.displayName} cleared the trip, so we are starting from scratch. Text me whenever you want to plan a trip.` }));
@@ -279,11 +279,14 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
           const toTarget = target.displayName;
           const body = relay.mode === 'invite'
             ? `Hey ${toTarget}! ${asker} wants to plan a trip with you and asked me to get you started. Tell me where you'd be leaving from, which dates work for you, and what you like, whenever you're ready.`
-            : relay.mode === 'request'
-              ? `Hey ${toTarget}! ${asker} would like you to ${toSecondPerson(relay.text, asker)}.`
+            : relay.mode === 'request' && approvalPrompt(nextState, member.memberId, target.memberId, relay.text)
+              ? `Hey ${toTarget}! ${approvalPrompt(nextState, member.memberId, target.memberId, relay.text)}`
+              : relay.mode === 'request'
+              ? `Hey ${toTarget}! ${asker} would like you to ${toSecondPerson(relay.text, asker, target.displayName)}.`
               : relay.mode === 'ask'
-                ? (relay.field && wording[relay.field] ? `Hey ${toTarget}! ${asker} was wondering: ${wording[relay.field]}` : `Hey ${toTarget}! ${asker} would like to know: ${toSecondPerson(relay.text, asker)}${/[?.!]$/.test(relay.text) ? '' : '?'}`)
+                ? (relay.field && wording[relay.field] ? `Hey ${toTarget}! ${asker} was wondering: ${wording[relay.field]}` : `Hey ${toTarget}! ${asker} would like to know: ${toSecondPerson(relay.text, asker, target.displayName)}${/[?.!]$/.test(relay.text) ? '' : '?'}`)
                 : `Hey ${toTarget}! ${asker} wanted you to know: "${relay.text}"`;
+          nextState = { ...nextState, relayLog: [...(nextState.relayLog ?? []), { fromId: member.memberId, toId: target.memberId, kind: relay.mode, text: relay.text, at: message.occurredAt }].slice(-30) };
           replies.push(makeMessage(tripId, `relay:${message.eventId}:${index}`, { audience: { kind: 'private', memberId: target.memberId }, text: body }));
           replies.push(toAsker(relay.mode === 'ask' ? `Done, I asked ${target.displayName}. I'll tell you what they say.` : relay.mode === 'invite' ? `Done, I messaged ${target.displayName} to get them started.` : `Done, I let ${target.displayName} know.`));
           if (relay.mode === 'ask') relayAsks.set(target.memberId, { askerId: member.memberId, ...(relay.field ? { field: relay.field } : {}) });
@@ -601,6 +604,17 @@ async function conversationContext(repository: Repository, state: TripState, mes
   })).filter((plan) => plan.actions.length > 0);
   // Someone who has not weighed in on the shared basics can agree with a plain "yes" or "sounds good" whether or not the bot got to ask yet
   // (a hello does not trigger the question), so the search is not left waiting on an answer nobody was asked for.
+  const nameOf = (id: string) => (state.roster ?? []).find((m) => m.memberId === id)?.displayName ?? 'them';
+  const relays = (state.relayLog ?? []).filter((e) => e.fromId === actorId || e.toId === actorId).slice(-12)
+    .map((e) => ({ withName: nameOf(e.fromId === actorId ? e.toId : e.fromId), byMe: e.fromId === actorId, kind: e.kind, text: e.text }));
+  // Who has said "I'm in" on the picked plan, so questions about it get exact answers.
+  let approval: { title: string; inNames: string[]; waitingNames: string[]; youIn: boolean } | undefined;
+  if ((state.status === 'awaiting_acceptance' || state.status === 'approved') && state.selectedCandidateId) {
+    const picked = state.candidates.find((c) => c.candidateId === state.selectedCandidateId && c.revision === state.revision);
+    const everyone = (state.roster ?? []).filter((m) => m.consented).map((m) => m.memberId);
+    const inIds = everyone.filter((id) => state.acceptances.some((a) => a.actorId === id && a.candidateId === state.selectedCandidateId && a.revision === state.revision));
+    approval = { title: picked?.title ?? 'the plan', inNames: inIds.map(nameOf), waitingNames: everyone.filter((id) => !inIds.includes(id) && id !== actorId).map(nameOf), youIn: inIds.includes(actorId) };
+  }
   const basics = sharedBasics(state);
   const unsigned = basics.length === 4 && !state.groupConstraints.some((c) => c.memberId === actorId);
   const confirmBasics = unsigned || state.pendingQuestions.some((q) => q.questionId.startsWith('confirm_basics:') && q.memberId === actorId) ? basics : [];
@@ -612,6 +626,8 @@ async function conversationContext(repository: Repository, state: TripState, mes
     ...(confirmBasics.length > 0 ? { confirmBasics } : {}),
     ...(openFields.length > 1 ? { openFields } : {}),
     others: othersShared(state, actorId),
+    ...(relays.length > 0 ? { relays } : {}),
+    ...(approval ? { approval } : {}),
     pendingConfirmation: state.pendingConfirmations?.[actorId],
     ...(targetProposal ? { targetProposal } : {}),
     ...(pendingQuestion?.field ? { pendingQuestion: { questionId: pendingQuestion.questionId, field: pendingQuestion.field } } : {}),
@@ -633,11 +649,29 @@ function dayRange(startAt: string, endAt: string, timeZone: string): string {
 
 const fundService_disabled = (fund: unknown) => fund === undefined;
 
+/** "remind Mason to lock it in" while a plan waits on them: ask for the "I'm in" instead of a vague nudge. */
+function approvalPrompt(state: TripState, askerId: string, targetId: string, text: string): string | undefined {
+  if (state.status !== 'awaiting_acceptance' || !state.selectedCandidateId) return undefined;
+  if (!/\b(?:lock|confirm|approve|accept|say ok|okay|i'?m in|agree|go for it|respond|reply|answer|decide|sign off)\b/i.test(text)) return undefined;
+  const said = (id: string) => state.acceptances.some((a) => a.actorId === id && a.candidateId === state.selectedCandidateId && a.revision === state.revision);
+  if (said(targetId)) return undefined;
+  const picked = state.candidates.find((c) => c.candidateId === state.selectedCandidateId && c.revision === state.revision)?.title ?? 'the plan';
+  const asker = (state.roster ?? []).find((m) => m.memberId === askerId)?.displayName ?? 'Someone';
+  return `${asker} ${said(askerId) ? 'is in on' : 'picked'} ${picked} and is waiting on you. Say "I'm in" to lock it in.`;
+}
+
 /** "if he can pick me up at 8" -> "if you can pick Jeffrey up at 8": a question carried to someone else is spoken to them. */
-function toSecondPerson(text: string, asker: string): string {
-  const verbs: Record<string, string> = { has: 'have', is: 'are', was: 'were', wants: 'want', likes: 'like', needs: 'need', does: 'do', goes: 'go', gets: 'get', thinks: 'think', prefers: 'prefer' };
-  return text
+function toSecondPerson(text: string, asker: string, target?: string): string {
+  const verbs: Record<string, string> = { has: 'have', is: 'are', was: 'were', wants: 'want', likes: 'like', needs: 'need', does: 'do', goes: 'go', gets: 'get', thinks: 'think', prefers: 'prefer', had: 'had' };
+  const named = target ? new RegExp(`\\b${target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:'s)?\\b`, 'gi') : undefined;
+  let out = text;
+  if (target) {
+    out = out.replace(new RegExp(`\\b${target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s+(has|is|was|wants|likes|needs|does|goes|gets|thinks|prefers)\\b`, 'gi'), (_m, v: string) => `you ${verbs[v.toLowerCase()]}`);
+    out = out.replace(named!, (m) => (m.toLowerCase().endsWith("'s") ? 'your' : 'you'));
+  }
+  return out
     .replace(/\b(?:he|she)\s+(has|is|was|wants|likes|needs|does|goes|gets|thinks|prefers)\b/gi, (_m, v: string) => `you ${verbs[v.toLowerCase()]}`)
+    .replace(/\b(?:he's|she's)\b/gi, "you're")
     .replace(/\b(?:he|she|they)\b/gi, 'you')
     .replace(/\b(?:his|her|their)\b/gi, 'your')
     .replace(/\b(?:him|them)\b/gi, 'you')

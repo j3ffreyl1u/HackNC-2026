@@ -143,6 +143,10 @@ export interface TripConversationContext {
   pendingQuestion?: { field: ConstraintField };
   /** What each OTHER person has told the bot that is fine to repeat (dates, car, tastes; never a budget), so "what did Mason say?" can be answered. */
   others?: Array<{ memberId: string; name: string; shared: string[]; missing: string[] }>;
+  /** What the bot passed on between this person and others at their request, so "did you tell Mason that I have a car?" can be answered. */
+  relays?: Array<{ withName: string; byMe: boolean; kind: 'ask' | 'tell' | 'request' | 'invite'; text: string }>;
+  /** Who has said "I'm in" on the picked plan, so "has Mason confirmed?" gets an exact answer. */
+  approval?: { title: string; inNames: string[]; waitingNames: string[]; youIn: boolean };
   /** Where the trip stands, so "what's the status?" can be answered without guessing. */
   status?: 'gathering' | 'researching' | 'proposed' | 'awaiting_acceptance' | 'approved';
   /** Every field there is an open question about for this actor (their own and the shared one), most relevant first, so a volunteered answer to any of them is understood. */
