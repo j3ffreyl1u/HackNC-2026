@@ -20,7 +20,7 @@ it('persists warning keys with the outbox and does not repeat a notice after reo
     start: async () => {}, stop: async () => {}, sendMessage: async message => { sent.push(message); return [{ providerMessageId: message.deliveryId }]; },
     parseInbound: async message => ({ kind: 'command', command: { commandId: message.eventId, eventId: message.eventId, tripId: state.tripId, actorId: message.senderId, action: { kind: 'request_funding' } } }),
   };
-  const fundService = createFundService({ read: async () => ({ deposits: [], purchases: [{ id: 'purchase', amountDollars: 100, category: 'hotel', status: 'completed' }] }) }, 'mock');
+  const fundService = createFundService({ read: async () => ({ purchases: [{ id: 'purchase', memberId: 'mason', amountDollars: 100, category: 'hotel', status: 'completed' }] }) }, 'mock');
   const planner = { applyCommand: (current: typeof state) => ({ state: current, replies: [], researchRequested: false }), generateCandidates: async () => [] };
   const event = (id: string): InboundMessage => ({ eventId: id, messageId: id, senderId: enrollment.participants[0].memberId, spaceId: enrollment.groupSpaceId, visibility: 'group', occurredAt: '2026-10-10T12:00:00Z', text: "how's the fund?" });
   let runtime = createApplicationRuntime({ repository, conversation, planner, tripId: state.tripId, fundService });

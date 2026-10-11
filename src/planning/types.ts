@@ -156,7 +156,7 @@ export interface TripCandidate {
 // ---- state ---------------------------------------------------------------------------------------
 
 export type TripStatus = 'gathering' | 'researching' | 'proposed' | 'awaiting_acceptance' | 'approved';
-export type FundingStatus = 'disabled' | 'requesting' | 'partially_funded' | 'funded' | 'unknown' | 'failed';
+export type FundingStatus = 'disabled' | 'tracking' | 'settled' | 'requesting' | 'partially_funded' | 'funded' | 'unknown' | 'failed';
 
 /** PROPOSAL: the design document's state omits the roster and consent record it relies on. */
 export interface RosterMember {

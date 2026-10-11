@@ -2,10 +2,11 @@ import { addCents, splitEqual, sumCents } from './money.js';
 import { participantIds } from './state.js';
 import type { CostCategory, MemberId, TripState } from './types.js';
 
-// Pure funding arithmetic for the optional trip fund. The planner never moves or even sees money: callers read
-// deposits and purchases from the bank and pass them in as plain lists, and these functions return plain
-// results. Banks may store whole dollars only (Nessie truncates cents), so amounts here are whole dollars and
-// every contribution is rounded UP, so the account is never short.
+// Pure arithmetic for tracking who covered what on the trip. Nobody pays into a shared account: each friend pays
+// for things with their own money, the bank (a sandbox in the demo) reports each person's purchases, and these
+// functions work out each person's fair share and who would owe whom. The planner never moves or even sees money:
+// callers read purchases from the banks and pass them in as plain lists, and these functions return plain results.
+// Banks may store whole dollars only (Nessie truncates cents), so amounts here are whole dollars.
 
 const toDollarsUp = (cents: number) => Math.ceil(cents / 100);
 
@@ -24,10 +25,10 @@ export type ContributionPlan =
       ok: true;
       candidateId: string;
       revision: number;
-      /** What each person puts into the shared trip account: their share of shared costs plus contingency. */
+      /** What the plan expects each person's share of the shared costs (plus contingency) to be. An estimate to compare against, not a request. */
       requests: ContributionRequest[];
       neededDollars: number;
-      /** Costs that belong to one person (such as their own food). They stay with that person, not the pool. */
+      /** Costs that belong to one person (such as their own food). They stay with that person and are never split. */
       personalOwnDollars: ContributionRequest[];
       pooledByCategory: PooledCategory[];
       contingencyCents: number;
@@ -40,14 +41,14 @@ export type ContributionPlan =
  */
 export function planContributions(state: TripState): ContributionPlan {
   if (state.status !== 'approved' || state.selectedCandidateId === undefined) {
-    return { ok: false, reason: 'A plan has to be approved by everyone before contributions can be requested.' };
+    return { ok: false, reason: 'A plan has to be approved by everyone before I can track who covered what.' };
   }
   const candidate = state.candidates.find((c) => c.candidateId === state.selectedCandidateId && c.revision === state.revision);
   if (!candidate) return { ok: false, reason: 'The approved plan is out of date. Approve the latest plan first.' };
 
   const unknownShared = candidate.costs.filter((c) => c.allocation === 'equal_shared' && c.priceStatus === 'unknown' && c.essential !== false);
   if (unknownShared.length > 0) {
-    return { ok: false, reason: 'A shared cost still has no confirmed price, so I can\'t say how much to collect yet.' };
+    return { ok: false, reason: 'A shared cost still has no confirmed price, so I can\'t say what each person\'s share should be yet.' };
   }
 
   const ids = participantIds(state);
@@ -76,88 +77,6 @@ export function planContributions(state: TripState): ContributionPlan {
   };
 }
 
-// ---- deposits ----------------------------------------------------------------------------------------------
-
-/** The text a deposit carries so the fund can tell who paid for which plan revision. */
-export function depositTag(memberId: MemberId, revision: number): string {
-  return `member=${memberId};rev=${revision}`;
-}
-
-export function parseDepositTag(description: string): { memberId: MemberId; revision: number } | undefined {
-  const match = /member=([^;]+);rev=(\d+)/.exec(description);
-  if (!match) return undefined;
-  const revision = Number(match[2]);
-  return Number.isSafeInteger(revision) ? { memberId: match[1]!, revision } : undefined;
-}
-
-export interface Deposit {
-  id?: string;
-  amountDollars: number;
-  description: string;
-  /** Anything but `completed` is not counted. Absent means completed. */
-  status?: string;
-}
-
-export interface MemberFunding {
-  memberId: MemberId;
-  requestedDollars: number;
-  paidDollars: number;
-  outstandingDollars: number;
-}
-
-export interface FundingReport {
-  status: 'requesting' | 'partially_funded' | 'funded';
-  neededDollars: number;
-  collectedDollars: number;
-  perMember: MemberFunding[];
-  missingMemberIds: MemberId[];
-  /** Deposits for an earlier revision of the plan. Their request was voided, so they don't count. */
-  staleDollars: number;
-  /** The same stale deposits per person, so each can be returned to whoever sent them. */
-  staleByMember: { memberId: MemberId; dollars: number }[];
-  /** Deposits that name nobody on the trip. They are held apart and never credited to a person. */
-  unattributedDollars: number;
-}
-
-const usable = (amount: number) => Number.isFinite(amount) && amount >= 0;
-
-/**
- * Collected against needed. A person is only covered by their own deposits: one large deposit does not pay
- * for the others. The trip counts as funded when every person has covered their own share.
- */
-export function checkFunding(plan: Extract<ContributionPlan, { ok: true }>, deposits: readonly Deposit[]): FundingReport {
-  const paid = new Map<MemberId, number>(plan.requests.map((r) => [r.memberId, 0]));
-  const seen = new Set<string>();
-  let stale = 0;
-  const staleBy = new Map<MemberId, number>();
-  let unattributed = 0;
-  for (const deposit of deposits) {
-    if (deposit.id !== undefined) {
-      if (seen.has(deposit.id)) continue;
-      seen.add(deposit.id);
-    }
-    if (deposit.status !== undefined && deposit.status !== 'completed') continue;
-    if (!usable(deposit.amountDollars)) continue;
-    const tag = parseDepositTag(deposit.description);
-    if (!tag || !paid.has(tag.memberId)) {
-      unattributed += deposit.amountDollars;
-    } else if (tag.revision !== plan.revision) {
-      stale += deposit.amountDollars;
-      staleBy.set(tag.memberId, (staleBy.get(tag.memberId) ?? 0) + deposit.amountDollars);
-    } else {
-      paid.set(tag.memberId, (paid.get(tag.memberId) ?? 0) + deposit.amountDollars);
-    }
-  }
-  const perMember = plan.requests.map((r) => {
-    const paidDollars = paid.get(r.memberId) ?? 0;
-    return { memberId: r.memberId, requestedDollars: r.dollars, paidDollars, outstandingDollars: Math.max(0, r.dollars - paidDollars) };
-  });
-  const collectedDollars = perMember.reduce((total, m) => total + m.paidDollars, 0);
-  const missingMemberIds = perMember.filter((m) => m.outstandingDollars > 0).map((m) => m.memberId);
-  const status = missingMemberIds.length === 0 ? 'funded' : collectedDollars > 0 ? 'partially_funded' : 'requesting';
-  return { status, neededDollars: plan.neededDollars, collectedDollars, perMember, missingMemberIds, staleDollars: stale, staleByMember: plan.requests.filter((r) => staleBy.has(r.memberId)).map((r) => ({ memberId: r.memberId, dollars: staleBy.get(r.memberId)! })), unattributedDollars: unattributed };
-}
-
 // ---- spending ----------------------------------------------------------------------------------------------
 
 /** A small, transparent mapping from a bank's merchant category. Anything else is left unclassified, never guessed. */
@@ -172,10 +91,16 @@ export function categoryForMerchant(merchantCategory: string | undefined): CostC
   return undefined;
 }
 
+const usable = (amount: number) => Number.isFinite(amount) && amount >= 0;
+
 const COST_CATEGORIES: readonly CostCategory[] = ['accommodation', 'fuel_parking_tolls', 'food', 'activities', 'taxes_fees', 'other'];
 
 export interface Purchase {
   id?: string;
+  /** Whose bank account it came from. */
+  memberId?: MemberId;
+  /** The day it happened, YYYY-MM-DD. */
+  date?: string;
   amountDollars: number;
   /** A plan category, or a bank's merchant category. */
   category?: string;
@@ -186,7 +111,7 @@ export interface CategorySpend {
   category: CostCategory;
   plannedDollars: number;
   spentDollars: number;
-  /** `near` is 80% of the budget or more. `over` includes spending in a category the pool never budgeted. */
+  /** `near` is 80% of the budget or more. `over` includes spending in a category the plan never budgeted. */
   state: 'within' | 'near' | 'over';
 }
 
@@ -200,7 +125,13 @@ export interface SpendReport {
 
 const NEAR_SHARE = 0.8;
 
-/** Spending from the shared fund against what the plan budgeted for it, by category. */
+/** Shared spending against what the plan budgeted for it, by category. */
+/** A plan category from a purchase's own category or its merchant's; undefined when it cannot be told, never guessed. */
+export function categoryOfPurchase(purchase: Pick<Purchase, 'category'>): CostCategory | undefined {
+  const raw = purchase.category?.trim().toLowerCase();
+  return COST_CATEGORIES.find((c) => c === raw) ?? categoryForMerchant(purchase.category);
+}
+
 export function spendVsPlan(plan: Extract<ContributionPlan, { ok: true }>, purchases: readonly Purchase[]): SpendReport {
   const spent = new Map<CostCategory, number>();
   const seen = new Set<string>();
@@ -214,8 +145,7 @@ export function spendVsPlan(plan: Extract<ContributionPlan, { ok: true }>, purch
     if (purchase.status !== undefined && purchase.status !== 'completed') continue;
     if (!usable(purchase.amountDollars)) continue;
     total += purchase.amountDollars;
-    const raw = purchase.category?.trim().toLowerCase();
-    const category = COST_CATEGORIES.find((c) => c === raw) ?? categoryForMerchant(purchase.category);
+    const category = categoryOfPurchase(purchase);
     if (category === undefined) unclassified += purchase.amountDollars;
     else spent.set(category, (spent.get(category) ?? 0) + purchase.amountDollars);
   }
@@ -241,41 +171,6 @@ export function spendVsPlan(plan: Extract<ContributionPlan, { ok: true }>, purch
 
 const money = (dollars: number) => `$${dollars.toLocaleString('en-US')}`;
 const list = (items: readonly string[]) => (items.length <= 1 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`);
-
-/**
- * The answer to "how's the fund?": what is in, who the fund is still waiting on, and, once spending is known,
- * what has gone out and what is left. Names appear only for amounts owed to the shared fund, never for limits.
- */
-export function describeFund(
-  state: TripState,
-  plan: Extract<ContributionPlan, { ok: true }>,
-  funding: FundingReport,
-  spend?: SpendReport,
-  options: { simulated?: boolean } = {},
-): string {
-  const name = (id: MemberId) => state.roster.find((m) => m.memberId === id)?.displayName ?? id;
-  const lines: string[] = [];
-  if (funding.status === 'funded') {
-    lines.push(`The trip fund is fully funded: ${money(funding.collectedDollars)} in, ${money(plan.neededDollars)} needed.`);
-  } else {
-    lines.push(`The trip fund has ${money(funding.collectedDollars)} of ${money(plan.neededDollars)}.`);
-    const waiting = funding.perMember.filter((m) => m.outstandingDollars > 0).map((m) => `${name(m.memberId)} (${money(m.outstandingDollars)})`);
-    lines.push(`Still waiting on ${list(waiting)}.`);
-  }
-  if (spend !== undefined) {
-    lines.push(`${money(spend.totalSpentDollars)} spent so far, ${money(Math.max(0, funding.collectedDollars - spend.totalSpentDollars))} left.`);
-  }
-  // Three short lines at most: the simulated-money note rides on the last one.
-  if (options.simulated) lines[lines.length - 1] += ' (Simulated money.)';
-  return lines.join('\n');
-}
-
-/** A private nudge for one person about their own share. Nothing about anyone else; undefined if they are covered. */
-export function reminderFor(memberId: MemberId, funding: FundingReport): string | undefined {
-  const mine = funding.perMember.find((m) => m.memberId === memberId);
-  if (!mine || mine.outstandingDollars === 0) return undefined;
-  return `Your share of the trip fund is ${money(mine.requestedDollars)} and I see ${money(mine.paidDollars)} so far, so ${money(mine.outstandingDollars)} to go.`;
-}
 
 export interface DriftNotice {
   /** Stable, so the caller can remember which notices it has already sent. */
@@ -318,75 +213,159 @@ export function driftNotices(report: SpendReport, announced: ReadonlySet<string>
   return notices;
 }
 
-// ---- wrap-up ------------------------------------------------------------------------------------------------
 
-export interface Settlement {
-  collectedDollars: number;
-  spentDollars: number;
-  /** Collected minus spent. Negative means the fund was overspent. */
-  leftoverDollars: number;
-  /** What is left, back to the people who put it in, in proportion to what each put in. Adds up exactly. */
-  refunds: { memberId: MemberId; dollars: number }[];
-  /** Only when overspent: how much, and an equal whole-dollar split of it (rounded up so it is covered). */
-  shortfall?: { dollars: number; perMember: { memberId: MemberId; dollars: number }[] };
-  /** Money sent for an older plan revision, to go back to whoever sent it in full. */
-  staleReturns: { memberId: MemberId; dollars: number }[];
-  /** Money that named nobody on the trip. Held apart until someone claims it. */
+// ---- who covered what --------------------------------------------------------------------------------------
+
+/** Food is bought by the person eating it unless someone says they covered the group, so by default it is personal and never split. */
+const PERSONAL_CATEGORIES: ReadonlySet<CostCategory> = new Set<CostCategory>(['food']);
+
+export interface CoverageOptions {
+  /** Only purchases on or after this day (YYYY-MM-DD) count. A purchase with no date always counts. */
+  from?: string;
+  /** Only purchases on or before this day count. */
+  to?: string;
+  /** Purchases the group said were for everyone even though their category is personal ("I covered dinner for all of us"). */
+  sharedPurchaseIds?: ReadonlySet<string>;
+}
+
+export interface MemberCoverage {
+  memberId: MemberId;
+  /** What this person paid for in shared categories. */
+  coveredDollars: number;
+  byCategory: { category: CostCategory; dollars: number }[];
+  /** An equal share of everything shared, in whole dollars. The shares always add up to the total. */
+  fairShareDollars: number;
+  /** Covered minus fair share. Positive means the others owe them; negative means they owe the others. */
+  netDollars: number;
+}
+
+export interface Transfer {
+  fromMemberId: MemberId;
+  toMemberId: MemberId;
+  dollars: number;
+}
+
+export interface TripLedger {
+  perMember: MemberCoverage[];
+  sharedSpentDollars: number;
+  /** The fewest-ish payments that would make everyone even. Calculated only: the bot never moves money. */
+  transfers: Transfer[];
+  /** Shared spending against the plan's budget, for the calm heads-ups. */
+  spend: SpendReport;
+  /** Food and other personal spending: not split, not counted against anyone. */
+  personalDollars: number;
+  /** Spending whose category could not be told. Left out of the split rather than guessed. */
+  unclassifiedDollars: number;
+  /** Purchases from an account that is not anyone on this trip. Never credited to a person. */
   unattributedDollars: number;
+  /** Purchases dated outside the trip's period. */
+  outsideTripDollars: number;
 }
 
 /**
- * Work out the end of the trip from the same two reports the fund view uses. It only calculates: the bot tells
- * people who gets what back and never moves money. Refunds use the largest-remainder method on whole dollars so
- * they always add up to the leftover exactly, and a person who put in more never gets less back.
+ * Who covered what, and who would owe whom. Only shared categories (lodging, gas and parking, activities) are split
+ * equally; food stays personal unless the group said otherwise. A purchase counts once (by id), only if it completed, only
+ * inside the trip's period, and only for someone on the trip. Everything is whole dollars and the numbers always add up:
+ * the fair shares sum to the shared total, the nets sum to zero, and the transfers settle every net exactly.
  */
-export function settleTrip(plan: Extract<ContributionPlan, { ok: true }>, funding: FundingReport, spend: SpendReport): Settlement {
-  const collected = funding.collectedDollars;
-  const spent = spend.totalSpentDollars;
-  const leftover = collected - spent;
-  const base = {
-    collectedDollars: collected,
-    spentDollars: spent,
-    leftoverDollars: leftover,
-    staleReturns: funding.staleByMember,
-    unattributedDollars: funding.unattributedDollars,
-  };
-  if (leftover < 0) {
-    const each = Math.ceil(-leftover / plan.requests.length);
-    return { ...base, refunds: [], shortfall: { dollars: -leftover, perMember: plan.requests.map((r) => ({ memberId: r.memberId, dollars: each })) } };
+export function trackCoverage(plan: Extract<ContributionPlan, { ok: true }>, purchases: readonly Purchase[], options: CoverageOptions = {}): TripLedger {
+  const ids = plan.requests.map((r) => r.memberId);
+  const covered = new Map<MemberId, Map<CostCategory, number>>(ids.map((id) => [id, new Map()]));
+  const seen = new Set<string>();
+  const shared: Purchase[] = [];
+  let personal = 0, unclassified = 0, unattributed = 0, outside = 0;
+  for (const purchase of purchases) {
+    if (purchase.id !== undefined) {
+      if (seen.has(purchase.id)) continue;
+      seen.add(purchase.id);
+    }
+    if (purchase.status !== undefined && purchase.status !== 'completed') continue;
+    if (!usable(purchase.amountDollars)) continue;
+    if (purchase.date !== undefined && ((options.from !== undefined && purchase.date < options.from) || (options.to !== undefined && purchase.date > options.to))) { outside += purchase.amountDollars; continue; }
+    const mine = purchase.memberId === undefined ? undefined : covered.get(purchase.memberId);
+    if (!mine) { unattributed += purchase.amountDollars; continue; }
+    const category = categoryOfPurchase(purchase);
+    if (category === undefined) { unclassified += purchase.amountDollars; continue; }
+    if (PERSONAL_CATEGORIES.has(category) && !(purchase.id !== undefined && options.sharedPurchaseIds?.has(purchase.id))) { personal += purchase.amountDollars; continue; }
+    mine.set(category, (mine.get(category) ?? 0) + purchase.amountDollars);
+    shared.push(purchase);
   }
-  if (leftover === 0 || collected === 0) return { ...base, refunds: [] };
-
-  const shares = funding.perMember.map((m, order) => {
-    const numerator = leftover * m.paidDollars;
-    return { memberId: m.memberId, order, dollars: Math.floor(numerator / collected), remainder: numerator % collected };
+  const totals = ids.map((id) => [...covered.get(id)!.values()].reduce((a, b) => a + b, 0));
+  const sharedSpent = totals.reduce((a, b) => a + b, 0);
+  const base = ids.length === 0 ? 0 : Math.floor(sharedSpent / ids.length);
+  const extra = ids.length === 0 ? 0 : sharedSpent - base * ids.length;
+  const perMember: MemberCoverage[] = ids.map((memberId, i) => {
+    const fairShareDollars = base + (i < extra ? 1 : 0);
+    return {
+      memberId,
+      coveredDollars: totals[i]!,
+      byCategory: COST_CATEGORIES.filter((c) => covered.get(memberId)!.has(c)).map((category) => ({ category, dollars: covered.get(memberId)!.get(category)! })),
+      fairShareDollars,
+      netDollars: totals[i]! - fairShareDollars,
+    };
   });
-  let extra = leftover - shares.reduce((total, share) => total + share.dollars, 0);
-  for (const share of [...shares].sort((a, b) => b.remainder - a.remainder || a.order - b.order)) {
-    if (extra === 0) break;
-    share.dollars += 1;
-    extra -= 1;
+  const owes = perMember.filter((m) => m.netDollars < 0).map((m) => ({ id: m.memberId, left: -m.netDollars })).sort((a, b) => b.left - a.left);
+  const owed = perMember.filter((m) => m.netDollars > 0).map((m) => ({ id: m.memberId, left: m.netDollars })).sort((a, b) => b.left - a.left);
+  const transfers: Transfer[] = [];
+  while (owes.length > 0 && owed.length > 0) {
+    const from = owes[0]!, to = owed[0]!;
+    const dollars = Math.min(from.left, to.left);
+    transfers.push({ fromMemberId: from.id, toMemberId: to.id, dollars });
+    from.left -= dollars; to.left -= dollars;
+    if (from.left === 0) owes.shift();
+    if (to.left === 0) owed.shift();
+    owes.sort((a, b) => b.left - a.left); owed.sort((a, b) => b.left - a.left);
   }
-  return { ...base, refunds: shares.filter((s) => s.dollars > 0).map(({ memberId, dollars }) => ({ memberId, dollars })) };
+  return { perMember, sharedSpentDollars: sharedSpent, transfers, spend: spendVsPlan(plan, shared), personalDollars: personal, unclassifiedDollars: unclassified, unattributedDollars: unattributed, outsideTripDollars: outside };
 }
 
-/** The wrap-up message: what came in, what went out, who gets what back, and that the bot moves nothing. */
-export function describeSettlement(state: TripState, settlement: Settlement, options: { simulated?: boolean } = {}): string {
-  const name = (id: MemberId) => state.roster.find((m) => m.memberId === id)?.displayName ?? id;
+/** What the page and chat say about the trip's money: `settled` once everyone is even and something was shared, otherwise still `tracking`. */
+export function ledgerStatus(ledger: TripLedger): 'tracking' | 'settled' {
+  return ledger.sharedSpentDollars > 0 && ledger.transfers.length === 0 ? 'settled' : 'tracking';
+}
+
+// ---- what the bot says about who covered what ---------------------------------------------------------------
+
+const nameIn = (state: TripState, id: MemberId) => state.roster.find((m) => m.memberId === id)?.displayName ?? id;
+const owesText = (state: TripState, transfers: readonly Transfer[]) => list(transfers.slice(0, 3).map((t) => `${nameIn(state, t.fromMemberId)} owes ${nameIn(state, t.toMemberId)} ${money(t.dollars)}`)) + (transfers.length > 3 ? ` and ${transfers.length - 3} more` : '');
+
+/**
+ * The answer to "who covered what?": what each person has paid for, and who owes whom right now. At most three short
+ * lines. Shared categories only, so nothing about personal spending, and never anyone's limit.
+ */
+export function describeCoverage(state: TripState, plan: Extract<ContributionPlan, { ok: true }>, ledger: TripLedger, options: { simulated?: boolean } = {}): string {
   const lines: string[] = [];
-  const notes: string[] = [];
-  if (settlement.shortfall) {
-    const each = settlement.shortfall.perMember[0]?.dollars ?? 0;
-    lines.push(`Trip fund wrap-up: ${money(settlement.collectedDollars)} in, ${money(settlement.spentDollars)} spent, so the fund is ${money(settlement.shortfall.dollars)} short.`);
-    notes.push(`Splitting that evenly would be ${money(each)} each.`);
+  const expectedEach = plan.requests[0]?.dollars;
+  if (ledger.sharedSpentDollars === 0) {
+    lines.push(`Nothing shared has been covered yet.${expectedEach !== undefined ? ` The plan expects about ${money(expectedEach)} each in shared costs.` : ''} Whoever pays, I'll track it.`);
   } else {
-    lines.push(`Trip fund wrap-up: ${money(settlement.collectedDollars)} in, ${money(settlement.spentDollars)} spent, ${money(settlement.leftoverDollars)} left.`);
-    if (settlement.refunds.length > 0) notes.push(`To send back: ${settlement.refunds.map((r) => `${name(r.memberId)} ${money(r.dollars)}`).join(', ')}.`);
+    const each = ledger.perMember[0]?.fairShareDollars ?? 0;
+    lines.push(`Covered so far: ${list(ledger.perMember.map((m) => `${nameIn(state, m.memberId)} ${money(m.coveredDollars)}`))}. Fair share is about ${money(each)} each.`);
+    lines.push(ledger.transfers.length === 0 ? "Everyone's even right now." : `Right now ${owesText(state, ledger.transfers)}.`);
   }
-  if (settlement.staleReturns.length > 0) {
-    notes.push(`Also return what was sent for an earlier plan: ${settlement.staleReturns.map((r) => `${name(r.memberId)} ${money(r.dollars)}`).join(', ')}.`);
+  if (options.simulated) lines[lines.length - 1] += ' (Simulated money.)';
+  return lines.join('\n');
+}
+
+/** A private nudge for one person about what they owe. Nothing about anyone else's own spending; undefined if they owe nothing. */
+export function settleUpFor(state: TripState, memberId: MemberId, ledger: TripLedger): string | undefined {
+  const mine = ledger.transfers.filter((t) => t.fromMemberId === memberId);
+  if (mine.length === 0) return undefined;
+  return `Settling up so far: you owe ${list(mine.map((t) => `${nameIn(state, t.toMemberId)} ${money(t.dollars)}`))}.`;
+}
+
+/** The wrap-up for the group: the shared total, each person's share, and who sends whom. It only calculates. */
+export function describeWrapUp(state: TripState, ledger: TripLedger, options: { simulated?: boolean } = {}): string {
+  const lines: string[] = [];
+  if (ledger.sharedSpentDollars === 0) lines.push('Trip wrap-up: nothing shared was covered, so nobody owes anyone.');
+  else {
+    const each = ledger.perMember[0]?.fairShareDollars ?? 0;
+    lines.push(`Trip wrap-up: ${money(ledger.sharedSpentDollars)} of shared costs, about ${money(each)} each.`);
+    lines.push(ledger.transfers.length === 0 ? "Everyone covered their share, so nobody owes anyone." : `To settle: ${ledger.transfers.map((t) => `${nameIn(state, t.fromMemberId)} sends ${nameIn(state, t.toMemberId)} ${money(t.dollars)}`).join(', ')}.`);
   }
-  if (settlement.unattributedDollars > 0) notes.push(`${money(settlement.unattributedDollars)} didn't say who it was from, so someone needs to claim it.`);
+  const notes: string[] = [];
+  if (ledger.unclassifiedDollars > 0) notes.push(`${money(ledger.unclassifiedDollars)} had no category, so I left it out.`);
+  if (ledger.unattributedDollars > 0) notes.push(`${money(ledger.unattributedDollars)} came from an account that isn't on this trip.`);
   if (notes.length > 0) lines.push(notes.join(' '));
   lines.push(`I don't move any money, so you'd send these yourselves.${options.simulated ? ' (Simulated money.)' : ''}`);
   return lines.join('\n');

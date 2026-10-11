@@ -104,7 +104,7 @@ function fromState(b: B.TripState, previous: C.TripState): C.TripState {
   };
 }
 
-export function createPlannerAdapter(provider: ResearchProvider, spaceId: string, options: { fundContext?: (state: C.TripState) => Promise<{ remainingDollars: number } | undefined> } = {}): PlannerAdapter {
+export function createPlannerAdapter(provider: ResearchProvider, spaceId: string): PlannerAdapter {
   const replies = (items: B.TripReply[]): C.OutboundMessage[] => items.map((r, i) => ({ ...r, text: r.text, deliveryId: `planner:${i}`, audience: r.audience.kind === 'group' ? { kind: 'group', spaceId } : r.audience }));
   return {
     applyCommand(state, command, options) {
@@ -195,8 +195,7 @@ export function createPlannerAdapter(provider: ResearchProvider, spaceId: string
       return { ...result, state: result.state === before ? state : fromState(result.state, state), replies: replies(result.replies) };
     },
     async guide(state, question, now) {
-      const fund = await options.fundContext?.(state);
-      const answer = await answerGuideQuestion(toPlanningState(state), question, provider, { now, ...(fund ? { fund } : {}) });
+      const answer = await answerGuideQuestion(toPlanningState(state), question, provider, { now });
       // Chat gets the short version: a few lines and the site names, not the full text with long source links.
       return answer.short ?? answer.text;
     },

@@ -213,7 +213,7 @@ export interface TripState {
   selectedCandidateId?: string;
   acceptances: Acceptance[];
   pendingQuestions: PendingQuestion[];
-  fundingStatus: 'disabled' | 'requesting' | 'partially_funded' | 'funded' | 'unknown' | 'failed';
+  fundingStatus: 'disabled' | 'tracking' | 'settled' | 'requesting' | 'partially_funded' | 'funded' | 'unknown' | 'failed';
 }
 
 export interface ReadinessResult {

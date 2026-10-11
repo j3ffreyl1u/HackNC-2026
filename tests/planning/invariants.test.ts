@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { allocateCosts } from '../../src/planning/budget.js';
 import { applyCommand, installCandidates } from '../../src/planning/commands.js';
-import { checkFunding, depositTag, planContributions, settleTrip, spendVsPlan, type Deposit, type Purchase } from '../../src/planning/funding.js';
+import { planContributions, spendVsPlan, trackCoverage, type Purchase } from '../../src/planning/funding.js';
 import { splitEqual } from '../../src/planning/money.js';
 import type { CostItem, TripState } from '../../src/planning/types.js';
 import { NOW, candidate, command, ids, readyState } from './fixtures.js';
 
 // Randomised checks with a fixed seed, so a failure can be reproduced exactly. The properties are the promises
-// the money code makes: shares add up to the total to the cent, rounding up never leaves the fund short, results
-// do not depend on the order deposits arrive in, and refunds add up exactly.
+// the money code makes: shares add up to the total to the cent, what people covered adds up exactly, results
+// do not depend on the order purchases arrive in, and the settlement always nets to zero.
 
 function rng(seed: number) {
   let a = seed >>> 0;
@@ -72,7 +72,7 @@ function approvedWith(sharedHigh: number, contingency: number): TripState {
 }
 
 describe('planContributions', () => {
-  it('never leaves the fund short and never over-asks by a full dollar each', () => {
+  it('expected shares never fall short of the need and never overshoot it by a full dollar each', () => {
     const r = rng(3);
     for (let i = 0; i < CASES; i++) {
       const sharedHigh = int(r, 0, 2_000_000);
@@ -86,62 +86,23 @@ describe('planContributions', () => {
   });
 });
 
-function randomDeposits(r: () => number, revision: number): Deposit[] {
-  const members = [...ids, 'stranger'];
-  return Array.from({ length: int(r, 0, 12) }, (_, k) => ({
-    id: `d${k}`,
-    amountDollars: int(r, 0, 300),
-    description: r() < 0.15 ? 'cash' : depositTag(members[int(r, 0, members.length - 1)]!, r() < 0.2 ? revision - 1 : revision),
-    ...(r() < 0.15 ? { status: 'pending' } : {}),
-  }));
-}
 const shuffle = <T,>(r: () => number, list: T[]): T[] => list.map((x) => [r(), x] as const).sort((a, b) => a[0] - b[0]).map(([, x]) => x);
 
-describe('checkFunding', () => {
+describe('trackCoverage', () => {
   const plan = (() => { const p = planContributions(approvedWith(45_000, 3_000)); if (!p.ok) throw new Error(p.reason); return p; })();
 
-  it('does not depend on arrival order, counts a repeated deposit once, and never credits more than was sent', () => {
+  it('does not depend on the order purchases arrive in, counts a repeated purchase once, and always settles to zero', () => {
     const r = rng(4);
+    const cats = ['hotel', 'gas', 'parks', 'restaurant', 'nonsense'];
     for (let i = 0; i < CASES; i++) {
-      const deposits = randomDeposits(r, plan.revision);
-      const report = checkFunding(plan, deposits);
-      expect(checkFunding(plan, shuffle(r, deposits))).toEqual(report);
-      expect(checkFunding(plan, [...deposits, ...deposits])).toEqual(report);
-      const sent = deposits.filter((d) => d.status === undefined).reduce((t, d) => t + d.amountDollars, 0);
-      expect(report.collectedDollars + report.staleDollars + report.unattributedDollars).toBeLessThanOrEqual(sent);
-      expect(report.collectedDollars).toBe(report.perMember.reduce((t, m) => t + m.paidDollars, 0));
-      for (const m of report.perMember) expect(m.outstandingDollars).toBe(Math.max(0, m.requestedDollars - m.paidDollars));
-      expect(report.status === 'funded').toBe(report.missingMemberIds.length === 0);
-    }
-  });
-});
-
-describe('settleTrip', () => {
-  const plan = (() => { const p = planContributions(approvedWith(45_000, 3_000)); if (!p.ok) throw new Error(p.reason); return p; })();
-
-  it('refunds add up exactly to the leftover, none is negative, and putting in strictly more never gets you less back', () => {
-    const r = rng(5);
-    for (let i = 0; i < CASES; i++) {
-      const funding = checkFunding(plan, randomDeposits(r, plan.revision));
-      const purchases: Purchase[] = Array.from({ length: int(r, 0, 5) }, (_, k) => ({ id: `p${k}`, amountDollars: int(r, 0, 200), category: 'food' }));
-      const s = settleTrip(plan, funding, spendVsPlan(plan, purchases));
-      expect(s.leftoverDollars).toBe(funding.collectedDollars - s.spentDollars);
-      if (s.leftoverDollars > 0 && funding.collectedDollars > 0) {
-        expect(s.refunds.reduce((t, x) => t + x.dollars, 0)).toBe(s.leftoverDollars);
-        for (const x of s.refunds) expect(x.dollars).toBeGreaterThan(0);
-        const paid = (id: string) => funding.perMember.find((m) => m.memberId === id)!.paidDollars;
-        const got = (id: string) => s.refunds.find((x) => x.memberId === id)?.dollars ?? 0;
-        for (const a of ids) {
-          for (const b of ids) {
-            if (paid(a) > paid(b)) expect(got(a)).toBeGreaterThanOrEqual(got(b));
-            // One dollar cannot be split, so people who put in exactly the same can differ by at most that dollar.
-            if (paid(a) === paid(b)) expect(Math.abs(got(a) - got(b))).toBeLessThanOrEqual(1);
-          }
-        }
-      } else {
-        expect(s.refunds).toEqual([]);
-      }
-      if (s.shortfall) expect(s.shortfall.perMember.reduce((t, x) => t + x.dollars, 0)).toBeGreaterThanOrEqual(s.shortfall.dollars);
+      const purchases: Purchase[] = Array.from({ length: int(r, 0, 12) }, (_, k) => ({ id: `p${k}`, memberId: r() < 0.1 ? 'stranger' : ids[int(r, 0, ids.length - 1)], amountDollars: int(r, 1, 400), category: cats[int(r, 0, cats.length - 1)], ...(r() < 0.2 ? { status: 'pending' } : {}) }));
+      const ledger = trackCoverage(plan, purchases);
+      expect(trackCoverage(plan, shuffle(r, purchases))).toEqual(ledger);
+      expect(trackCoverage(plan, [...purchases, ...purchases])).toEqual(ledger);   // the same bank rows read twice change nothing
+      expect(ledger.perMember.reduce((t, m) => t + m.netDollars, 0)).toBe(0);
+      expect(ledger.perMember.reduce((t, m) => t + m.fairShareDollars, 0)).toBe(ledger.sharedSpentDollars);
+      const completed = purchases.filter((p) => p.status === undefined).reduce((t, p) => t + p.amountDollars, 0);
+      expect(ledger.sharedSpentDollars + ledger.personalDollars + ledger.unclassifiedDollars + ledger.unattributedDollars, 'every completed dollar is accounted for once').toBe(completed);
     }
   });
 });

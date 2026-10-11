@@ -48,6 +48,21 @@ export async function loadEnvironmentFile(path = '.env', target: NodeJS.ProcessE
   }
 }
 
+/**
+ * The trip-page link goes into texts, so it has to open on a phone. `127.0.0.1` and `localhost` mean "this device", so on a
+ * phone they are never the computer running the app. Returns what to tell the operator, or undefined when the link can work.
+ */
+export function planLinkWarning(chatMode: ChatMode, publicBaseUrl: string | undefined): string | undefined {
+  if (chatMode !== 'photon') return undefined;
+  const value = publicBaseUrl?.trim();
+  if (!value) return 'PUBLIC_BASE_URL is not set, so the trip-page link in texts points at 127.0.0.1 and will say "site can\'t be reached" on phones. Start a tunnel to this port (for example `cloudflared tunnel --url http://127.0.0.1:3000`) and set PUBLIC_BASE_URL to its https address.';
+  let url: URL;
+  try { url = new URL(value); } catch { return 'PUBLIC_BASE_URL is not a valid URL, so the trip-page link in texts will not open.'; }
+  if (/^(?:127\.|localhost$|0\.0\.0\.0$|\[?::1\]?$)/i.test(url.hostname)) return `PUBLIC_BASE_URL (${url.origin}) is this computer's own address, so phones cannot open the trip-page link. Use a tunnel's https address instead.`;
+  if (url.protocol !== 'https:') return `PUBLIC_BASE_URL uses ${url.protocol} (not https): phones on mobile data and some link previews may not open it. A tunnel gives you https.`;
+  return undefined;
+}
+
 export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const chatMode = choice(env.CHAT_MODE, ['mock', 'photon'] as const, 'mock', 'CHAT_MODE');
   const researchMode = choice(env.RESEARCH_MODE, ['mock', 'gemini', 'live'] as const, 'mock', 'RESEARCH_MODE');
@@ -76,9 +91,8 @@ export function loadAppConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     try { url = new URL(env.NESSIE_BASE_URL); }
     catch { throw new AppConfigError('NESSIE_BASE_URL must be a valid HTTPS URL.'); }
     if (url.protocol !== 'https:') throw new AppConfigError('NESSIE_BASE_URL must use HTTPS.');
-    required(env.NESSIE_ACCOUNT_ID, 'NESSIE_ACCOUNT_ID');
-    required(env.NESSIE_PLAN_REVISION, 'NESSIE_PLAN_REVISION');
-    if (!Number.isSafeInteger(Number(env.NESSIE_PLAN_REVISION)) || Number(env.NESSIE_PLAN_REVISION) < 0) throw new AppConfigError('NESSIE_PLAN_REVISION must be a nonnegative integer.');
+    // One sandbox account per friend: a JSON file mapping each trip member ID to that friend's Nessie account ID.
+    required(env.NESSIE_ACCOUNTS_PATH, 'NESSIE_ACCOUNTS_PATH');
   }
 
   return {

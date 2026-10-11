@@ -1,0 +1,9 @@
+{
+  "members": ["mason", "alex", "jordan"],
+  "purchases": [
+    { "memberId": "mason", "category": "hotel", "dollars": 110, "note": "Cabin, two nights" },
+    { "memberId": "alex", "category": "gas", "dollars": 60, "note": "Fuel for the drive" },
+    { "memberId": "jordan", "category": "parks", "dollars": 30, "note": "Park entry" },
+    { "memberId": "alex", "category": "restaurant", "dollars": 45, "note": "Dinner (personal)" }
+  ]
+}

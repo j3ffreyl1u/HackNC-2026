@@ -2,16 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { applyCommand, installCandidates } from '../../src/planning/commands.js';
 import {
   categoryForMerchant,
-  checkFunding,
-  depositTag,
-  describeFund,
-  describeSettlement,
+  describeCoverage,
+  describeWrapUp,
   driftNotices,
-  parseDepositTag,
+  ledgerStatus,
   planContributions,
-  reminderFor,
-  settleTrip,
+  settleUpFor,
   spendVsPlan,
+  trackCoverage,
+  type Purchase,
 } from '../../src/planning/funding.js';
 import type { TripState } from '../../src/planning/types.js';
 import { NOW, candidate, command, ids, readyState } from './fixtures.js';
@@ -25,7 +24,7 @@ function approved(sharedHigh = 45_000): TripState {
 }
 
 describe('planContributions', () => {
-  it('asks each person for their share of shared costs plus contingency, in whole dollars', () => {
+  it('works out each person\'s expected share of shared costs plus contingency, in whole dollars', () => {
     const plan = planContributions(approved());
     if (!plan.ok) throw new Error(plan.reason);
     // 45,000 shared + 3,000 contingency = 48,000 cents = $480.00, so $160 each.
@@ -35,7 +34,7 @@ describe('planContributions', () => {
     expect(plan.candidateId).toBe('b');
   });
 
-  it('rounds each share up so the account is never short, and the total never falls under the need', () => {
+  it('rounds each expected share up, and the total never falls under the need', () => {
     // 45,100 + 3,000 = 48,100 cents over three people: 16,034 / 16,033 / 16,033 -> $161 each.
     const plan = planContributions(approved(45_100));
     if (!plan.ok) throw new Error(plan.reason);
@@ -43,7 +42,7 @@ describe('planContributions', () => {
     expect(plan.neededDollars * 100).toBeGreaterThanOrEqual(48_100);
   });
 
-  it('leaves personal costs out of the pool and lists them as the person\'s own', () => {
+  it('leaves personal costs out of the shared costs and lists them as the person\'s own', () => {
     const plan = planContributions(approved());
     if (!plan.ok) throw new Error(plan.reason);
     expect(plan.personalOwnDollars).toEqual(ids.map((memberId) => ({ memberId, dollars: 20 })));
@@ -65,83 +64,6 @@ describe('planContributions', () => {
     const plan = planContributions(s);
     expect(plan.ok).toBe(false);
     if (!plan.ok) expect(plan.reason).toMatch(/price/i);
-  });
-});
-
-describe('deposit tags', () => {
-  it('round-trips member and revision, and ignores anything else', () => {
-    expect(parseDepositTag(depositTag('mason', 3))).toEqual({ memberId: 'mason', revision: 3 });
-    expect(parseDepositTag('hello')).toBeUndefined();
-    expect(parseDepositTag('member=;rev=3')).toBeUndefined();
-    expect(parseDepositTag('member=alex;rev=x')).toBeUndefined();
-    expect(parseDepositTag('member=alex;rev=3;completed')).toEqual({ memberId: 'alex', revision: 3 });
-  });
-});
-
-describe('checkFunding', () => {
-  const plan = () => {
-    const p = planContributions(approved());
-    if (!p.ok) throw new Error(p.reason);
-    return p;
-  };
-
-  it('is requesting when nothing has arrived', () => {
-    const report = checkFunding(plan(), []);
-    expect(report.status).toBe('requesting');
-    expect(report.collectedDollars).toBe(0);
-    expect(report.neededDollars).toBe(480);
-    expect(report.perMember.map((m) => m.outstandingDollars)).toEqual([160, 160, 160]);
-  });
-
-  it('is partly funded and names who is still outstanding', () => {
-    const report = checkFunding(plan(), [
-      { id: 'd1', amountDollars: 160, description: depositTag('mason', 1) },
-      { id: 'd2', amountDollars: 100, description: depositTag('alex', 1) },
-    ]);
-    expect(report.status).toBe('partially_funded');
-    expect(report.collectedDollars).toBe(260);
-    expect(report.perMember.find((m) => m.memberId === 'alex')?.outstandingDollars).toBe(60);
-    expect(report.perMember.find((m) => m.memberId === 'jordan')?.outstandingDollars).toBe(160);
-    expect(report.missingMemberIds).toEqual(['alex', 'jordan']);
-  });
-
-  it('is funded only when every person has covered their own share', () => {
-    const everyone = ids.map((id, i) => ({ id: `d${i}`, amountDollars: 160, description: depositTag(id, 1) }));
-    expect(checkFunding(plan(), everyone).status).toBe('funded');
-    // One person paying everybody's share does not fund the others' obligations.
-    const oneBigDeposit = [{ id: 'x', amountDollars: 480, description: depositTag('mason', 1) }];
-    const report = checkFunding(plan(), oneBigDeposit);
-    expect(report.status).toBe('partially_funded');
-    expect(report.perMember.find((m) => m.memberId === 'alex')?.outstandingDollars).toBe(160);
-  });
-
-  it('does not count deposits for an old revision, and reports them separately', () => {
-    const report = checkFunding(plan(), [{ id: 'old', amountDollars: 160, description: depositTag('mason', 0) }]);
-    expect(report.status).toBe('requesting');
-    expect(report.collectedDollars).toBe(0);
-    expect(report.staleDollars).toBe(160);
-  });
-
-  it('keeps untagged deposits apart and never counts them toward a person', () => {
-    const report = checkFunding(plan(), [{ id: 'mystery', amountDollars: 160, description: 'cash' }]);
-    expect(report.collectedDollars).toBe(0);
-    expect(report.unattributedDollars).toBe(160);
-  });
-
-  it('counts a repeated deposit id once and ignores deposits that are not completed', () => {
-    const report = checkFunding(plan(), [
-      { id: 'd1', amountDollars: 160, description: depositTag('mason', 1) },
-      { id: 'd1', amountDollars: 160, description: depositTag('mason', 1) },
-      { id: 'p1', amountDollars: 160, description: depositTag('alex', 1), status: 'pending' },
-    ]);
-    expect(report.collectedDollars).toBe(160);
-    expect(report.perMember.find((m) => m.memberId === 'alex')?.paidDollars).toBe(0);
-  });
-
-  it('never names an amount for a person who is not on the trip', () => {
-    const report = checkFunding(plan(), [{ id: 'z', amountDollars: 50, description: depositTag('stranger', 1) }]);
-    expect(report.collectedDollars).toBe(0);
-    expect(report.unattributedDollars).toBe(50);
   });
 });
 
@@ -202,53 +124,6 @@ describe('spendVsPlan', () => {
   });
 });
 
-describe('describeFund', () => {
-  const setup = () => {
-    const state = approved();
-    const plan = planContributions(state);
-    if (!plan.ok) throw new Error(plan.reason);
-    return { state, plan };
-  };
-
-  it('says how much is in, who the fund is still waiting on, and that it is simulated money when asked to', () => {
-    const { state, plan } = setup();
-    const funding = checkFunding(plan, [
-      { id: 'a', amountDollars: 160, description: depositTag('mason', 1) },
-      { id: 'b', amountDollars: 100, description: depositTag('alex', 1) },
-    ]);
-    const text = describeFund(state, plan, funding, undefined, { simulated: true });
-    expect(text).toMatch(/\$260 of \$480/);
-    expect(text).toMatch(/Alex \(\$60\)/);
-    expect(text).toMatch(/Jordan \(\$160\)/);
-    expect(text).not.toMatch(/Mason \(/);
-    expect(text).toMatch(/simulated/i);
-  });
-
-  it('says the fund is fully funded when it is, and adds spending when it is given', () => {
-    const { state, plan } = setup();
-    const funding = checkFunding(plan, ids.map((id, i) => ({ id: `d${i}`, amountDollars: 160, description: depositTag(id, 1) })));
-    const spend = spendVsPlan(plan, [{ id: 'p', amountDollars: 120, category: 'accommodation' }]);
-    const text = describeFund(state, plan, funding, spend);
-    expect(text).toMatch(/fully funded/i);
-    expect(text).toMatch(/\$120 spent/);
-    expect(text).toMatch(/\$360 left/);
-  });
-});
-
-describe('reminderFor', () => {
-  it('tells one person what they still owe, and nothing about anyone else', () => {
-    const plan = planContributions(approved());
-    if (!plan.ok) throw new Error(plan.reason);
-    const funding = checkFunding(plan, [{ id: 'a', amountDollars: 100, description: depositTag('alex', 1) }]);
-    expect(reminderFor('alex', funding)).toMatch(/\$60/);
-    expect(reminderFor('alex', funding)).not.toMatch(/Jordan|Mason/);
-    expect(reminderFor('mason', funding)).toMatch(/\$160/);
-    const paid = checkFunding(plan, ids.map((id, i) => ({ id: `d${i}`, amountDollars: 160, description: depositTag(id, 1) })));
-    expect(reminderFor('alex', paid)).toBeUndefined();
-    expect(reminderFor('stranger', funding)).toBeUndefined();
-  });
-});
-
 describe('driftNotices', () => {
   const plan = () => {
     const p = planContributions(approved());
@@ -300,117 +175,116 @@ describe('driftNotices', () => {
   });
 });
 
-describe('settleTrip', () => {
-  const plan = () => {
-    const p = planContributions(approved());
-    if (!p.ok) throw new Error(p.reason);
-    return p;
-  };
-  const paidIn = (dollars: Record<string, number>, revision = 1) =>
-    Object.entries(dollars).map(([id, amountDollars], i) => ({ id: `d${i}-${revision}`, amountDollars, description: depositTag(id, revision) }));
 
-  it('returns what is left to the people who put it in, in proportion', () => {
-    const p = plan();
-    const funding = checkFunding(p, paidIn({ mason: 160, alex: 160, jordan: 160 }));
-    const spend = spendVsPlan(p, [{ id: 'a', amountDollars: 330, category: 'accommodation' }]);
-    const s = settleTrip(p, funding, spend);
-    expect(s.collectedDollars).toBe(480);
-    expect(s.spentDollars).toBe(330);
-    expect(s.leftoverDollars).toBe(150);
-    expect(s.refunds).toEqual([{ memberId: 'mason', dollars: 50 }, { memberId: 'alex', dollars: 50 }, { memberId: 'jordan', dollars: 50 }]);
-    expect(s.shortfall).toBeUndefined();
+// ---- who covered what ----------------------------------------------------------------------------------------
+
+const planOf = (sharedHigh = 45_000) => {
+  const plan = planContributions(approved(sharedHigh));
+  if (!plan.ok) throw new Error(plan.reason);
+  return plan;
+};
+const buy = (memberId: string, dollars: number, category: string, extra: Partial<Purchase> = {}): Purchase => ({ id: `${memberId}-${category}-${dollars}-${Math.random()}`, memberId, amountDollars: dollars, category, status: 'completed', ...extra });
+const [A, B, C] = ids;
+
+describe('trackCoverage', () => {
+  it('splits shared costs equally and says who is owed: one person pays the whole bill', () => {
+    const ledger = trackCoverage(planOf(), [buy(A!, 60, 'gas')]);
+    expect(ledger.sharedSpentDollars).toBe(60);
+    expect(ledger.perMember.map((m) => [m.memberId, m.coveredDollars, m.fairShareDollars, m.netDollars])).toEqual([[A, 60, 20, 40], [B, 0, 20, -20], [C, 0, 20, -20]]);
+    expect(ledger.transfers).toEqual([{ fromMemberId: B, toMemberId: A, dollars: 20 }, { fromMemberId: C, toMemberId: A, dollars: 20 }]);
   });
-
-  it('refunds always add up exactly to the leftover, and larger contributions get at least as much back', () => {
-    const p = plan();
-    const funding = checkFunding(p, paidIn({ mason: 160, alex: 160, jordan: 170 }));
-    const spend = spendVsPlan(p, [{ id: 'a', amountDollars: 331, category: 'accommodation' }]);
-    const s = settleTrip(p, funding, spend);
-    expect(s.leftoverDollars).toBe(159);
-    expect(s.refunds.reduce((t, r) => t + r.dollars, 0)).toBe(159);
-    const get = (id: string) => s.refunds.find((r) => r.memberId === id)!.dollars;
-    expect(get('jordan')).toBeGreaterThanOrEqual(get('mason'));
+  it('lets different people cover different things, and only the difference moves', () => {
+    const ledger = trackCoverage(planOf(), [buy(A!, 300, 'hotel'), buy(B!, 60, 'gas'), buy(C!, 30, 'parks')]);
+    expect(ledger.sharedSpentDollars).toBe(390);
+    expect(ledger.perMember.map((m) => m.netDollars)).toEqual([170, -70, -100]);
+    expect(ledger.transfers).toEqual([{ fromMemberId: C, toMemberId: A, dollars: 100 }, { fromMemberId: B, toMemberId: A, dollars: 70 }]);
   });
-
-  it('gives the extra dollars to the largest remainders, not just the first people on the list', () => {
-    const p = plan();
-    const funding = checkFunding(p, paidIn({ mason: 170, alex: 160, jordan: 160 }));
-    const s = settleTrip(p, funding, spendVsPlan(p, [{ id: 'a', amountDollars: 331, category: 'accommodation' }]));
-    // 159 left over 490 in: shares 55.2, 51.9, 51.9. The two spare dollars go to alex and jordan, not mason.
-    expect(s.refunds).toEqual([{ memberId: 'mason', dollars: 55 }, { memberId: 'alex', dollars: 52 }, { memberId: 'jordan', dollars: 52 }]);
+  it('keeps what each person covered by category', () => {
+    const ledger = trackCoverage(planOf(), [buy(A!, 200, 'hotel'), buy(A!, 40, 'gas'), buy(A!, 20, 'fuel')]);
+    expect(ledger.perMember[0]!.byCategory).toEqual([{ category: 'accommodation', dollars: 200 }, { category: 'fuel_parking_tolls', dollars: 60 }]);
   });
-
-  it('reports a shortfall and a whole-dollar equal split of it when the fund was overspent', () => {
-    const p = plan();
-    const funding = checkFunding(p, paidIn({ mason: 160, alex: 160, jordan: 160 }));
-    const spend = spendVsPlan(p, [{ id: 'a', amountDollars: 500, category: 'accommodation' }]);
-    const s = settleTrip(p, funding, spend);
-    expect(s.leftoverDollars).toBe(-20);
-    expect(s.refunds).toEqual([]);
-    expect(s.shortfall?.dollars).toBe(20);
-    expect(s.shortfall?.perMember).toEqual(ids.map((memberId) => ({ memberId, dollars: 7 })));
+  it('is even when everyone covered the same', () => {
+    const ledger = trackCoverage(planOf(), [buy(A!, 50, 'gas'), buy(B!, 50, 'gas'), buy(C!, 50, 'gas')]);
+    expect(ledger.transfers).toEqual([]); expect(ledgerStatus(ledger)).toBe('settled');
   });
-
-  it('returns deposits made for an older plan revision to the person who sent them', () => {
-    const p = plan();
-    const funding = checkFunding(p, [...paidIn({ mason: 160, alex: 160, jordan: 160 }), ...paidIn({ alex: 90 }, 0)]);
-    const s = settleTrip(p, funding, spendVsPlan(p, []));
-    expect(s.staleReturns).toEqual([{ memberId: 'alex', dollars: 90 }]);
-    expect(s.leftoverDollars).toBe(480);
+  it('is only tracking while nothing shared has been covered', () => {
+    const ledger = trackCoverage(planOf(), []);
+    expect(ledger.sharedSpentDollars).toBe(0); expect(ledger.transfers).toEqual([]); expect(ledgerStatus(ledger)).toBe('tracking');
   });
-
-  it('keeps unattributed money apart for someone to claim', () => {
-    const p = plan();
-    const funding = checkFunding(p, [{ id: 'm', amountDollars: 75, description: 'cash' }]);
-    const s = settleTrip(p, funding, spendVsPlan(p, []));
-    expect(s.unattributedDollars).toBe(75);
-    expect(s.refunds).toEqual([]);
+  it('keeps food personal unless the group said otherwise', () => {
+    const lunch = buy(A!, 45, 'restaurant', { id: 'lunch' });
+    expect(trackCoverage(planOf(), [lunch]).sharedSpentDollars).toBe(0);
+    expect(trackCoverage(planOf(), [lunch]).personalDollars).toBe(45);
+    const shared = trackCoverage(planOf(), [lunch], { sharedPurchaseIds: new Set(['lunch']) });
+    expect(shared.sharedSpentDollars).toBe(45); expect(shared.transfers).toHaveLength(2);
   });
-
-  it('has nothing to return when nobody paid in', () => {
-    const p = plan();
-    const s = settleTrip(p, checkFunding(p, []), spendVsPlan(p, []));
-    expect(s.refunds).toEqual([]);
-    expect(s.leftoverDollars).toBe(0);
+  it('leaves a purchase with no category out of the split, and says how much', () => {
+    const ledger = trackCoverage(planOf(), [buy(A!, 80, 'casino'), buy(A!, 30, 'gas')]);
+    expect(ledger.unclassifiedDollars).toBe(80); expect(ledger.sharedSpentDollars).toBe(30);
+  });
+  it('never credits an account that is not on the trip', () => {
+    const ledger = trackCoverage(planOf(), [buy('stranger', 500, 'hotel'), { id: 'x', amountDollars: 9, category: 'gas', status: 'completed' }]);
+    expect(ledger.unattributedDollars).toBe(509); expect(ledger.sharedSpentDollars).toBe(0);
+  });
+  it('counts a repeated purchase id once and skips purchases that did not complete', () => {
+    const once = buy(A!, 40, 'gas', { id: 'same' });
+    const ledger = trackCoverage(planOf(), [once, { ...once }, buy(B!, 99, 'gas', { status: 'pending' }), buy(B!, 10, 'gas', { amountDollars: Number.NaN })]);
+    expect(ledger.sharedSpentDollars).toBe(40);
+  });
+  it('counts only purchases inside the trip period', () => {
+    const ledger = trackCoverage(planOf(), [buy(A!, 100, 'hotel', { date: '2026-10-12' }), buy(A!, 70, 'gas', { date: '2026-09-01' }), buy(A!, 20, 'gas', { date: '2026-12-31' }), buy(A!, 5, 'gas')], { from: '2026-10-10', to: '2026-11-20' });
+    expect(ledger.sharedSpentDollars).toBe(105); expect(ledger.outsideTripDollars).toBe(90);
+  });
+  it('compares shared spending with the plan, and never counts food against the shared budget', () => {
+    const ledger = trackCoverage(planOf(), [buy(A!, 900, 'hotel'), buy(B!, 500, 'restaurant')]);
+    expect(ledger.spend.overCategories).toContain('accommodation');
+    expect(ledger.spend.byCategory.some((c) => c.category === 'food')).toBe(false);
   });
 });
 
-describe('describeSettlement', () => {
-  it('says what came in, what went out and who gets what back, and that the bot moves nothing', () => {
-    const state = approved();
-    const p = planContributions(state);
-    if (!p.ok) throw new Error(p.reason);
-    const funding = checkFunding(p, ids.map((id, i) => ({ id: `d${i}`, amountDollars: 160, description: depositTag(id, 1) })));
-    const text = describeSettlement(state, settleTrip(p, funding, spendVsPlan(p, [{ id: 'a', amountDollars: 330, category: 'accommodation' }])), { simulated: true });
-    expect(text).toMatch(/\$480 in/);
-    expect(text).toMatch(/\$330 spent/);
-    expect(text).toMatch(/\$150 left/);
-    expect(text).toMatch(/Mason \$50/);
-    expect(text).toMatch(/send|return/i);
-    expect(text).toMatch(/I don't move any money/i);
-    expect(text).toMatch(/simulated/i);
-  });
-
-  it('explains a shortfall without blaming anyone', () => {
-    const state = approved();
-    const p = planContributions(state);
-    if (!p.ok) throw new Error(p.reason);
-    const funding = checkFunding(p, ids.map((id, i) => ({ id: `d${i}`, amountDollars: 160, description: depositTag(id, 1) })));
-    const text = describeSettlement(state, settleTrip(p, funding, spendVsPlan(p, [{ id: 'a', amountDollars: 500, category: 'accommodation' }])));
-    expect(text).toMatch(/\$20 short/);
-    expect(text).toMatch(/\$7 each/);
+describe('the numbers always add up (seeded)', () => {
+  it('fair shares sum to the shared total, nets sum to zero, and the transfers settle every net exactly', () => {
+    let seed = 20261011;
+    const rand = () => { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296; };
+    const cats = ['hotel', 'gas', 'parks', 'parking', 'tolls'];
+    for (let round = 0; round < 300; round++) {
+      const purchases = Array.from({ length: Math.floor(rand() * 9) }, () => buy(ids[Math.floor(rand() * ids.length)]!, 1 + Math.floor(rand() * 400), cats[Math.floor(rand() * cats.length)]!));
+      const ledger = trackCoverage(planOf(), purchases);
+      expect(ledger.perMember.reduce((a, m) => a + m.fairShareDollars, 0)).toBe(ledger.sharedSpentDollars);
+      expect(ledger.perMember.reduce((a, m) => a + m.netDollars, 0)).toBe(0);
+      const moved = new Map<string, number>(ids.map((id) => [id, 0]));
+      for (const t of ledger.transfers) { moved.set(t.fromMemberId, moved.get(t.fromMemberId)! + t.dollars); moved.set(t.toMemberId, moved.get(t.toMemberId)! - t.dollars); expect(t.dollars).toBeGreaterThan(0); expect(t.fromMemberId).not.toBe(t.toMemberId); }
+      for (const m of ledger.perMember) expect(-moved.get(m.memberId)! + 0, `${m.memberId} in round ${round}`).toBe(m.netDollars + 0);   // + 0 turns -0 into 0
+      expect(ledger.transfers.length).toBeLessThanOrEqual(ids.length - 1);
+    }
   });
 });
 
-describe('messages are short', () => {
-  it('describeFund and describeSettlement fit in three short lines', () => {
-    const state = approved();
-    const p = planContributions(state);
-    if (!p.ok) throw new Error(p.reason);
-    const partial = checkFunding(p, [{ id: 'a', amountDollars: 100, description: depositTag('mason', 1) }, { id: 'old', amountDollars: 30, description: depositTag('alex', 0) }, { id: 'x', amountDollars: 5, description: 'cash' }]);
-    const spend = spendVsPlan(p, [{ id: 's', amountDollars: 20, category: 'food' }]);
-    const lines = (t: string) => t.split('\n').filter((l) => l.trim() !== '');
-    expect(lines(describeFund(state, p, partial, spend, { simulated: true })).length).toBeLessThanOrEqual(3);
-    expect(lines(describeSettlement(state, settleTrip(p, partial, spend), { simulated: true })).length).toBeLessThanOrEqual(3);
+describe('what the bot says about who covered what', () => {
+  const state = approved();
+  const plan = planOf();
+  it('says what each person covered, the fair share, and who owes whom, in three short lines, labelled simulated', () => {
+    const text = describeCoverage(state, plan, trackCoverage(plan, [buy(A!, 300, 'hotel'), buy(B!, 60, 'gas')]), { simulated: true });
+    expect(text).toMatch(/Covered so far:.*\$300.*\$60/); expect(text).toMatch(/Fair share is about \$120 each/); expect(text).toMatch(/owes/); expect(text).toMatch(/Simulated money/);
+    expect(text.split('\n').length).toBeLessThanOrEqual(3);
+    expect(text).not.toMatch(/\bmax\b|limit|cap\b/i);
+  });
+  it('says so when nothing has been covered, and when everyone is even', () => {
+    expect(describeCoverage(state, plan, trackCoverage(plan, []))).toMatch(/Nothing shared has been covered yet/);
+    expect(describeCoverage(state, plan, trackCoverage(plan, [buy(A!, 30, 'gas'), buy(B!, 30, 'gas'), buy(C!, 30, 'gas')]))).toMatch(/even/);
+  });
+  it('settleUpFor tells one person what they owe, and nothing about anyone else', () => {
+    const ledger = trackCoverage(plan, [buy(A!, 60, 'gas')]);
+    expect(settleUpFor(state, B!, ledger)).toMatch(/you owe .*\$20/i);
+    expect(settleUpFor(state, A!, ledger)).toBeUndefined();
+  });
+  it('the wrap-up says who sends whom, that the bot moves no money, and what it left out', () => {
+    const ledger = trackCoverage(plan, [buy(A!, 90, 'hotel'), buy(B!, 40, 'casino'), buy('stranger', 5, 'gas')]);
+    const text = describeWrapUp(state, ledger, { simulated: true });
+    expect(text).toMatch(/\$90 of shared costs, about \$30 each/); expect(text).toMatch(/sends/); expect(text).toMatch(/had no category/); expect(text).toMatch(/isn't on this trip/);
+    expect(text).toMatch(/don't move any money/); expect(text).toMatch(/Simulated money/);
+  });
+  it('a wrap-up with nothing covered says nobody owes anyone', () => {
+    expect(describeWrapUp(state, trackCoverage(plan, []))).toMatch(/nobody owes anyone/);
   });
 });

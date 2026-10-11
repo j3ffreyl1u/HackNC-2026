@@ -197,7 +197,7 @@ describe('requests, guide questions, and the model', () => {
       const c = cmds(await service.parseInbound(msg({ text: t })))[0];
       return c?.action.kind === 'request_funding' ? ((c.action as { topic?: string }).topic ?? 'status') : undefined;
     };
-    for (const t of ["how's the fund?", 'how is the trip fund looking', "what's in the fund", 'who still owes?', 'who owes money', "who hasn't paid yet", 'fund status', 'how much is in the pot', 'whos paid yet', 'who has paid so far', 'has everyone paid yet?', 'how much money do we have', 'how much have we raised so far']) {
+    for (const t of ["how's the fund?", 'how is the trip fund looking', "what's in the fund", 'who still owes?', 'who owes money', "who hasn't paid yet", 'fund status', 'how much is in the pot', 'whos paid yet', 'who has paid so far', 'has everyone paid yet?', 'how much money do we have', 'how much have we raised so far', 'who covered what?', 'who covered what so far', 'who paid for what', 'who has paid for what so far?', 'what do I owe?', 'what do we owe right now', 'how much do I owe', 'who owes who?', 'who owes whom right now', 'where do we stand on the money']) {
       expect(await topicOf(t), t).toBe('status');
     }
     for (const t of ['remind everyone', 'please nudge them', 'remind the others to pay', 'send reminders']) {

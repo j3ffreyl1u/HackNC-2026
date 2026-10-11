@@ -61,6 +61,6 @@ For the shared Photon line, set mode to direct in the live enrollment JSON. grou
 
 Run npm run demo:chat -- --realistic-caps for the separate $520/$560/$600 -> $450 scenario. Its $328/$500 prices are explicitly synthetic examples, not newly verified live quotes. The normal offline demo keeps the original affordability acceptance scenario. To replay a scenario after a saved run, choose a fresh DATABASE_PATH. Unknown essential prices still block approval regardless of higher caps.
 
-## Optional simulated trip fund
+## Optional: who covered what (simulated)
 
-See [docs/funding.md](docs/funding.md) for the read-only Nessie reader, aggregate web fund panel, private chat report and separate sandbox simulator. The app never posts bank transactions. Funding is disabled by default, and every enabled report is labeled simulated. The simulator previews by default; provisioning/writes require an explicit --execute invocation. Devpost copy and the recording outline are in [docs/devpost-draft.md](docs/devpost-draft.md).
+See [docs/funding.md](docs/funding.md). Nobody pays into a shared account: each friend pays with their own money and the bot reads each friend's own Nessie sandbox account, adds up what each person covered, and works out who would owe whom. It only reads and calculates; it never moves money. Disabled by default; everything is simulated.

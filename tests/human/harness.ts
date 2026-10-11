@@ -33,9 +33,9 @@ export async function humans(opts: { names?: Partial<Record<Who, string>>; start
   const messenger = new MockMessenger();
   const chat = await createChatAdapter(trip.enrollment, 'America/New_York', 'mock', process.env, messenger);
   const planner = createPlannerAdapter(opts.provider ?? createResearchProvider({ mode: 'mock', fixtures: demoResearchFixtures }), trip.enrollment.groupSpaceId);
-  /** A fake fund ledger the test can change: deposits must carry `member=<id>;rev=<n>`, exactly as the real bank notes do. */
-  const ledger: FundLedger = { deposits: [], purchases: [] };
-  const fundService = opts.fund ? createFundService({ read: async () => { if (opts.fund === 'broken') throw new Error('bank down'); return ledger; } }, 'mock', undefined, { cacheMs: 0 }) : undefined;
+  /** Fake bank accounts the test can change: each friend's own purchases, as a bank would report them. */
+  const ledger: FundLedger = { purchases: [] };
+  const fundService = opts.fund ? createFundService({ read: async () => { if (opts.fund === 'broken') throw new Error('bank down'); return ledger; } }, 'mock', { cacheMs: 0 }) : undefined;
   const runtime = createApplicationRuntime({ repository, conversation: chat.conversation, planner, tripId: 'h', stillLookingMs: 0, ...(fundService ? { fundService } : {}) });
   await runtime.start();
   let n = 0;
@@ -74,7 +74,9 @@ export async function humans(opts: { names?: Partial<Record<Who, string>>; start
   };
   const state = async () => (await repository.loadTrip('h'))!;
   const everyOutbound = () => messenger.sent.map((s) => ({ to: s.audience.kind === 'private' ? s.audience.providerUserId : 'group', text: s.text }));
-  return { ledger, say, react, advance, lastIdTo, state, everyOutbound, log, repository, messenger, runtime, stop: async () => { await runtime.stop(); repository.close(); } };
+  /** `who` paid `dollars` for something in `category` with their own money. */
+  const paid = (who: Who, dollars: number, category: string, date?: string) => { ledger.purchases.push({ id: `p${ledger.purchases.length + 1}`, memberId: who, amountDollars: dollars, category, status: 'completed', ...(date ? { date } : {}) }); };
+  return { ledger, paid, say, react, advance, lastIdTo, state, everyOutbound, log, repository, messenger, runtime, stop: async () => { await runtime.stop(); repository.close(); } };
 }
 export type Humans = Awaited<ReturnType<typeof humans>>;
 

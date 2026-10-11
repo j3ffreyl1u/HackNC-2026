@@ -6,12 +6,12 @@ Weekend, together is an iMessage trip-planning agent that helps friends turn a g
 
 The read-only companion page brings the plan into a Frutiger Aero landscape: luminous skies, reflective water, glass bubbles and glossy desktop controls. Outdoor stops and recorded driving comparisons make the nature connection visible in the actual plan. Unknown drive legs stay unknown; driving home is excluded, and the app does not estimate emissions.
 
-The optional Capital One Nessie sandbox fund compares approved shared contributions with completed deposits and spending by merchant category. The agent only reads transactions. A separate, explicitly simulated script provisions demo objects and transactions. All funding is simulated, and nothing is booked or paid with real money.
+The optional Capital One Nessie sandbox tracker reads each friend's own simulated account, adds up what each person covered in shared categories (lodging, gas, activities), compares it with the approved plan, and shows who would owe whom, so nobody splits a bill on the spot. The agent only reads transactions. A separate, explicitly simulated script provisions demo objects and transactions. All funding is simulated, and nothing is booked or paid with real money.
 
 ## Track descriptions to adapt in Devpost
 
 - Frutiger Aero Tech: nature-oriented trip planning with a deliberately glossy blue/green interface, visible outdoor stops, and comparisons of recorded driving time.
-- Capital One / Nessie: read-only contribution reconciliation and plan-versus-actual spending from Nessie sandbox deposits/purchases, plus an isolated simulator. Include a live sandbox screenshot only after combined verification.
+- Capital One / Nessie: read-only "who covered what" tracking across one simulated Nessie account per friend, plan-versus-actual spending by category, and a settle-up calculation (the bot never moves money), plus an isolated simulator. Include a live sandbox screenshot only after combined verification.
 - Photon: Spectrum-powered iMessage conversation. Current coordinated live demonstrations are direct-message mode; do not claim verified group delivery.
 - Gemini: language interpretation and the private grounded research display. State exactly which mode the recorded demonstration uses. Mock plans and prices are explicitly synthetic.
 

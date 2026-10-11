@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { AppConfigError, loadAppConfig, loadEnvironmentFile } from '../../src/app/config.js';
+import { AppConfigError, loadAppConfig, loadEnvironmentFile, planLinkWarning } from '../../src/app/config.js';
 
 const dirs: string[] = [];
 
@@ -43,5 +43,21 @@ describe('app config', () => {
     const target = { CHAT_MODE: 'photon' } as NodeJS.ProcessEnv;
     await loadEnvironmentFile(path, target);
     expect(target).toMatchObject({ PORT: '4100', CHAT_MODE: 'photon' });
+  });
+});
+
+describe('the trip-page link has to open on a phone', () => {
+  it('warns when live chat has no public address, or one that is this computer', () => {
+    expect(planLinkWarning('photon', undefined)).toMatch(/cloudflared|tunnel/i);
+    expect(planLinkWarning('photon', '  ')).toMatch(/not set/);
+    for (const local of ['http://127.0.0.1:3000', 'http://localhost:3000', 'https://localhost', 'http://0.0.0.0:3000', 'http://[::1]:3000']) expect(planLinkWarning('photon', local), local).toMatch(/this computer's own address/);
+  });
+  it('warns about a bad URL and about plain http, but accepts a tunnel address', () => {
+    expect(planLinkWarning('photon', 'not a url')).toMatch(/not a valid URL/);
+    expect(planLinkWarning('photon', 'http://example.com')).toMatch(/https/);
+    expect(planLinkWarning('photon', 'https://quiet-fox-123.trycloudflare.com')).toBeUndefined();
+  });
+  it('says nothing in mock chat, where nobody opens the link on a phone', () => {
+    expect(planLinkWarning('mock', undefined)).toBeUndefined();
   });
 });

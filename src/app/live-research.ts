@@ -71,8 +71,8 @@ export function manualCandidate(state: TripState): TripCandidate {
   return { ...candidate, itineraryConfirmed: false, feasibility: { ...candidate.feasibility, feasible: false, unknownEssentials: [...candidate.feasibility.unknownEssentials, 'Detailed itinerary not confirmed'] } };
 }
 
-export function createLivePlanner(display: LiveResearchDisplay, spaceId: string, options: Parameters<typeof createPlannerAdapter>[2] = {}): PlannerAdapter {
-  const domain = createPlannerAdapter(createResearchProvider({ mode: 'live' }), spaceId, options);
+export function createLivePlanner(display: LiveResearchDisplay, spaceId: string): PlannerAdapter {
+  const domain = createPlannerAdapter(createResearchProvider({ mode: 'live' }), spaceId);
   const requesters = new Map<number, string>();
   return { ...domain, guidePrivate: true,
     applyCommand(state, command, options) {
@@ -89,9 +89,7 @@ export function createLivePlanner(display: LiveResearchDisplay, spaceId: string,
       return { revision: state.revision, candidates, replies: [...replies, ...privateReplies] };
     },
     async guide(state, question) {
-      const fund = await options.fundContext?.(state);
-      const context = fund ? `\nThe simulated shared fund has ${fund.remainingDollars} dollars remaining after completed purchases. Consider that shared-cost limit; unknown prices cannot be called covered.` : '';
-      return `View the original live answer and search suggestions: ${display.createLink(liveResearchPrompt(state, question) + context)}`;
+      return `View the original live answer and search suggestions: ${display.createLink(liveResearchPrompt(state, question))}`;
     },
   };
 }

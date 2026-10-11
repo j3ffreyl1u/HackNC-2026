@@ -163,6 +163,10 @@ async function refresh() {
 refresh();
 window.setInterval(refresh, 5000);
 
+const CATEGORY_NAMES = { accommodation: 'Lodging', fuel_parking_tolls: 'Gas, parking and tolls', food: 'Food', activities: 'Activities', taxes_fees: 'Taxes and fees', other: 'Other' };
+const categoryName = (category) => CATEGORY_NAMES[category] ?? category.replaceAll('_', ' ');
+const dollars = (amount) => money(amount * 100);
+
 async function refreshFund(revision) {
   const fundRoot = document.querySelector('#fund');
   try {
@@ -172,24 +176,44 @@ async function refreshFund(revision) {
     if (displayedRevision !== revision || fund.revision !== revision) return;
     fundRoot.replaceChildren();
     if (fund.status === 'disabled') return;
-    fundRoot.append(element('h2', '', 'Our shared trip fund'));
-    fundRoot.append(element('p', 'fund-label', fund.mode === 'nessie' ? 'Nessie sandbox · simulated transactions, no real money' : 'Local simulation · no real money'));
+    fundRoot.append(element('h2', '', 'Who covered what'));
+    fundRoot.append(element('p', 'fund-label', fund.mode === 'nessie' ? 'Nessie sandbox · each friend\'s own simulated account, no real money' : 'Local simulation · no real money'));
     if (fund.status === 'not_ready') { fundRoot.append(element('p', '', fund.reason)); return; }
-    fundRoot.append(element('p', 'fund-total', `${money(fund.collectedDollars * 100)} of ${money(fund.neededDollars * 100)} collected`));
-    const progress = element('progress', 'fund-meter');
-    progress.max = Math.max(1, fund.neededDollars); progress.value = Math.min(fund.collectedDollars, progress.max);
-    progress.setAttribute('aria-label', 'Shared contributions collected');
-    fundRoot.append(progress);
-    fundRoot.append(element('p', '', `${fund.status.replaceAll('_', ' ')} · ${fund.missingCount} contributions still incomplete · revision ${fund.revision}`));
-    fundRoot.append(element('p', '', `Remaining after completed purchases: ${money(fund.remainingDollars * 100)}. Calculated from transactions, not the sandbox account balance.`));
-    for (const row of fund.spending.byCategory) {
-      const line = element('div', 'cost-row');
-      line.append(element('span', '', row.category.replaceAll('_', ' ')), element('strong', '', `${money(row.spentDollars * 100)} / ${money(row.plannedDollars * 100)} · ${row.state}`));
-      fundRoot.append(line);
+    const each = fund.members.length > 0 ? Math.round(fund.sharedSpentDollars / fund.members.length) : 0;
+    fundRoot.append(element('p', 'fund-total', fund.sharedSpentDollars === 0
+      ? `Nothing shared yet · the plan expects about ${dollars(fund.expectedEachDollars)} each`
+      : `${dollars(fund.sharedSpentDollars)} of shared costs so far · about ${dollars(each)} each`));
+    fundRoot.append(element('p', '', 'Anyone can pay for anything. This page adds it up from each person\'s own transactions, so nobody has to split a bill on the spot.'));
+    const biggest = Math.max(1, ...fund.members.map((m) => Math.max(m.coveredDollars, m.fairShareDollars)));
+    for (const person of fund.members) {
+      const block = element('div', 'fund-person');
+      const head = element('div', 'cost-row');
+      const net = person.netDollars === 0 ? 'even' : person.netDollars > 0 ? `is owed ${dollars(person.netDollars)}` : `owes ${dollars(-person.netDollars)}`;
+      head.append(element('span', '', person.name), element('strong', '', `covered ${dollars(person.coveredDollars)} · ${net}`));
+      const meter = element('progress', 'fund-meter');
+      meter.max = biggest; meter.value = Math.min(person.coveredDollars, biggest);
+      meter.setAttribute('aria-label', `${person.name} has covered ${dollars(person.coveredDollars)} of shared costs`);
+      block.append(head, meter);
+      if (person.byCategory.length > 0) block.append(element('p', 'fund-chips', person.byCategory.map((c) => `${categoryName(c.category)} ${dollars(c.dollars)}`).join(' · ')));
+      fundRoot.append(block);
     }
-    fundRoot.append(element('p', '', `Unclassified spending: ${money(fund.spending.unclassifiedDollars * 100)}. Earlier-revision deposits: ${money(fund.staleDollars * 100)}. Unattributed deposits: ${money(fund.unattributedDollars * 100)}. These deposits do not count toward current contributions.`));
+    if (fund.spending.byCategory.length > 0) {
+      fundRoot.append(element('h3', '', 'Against the plan'));
+      for (const row of fund.spending.byCategory) {
+        const line = element('div', 'cost-row');
+        line.append(element('span', '', categoryName(row.category)), element('strong', '', `${dollars(row.spentDollars)} of ${dollars(row.plannedDollars)} planned · ${row.state}`));
+        fundRoot.append(line);
+      }
+    }
+    fundRoot.append(element('h3', '', 'If the trip ended now'));
+    fundRoot.append(element('p', '', fund.transfers.length === 0 ? (fund.sharedSpentDollars === 0 ? 'Nobody owes anything yet.' : 'Everyone is even.') : fund.transfers.map((t) => `${t.from} sends ${t.to} ${dollars(t.dollars)}`).join(' · ')));
+    const notes = [];
+    if (fund.unclassifiedDollars > 0) notes.push(`${dollars(fund.unclassifiedDollars)} had no category, so it is left out.`);
+    if (fund.unattributedDollars > 0) notes.push(`${dollars(fund.unattributedDollars)} came from an account that is not on this trip.`);
+    notes.push('Food stays personal. The bot only watches and calculates; it never moves money.');
+    fundRoot.append(element('p', 'fund-label', notes.join(' ')));
   } catch {
-    fundRoot.replaceChildren(element('p', '', 'Fund unavailable. Retry shortly; no simulated fallback is shown.'));
+    fundRoot.replaceChildren(element('p', '', 'Cost tracking is unavailable. Retry shortly; no simulated fallback is shown.'));
   }
 }
 
