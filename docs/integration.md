@@ -113,3 +113,11 @@ Supersedes the private NOT_READY summary and question-copy behavior described ab
 C retains deferQuestions/finalizeTurn: intermediate questions are withheld without recording them as asked, and only final-state questions are recorded and delivered once per inbound message. Mason reviewed that behavior against his cooldown rules. Fixed enrollment and the startup warning for fewer than two participants remain in C. The planner's invitation wording does not dynamically enroll anyone; the organizer still has to update the configured roster.
 
 No live messages or research calls were sent for this cleanup. Combined verification and the next live DM test remain coordinated by Jeffrey.
+
+## C trip-fund integration
+
+C added a GET-only Nessie reader, separate preview/execute sandbox simulator, revision-bound fund service and aggregate web fund panel. See docs/funding.md for exports, configuration and the private chat boundary. This requires Mason's src/planning/funding.ts from his latest branch; its local verification copy is excluded from C's commit. Funding readings do not mutate saved trip state; the fund endpoint returns the current calculated status. All labels distinguish sandbox/local simulation from real money. No live Nessie writes or Photon messages were sent by C.
+
+## Final C funding/nature handoff checks
+
+Typecheck and build passed; 36 targeted tests passed (funding reader/service/simulator/guide/runtime plus HTTP/config/live-display fixtures). The funding runtime regression reopens SQLite and verifies a persisted near-budget notice is not re-enqueued. No live write, bank request or Photon listener was run. docs/devpost-draft.md contains submission copy and a two-minute storyboard; it is not a submitted entry or recorded video. Backup transcript: data/backup-combined-demo.txt, based on combined SHA 1da32c7, completed at revision 12 approved.

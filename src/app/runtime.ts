@@ -1,4 +1,7 @@
 import { createHash } from 'node:crypto';
+import type { FundService } from '../funding/service.js';
+import { describeFund, driftNotices } from '../planning/funding.js';
+import { toPlanningState } from './planning-adapter.js';
 import type {
   ConversationContext,
   ConversationService,
@@ -30,6 +33,7 @@ export interface ApplicationRuntimeDependencies {
   conversation: ConversationService;
   planner: PlannerAdapter;
   tripId: string;
+  fundService?: FundService;
 }
 
 export interface ApplicationRuntime {
@@ -42,7 +46,7 @@ export interface ApplicationRuntime {
 
 /** App composition boundary: identity, revision control, dedupe, outbox, and stale-research protection. */
 export function createApplicationRuntime(dependencies: ApplicationRuntimeDependencies): ApplicationRuntime {
-  const { repository, conversation, planner, tripId } = dependencies;
+  const { repository, conversation, planner, tripId, fundService } = dependencies;
   const queued: Promise<void>[] = [];
   let processQueue: Promise<void> = Promise.resolve();
   let outboxDrain: Promise<void> | undefined;
@@ -142,6 +146,7 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
       let nextState = state;
       let researchRequested = false;
       const replies: OutboundMessage[] = [];
+      let fundRequested = false;
       for (const [index, parsedCommand] of commands.entries()) {
         const command: TripCommand = {
           ...parsedCommand,
@@ -150,6 +155,7 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
           actorId: member.memberId,
           tripId,
         };
+        if (command.action.kind === 'request_funding') { fundRequested = true; continue; }
         if (command.action.kind === 'ask_guide' && planner.guide) {
           let text: string;
           try { text = await planner.guide(nextState, command.action.question, message.occurredAt); }
@@ -196,6 +202,25 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
         else delete confirmations[member.memberId];
         nextState = { ...nextState, pendingConfirmations: confirmations };
       }
+      if (fundService && nextState.status !== 'approved') nextState = { ...nextState, fundingStatus: 'unknown' };
+      if (fundService && (fundRequested || nextState.status === 'approved')) {
+        try {
+          const report = await fundService.inspect(nextState);
+          if (report.funding && report.plan && report.spending) {
+            const keys = new Set(nextState.fundingNoticeKeys?.[String(nextState.revision)] ?? []);
+            const notices = driftNotices(report.spending, keys);
+            for (const notice of notices) {
+              keys.add(notice.key);
+              replies.push(makeMessage(tripId, `fund-drift:${nextState.revision}:${notice.key}`, { audience: { kind: 'group', spaceId: enrollment.groupSpaceId }, text: `${notice.text} This is simulated sandbox money.` }));
+            }
+            nextState = { ...nextState, fundingStatus: report.funding.status, fundingNoticeKeys: { ...nextState.fundingNoticeKeys, [String(nextState.revision)]: [...keys] } };
+            if (fundRequested) replies.push(makeMessage(tripId, `fund:${message.eventId}`, { audience: { kind: 'private', memberId: member.memberId }, text: describeFund(toPlanningState(nextState), report.plan, report.funding, report.spending, { simulated: true }) }));
+          } else if (fundRequested) replies.push(makeMessage(tripId, `fund:${message.eventId}`, { audience: { kind: 'private', memberId: member.memberId }, text: report.reason ?? 'Approve the current plan before checking the fund.' }));
+        } catch {
+          nextState = { ...nextState, fundingStatus: 'unknown' };
+          if (fundRequested) replies.push(makeMessage(tripId, `fund:${message.eventId}`, { audience: { kind: 'private', memberId: member.memberId }, text: 'The fund is unavailable. No simulated fallback was substituted.' }));
+        }
+      } else if (fundRequested) replies.push(makeMessage(tripId, `fund:${message.eventId}`, { audience: { kind: 'private', memberId: member.memberId }, text: 'The optional trip fund is disabled.' }));
       const result = await repository.commitEvent({
         eventId: message.eventId,
         state: nextState,

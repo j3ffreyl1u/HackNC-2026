@@ -71,8 +71,8 @@ export function manualCandidate(state: TripState): TripCandidate {
   return { ...candidate, itineraryConfirmed: false, feasibility: { ...candidate.feasibility, feasible: false, unknownEssentials: [...candidate.feasibility.unknownEssentials, 'Detailed itinerary not confirmed'] } };
 }
 
-export function createLivePlanner(display: LiveResearchDisplay, spaceId: string): PlannerAdapter {
-  const domain = createPlannerAdapter(createResearchProvider({ mode: 'live' }), spaceId);
+export function createLivePlanner(display: LiveResearchDisplay, spaceId: string, options: Parameters<typeof createPlannerAdapter>[2] = {}): PlannerAdapter {
+  const domain = createPlannerAdapter(createResearchProvider({ mode: 'live' }), spaceId, options);
   const requesters = new Map<number, string>();
   return { ...domain, guidePrivate: true,
     applyCommand(state, command, options) {
@@ -88,7 +88,11 @@ export function createLivePlanner(display: LiveResearchDisplay, spaceId: string)
       const privateReplies = actor ? [{ deliveryId: 'live-research-link', audience: { kind: 'private' as const, memberId: actor }, text: `View your live sourced research and Google search suggestions together: ${display.createLink(liveResearchPrompt(state))}\nResearch is displayed only to you and is not copied into the saved plan. Confirm your own estimates explicitly in chat.` }] : [];
       return { revision: state.revision, candidates, replies: [...replies, ...privateReplies] };
     },
-    async guide(state, question) { return `View the original live answer and search suggestions: ${display.createLink(liveResearchPrompt(state, question))}`; },
+    async guide(state, question) {
+      const fund = await options.fundContext?.(state);
+      const context = fund ? `\nThe simulated shared fund has ${fund.remainingDollars} dollars remaining after completed purchases. Consider that shared-cost limit; unknown prices cannot be called covered.` : '';
+      return `View the original live answer and search suggestions: ${display.createLink(liveResearchPrompt(state, question) + context)}`;
+    },
   };
 }
 
