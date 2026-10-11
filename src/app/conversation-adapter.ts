@@ -39,7 +39,7 @@ export async function createChatAdapter(enrollment: C.TripEnrollment, timeZone: 
     messenger = createSpectrumMessenger({ ...live, trip, onError: () => console.error('Spectrum transport failed; check the connection and retry.') });
   }
   const service = createConversationService({ trip, messenger,
-    intentModel: mode === 'photon' ? createGeminiIntentModel({ apiKey: env.GEMINI_API_KEY!, model: env.GEMINI_INTENT_MODEL || env.GEMINI_MODEL || 'gemini-3.8-flash' }) : new MockIntentModel(),
+    intentModel: mode === 'photon' || (env.INTENT_MODEL === 'gemini' && env.GEMINI_API_KEY) ? createGeminiIntentModel({ apiKey: env.GEMINI_API_KEY!, model: env.GEMINI_INTENT_MODEL || env.GEMINI_MODEL || 'gemini-3.8-flash' }) : new MockIntentModel(),
     getConversationContext: async () => ({ tripId: trip.tripId, revision: 0, actionable: [] }),
   });
   return { messenger, conversation: {

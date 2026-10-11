@@ -109,6 +109,8 @@ function delegateQuestions(state: TripState, candidates: readonly QuestionCandid
   for (const topic of TOPIC_ORDER) {
     for (const { question } of askable.filter((c) => c.topic === topic)) {
       const audience = question.audience;
+      // A disagreement is told to everyone straight away, whatever else is open, so nobody plans around the wrong answer.
+      if (question.key.startsWith('conflict:')) { asking.push(question); continue; }
       if (audience.kind === 'group') {
         if (sharedOpen || sharedTaken || busy.has(actorId) || taken.has(actorId)) continue;
         sharedTaken = true;

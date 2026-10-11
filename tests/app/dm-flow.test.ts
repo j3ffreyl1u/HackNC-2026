@@ -204,8 +204,7 @@ describe('first live DM scenario, end to end (A parser + C runtime + B planner, 
   it('dates that never overlap are explained to BOTH people, with who is free when', async () => {
     const t = await live();
     await t.say(JEFF, "I'm leaving from Chapel Hill, 2 nights, I want to go to Asheville, I have a car, I'm free Dec 20-31, my max is $500, I like hiking");
-    await t.say(MASON, "I'm free Nov 14-17, my max is $500, I like food");
-    const r = await t.say(MASON, 'yes that works');   // he signs off on the basics, which is when the date clash comes up
+    const r = await t.say(MASON, "I'm free Nov 14-17, my max is $500, I like food");   // the clash is announced the moment it exists
     for (const who of [r.jeff, r.mason]) {
       expect(who.some((x) => /Jeffrey is free Dec 20-31/.test(x) && /Mason is free Nov 14-17/.test(x) && /no 2 nights stretch/i.test(x))).toBe(true);
     }

@@ -197,9 +197,19 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
           message.visibility === 'private' && reply.audience.kind === 'group' && !conflicts.has(reply.text) ? { ...reply, audience: { kind: 'private', memberId: member.memberId } } : reply));
         // A person is never handed two questions in one turn: a fresh question replaces an earlier re-ask of an old one.
         const isQuestion = (r: OutboundMessage) => r.audience.kind === 'private' && r.text.trim().endsWith('?');
+        // If a disagreement is being announced, that is the one thing to deal with this turn; other questions wait.
+        if (asked.some((r) => conflicts.has(r.text))) asked.splice(0, asked.length, ...asked.filter((r) => conflicts.has(r.text) || !isQuestion(r)));
         const askedFor = new Set(asked.filter(isQuestion).map((r) => (r.audience as { memberId: string }).memberId));
         for (let i = replies.length - 1; i >= 0; i -= 1) if (isQuestion(replies[i]!) && askedFor.has((replies[i]!.audience as { memberId: string }).memberId)) replies.splice(i, 1);
         replies.push(...asked);
+        // When a disagreement gets settled, tell everyone how it ended instead of letting it go quiet.
+        const conflictKeys = (s: TripState) => new Set(s.pendingQuestions.filter((q) => q.questionId.startsWith('conflict:')).map((q) => q.questionId.split('|')[0]!));
+        const stillOpen = conflictKeys(final.state);
+        for (const key of conflictKeys(state)) {
+          if (stillOpen.has(key)) continue;
+          const text = settledText(key, final.state);
+          if (text) replies.push(makeMessage(tripId, `settled:${message.eventId}:${key}`, { audience: { kind: 'group', spaceId: enrollment.groupSpaceId }, text }));
+        }
       }
       // Once the last missing detail is in, start looking for options without waiting to be asked.
       if (!researchRequested && nextState.status === 'gathering' && commands.some((c) => c.action.kind === 'update_constraint') && !(parsed.kind === 'commands' && parsed.clarificationQuestion)) {
@@ -353,6 +363,20 @@ async function conversationContext(repository: Repository, state: TripState, mes
     ...(targetProposal ? { targetProposal } : {}),
     ...(pendingQuestion?.field ? { pendingQuestion: { questionId: pendingQuestion.questionId, field: pendingQuestion.field } } : {}),
   };
+}
+
+/** A friendly line for a disagreement that has just been settled. */
+function settledText(key: string, state: TripState): string | undefined {
+  const basics = sharedBasics(state);
+  const value = (field: ConstraintValue['field']) => basics.find((b) => b.field === field);
+  switch (key) {
+    case 'conflict:duration': { const d = value('duration'); return d && d.field === 'duration' ? `Great, ${d.value} night${d.value === 1 ? '' : 's'} it is.` : undefined; }
+    case 'conflict:origin': { const o = value('origin'); return o && o.field === 'origin' ? `Great, we'll plan the trip from ${o.value}.` : undefined; }
+    case 'conflict:region': { const r = value('region'); return r && r.field === 'region' ? `Great, we'll plan around ${r.value}.` : undefined; }
+    case 'conflict:transport': return "Great, so we've got a car.";
+    case 'conflict:dates': return 'Nice, your dates line up now.';
+    default: return undefined;
+  }
 }
 
 /** The group's current origin, length, place and car, as values a "yes" can record for the person answering. */

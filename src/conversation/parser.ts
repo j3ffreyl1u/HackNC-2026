@@ -136,8 +136,10 @@ export function createParser(deps: ConversationDependencies) {
         }
         continue;
       }
-      commands.push(updateCommand(msg, ctx, v, item.hedged));
-      acks.push(ackPart(v, item.hedged));
+      // Money and dates commit people, so a hedge there stays tentative. "Probably leaving from Durham" about the basics is fine as said.
+      const firm = item.hedged && (v.field === 'budget' || v.field === 'availability' || v.field === 'preferences' || v.field === 'must_dos');
+      commands.push(updateCommand(msg, ctx, v, firm));
+      acks.push(ackPart(v, firm));
     }
     for (const action of extra) commands.push(command(msg, ctx, action));
     // In a one-on-one chat, silence feels like being ignored: say what we noted. Groups stay quiet.

@@ -99,8 +99,8 @@ function evaluate(state: TripState): Evaluation {
     group('basics', 'origin', origin.tentativeOnly ? 'Just to confirm: is that where you will all be leaving from?' : 'Where are you all leaving from?');
   } else if (origin.status === 'conflict') {
     conflicts.push('origin');
-    const options = origin.positions.map((p) => `${(p.value as ConstraintValues['origin']).city} (${displayName(state, p.memberId)})`);
-    group('basics', 'conflict:origin', `I have different departure cities: ${options.join(' or ')}. Which one is right?`);
+    const options = origin.positions.map((p) => `${displayName(state, p.memberId)} is leaving from ${(p.value as ConstraintValues['origin']).city}`);
+    group('basics', 'conflict:origin', `${options.join(' and ')}. Which city should I plan the trip from?`);
   }
 
   const duration = resolveGroupField(state, 'duration');
@@ -109,8 +109,8 @@ function evaluate(state: TripState): Evaluation {
     group('basics', 'duration', duration.tentativeOnly ? 'Just to confirm: how many nights is the trip?' : 'How many nights are you thinking?');
   } else if (duration.status === 'conflict') {
     conflicts.push('duration');
-    const options = duration.positions.map((p) => `${nightsText((p.value as ConstraintValues['duration']).nights)} (${displayName(state, p.memberId)})`);
-    group('basics', 'conflict:duration', `I have different trip lengths: ${options.join(' or ')}. Which one is right?`);
+    const options = duration.positions.map((p) => `${displayName(state, p.memberId)} is thinking ${nightsText((p.value as ConstraintValues['duration']).nights)}`);
+    group('basics', 'conflict:duration', `${options.join(' and ')}. Which should we go with?`);
   }
 
   const region = resolveGroupField(state, 'region');
@@ -119,7 +119,12 @@ function evaluate(state: TripState): Evaluation {
     group('basics', 'region', 'Got a place in mind, or how far are you up for driving?');
   } else if (region.status === 'conflict') {
     conflicts.push('region');
-    group('basics', 'conflict:region', 'I have different ideas for where to go or how far to drive. Which one should I plan around?');
+    const options = region.positions.map((p) => {
+      const v = p.value as ConstraintValues['region'];
+      const label = v.destination ?? v.searchRegion ?? (v.maxTravelMinutes !== undefined ? `within about ${Math.round(v.maxTravelMinutes / 60)} hours of driving` : 'somewhere else');
+      return `${displayName(state, p.memberId)} is thinking ${label}`;
+    });
+    group('basics', 'conflict:region', `${options.join(' and ')}. Which sounds better?`);
   }
 
   const transport = resolveGroupField(state, 'transport');
