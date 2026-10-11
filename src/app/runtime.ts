@@ -279,11 +279,13 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
         }
       }
       // Someone changed a shared detail the others already had? Tell them, so nobody plans around the old one.
-      for (const text of basicsChangeNotes(state, nextState, member.memberId)) {
+      // Each note gets its own number: two changes in one message start with the same words, and an id built from the
+      // wording alone made them collide and the whole message fail.
+      basicsChangeNotes(state, nextState, member.memberId).forEach((text, noteIndex) => {
         for (const other of (state.roster ?? []).filter((m) => m.memberId !== member.memberId && m.consented)) {
-          replies.push(makeMessage(tripId, `changed:${message.eventId}:${other.memberId}:${text.slice(0, 12)}`, { audience: { kind: 'private', memberId: other.memberId }, text }));
+          replies.push(makeMessage(tripId, `changed:${message.eventId}:${other.memberId}:${noteIndex}`, { audience: { kind: 'private', memberId: other.memberId }, text }));
         }
-      }
+      });
       if (parsed.kind === 'commands' && parsed.clarificationQuestion) {
         replies.push(makeMessage(tripId, `clarification:${message.eventId}`, {
           audience: message.visibility === 'private'
