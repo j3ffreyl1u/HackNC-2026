@@ -10,6 +10,29 @@ let fundRequestId = 0;
 let fundDisabled = false;
 let outdoorOnly = false;
 const expandedDetails = new Map();
+const VIEWS = { overview: 'Overview', itinerary: 'Itinerary', costs: 'Costs', sources: 'Sources' };
+let currentView = 'overview';
+let viewedCandidateId;
+function readView() {
+  const [view, id] = (window.location.hash || '#overview').slice(1).split('/');
+  currentView = Object.hasOwn(VIEWS, view) ? view : 'overview';
+  try { if (id) viewedCandidateId = decodeURIComponent(id); } catch { viewedCandidateId = undefined; }
+}
+readView();
+function viewPart(node, view) { node.hidden = currentView !== view; return node; }
+function syncNavigation() {
+  document.body.dataset.view = currentView;
+  for (const view of Object.keys(VIEWS)) document.querySelector(`#view-${view}`).setAttribute('aria-current', currentView === view ? 'page' : 'false');
+  document.querySelector('#spending-view').hidden = currentView !== 'costs';
+  document.querySelector('#overview-filters').hidden = currentView !== 'overview';
+  document.querySelector('.hero').hidden = currentView !== 'overview';
+}
+window.addEventListener('hashchange', () => {
+  readView();
+  if (lastSnapshot) render(lastSnapshot);
+  window.scrollTo({ top: 0, behavior: 'instant' });
+  root.focus?.({ preventScroll: true });
+});
 const PLAN_STATES = {
   gathering: { title: 'Gathering trip details', text: 'Keep sharing dates, preferences and private limits with the assistant in your iMessage DMs. Options appear once the details fit.', empty: 'No options yet. The assistant is gathering the details needed to plan.' },
   researching: { title: 'Researching trip options', text: 'The assistant is looking up places, prices and sources. New options will arrive in your DMs; saved options may change.', empty: 'Research is in progress. New options will appear here when they are saved.' },
@@ -45,30 +68,50 @@ function dateRange(startAt, endAt) {
 function render(snapshot) {
   lastSnapshot = snapshot;
   displayedRevision = snapshot.revision;
+  syncNavigation();
   root.replaceChildren();
   const heading = element('div', 'trip-heading');
-  heading.append(element('h2', '', 'Your shared plan'));
+  heading.append(element('h2', '', currentView === 'overview' ? 'Your shared plan' : VIEWS[currentView]));
   heading.append(element('span', 'revision', `Revision ${snapshot.revision}`));
   root.append(heading);
   const planState = PLAN_STATES[snapshot.status] ?? { title: 'Saved plan', text: 'Ask the assistant in your DM for the latest details.', empty: 'No saved options are available in this view.' };
   const summary = element('section', 'plan-state');
   summary.append(element('h3', '', planState.title), element('p', '', planState.text));
-  root.append(summary);
+  root.append(viewPart(summary, 'overview'));
   if (snapshot.status === 'approved') {
     const calendar = element('a', 'calendar-link', 'Add this plan to your calendar (.ics)');
     calendar.href = `/api/trips/${encodeURIComponent(tripId)}/plan.ics`;
+    calendar.hidden = !['overview', 'itinerary'].includes(currentView);
     root.append(calendar);
   }
 
   const people = element('div', 'people');
   for (const person of snapshot.participants) people.append(element('span', 'person', person.displayName));
-  root.append(people);
-  if (snapshot.nature?.comparison) root.append(element('p', 'nature-comparison', snapshot.nature.comparison));
+  root.append(viewPart(people, 'overview'));
+  if (snapshot.nature?.comparison) root.append(viewPart(element('p', 'nature-comparison', snapshot.nature.comparison), 'overview'));
 
-  const candidates = element('div', 'candidate-grid');
+  const candidates = element('div', `candidate-grid ${currentView === 'overview' ? '' : 'detail-view'}`);
+  const focused = snapshot.candidates.find(c => c.candidateId === viewedCandidateId)
+    ?? snapshot.candidates.find(c => c.candidateId === snapshot.selectedCandidate?.candidateId)
+    ?? snapshot.candidates[0];
+  if (currentView !== 'overview' && snapshot.candidates.length > 1) {
+    const chooser = element('nav', 'plan-chooser');
+    chooser.setAttribute('aria-label', 'View another option');
+    for (const c of snapshot.candidates) {
+      const link = element('a', 'option-link', c.title);
+      link.href = `#${currentView}/${encodeURIComponent(c.candidateId)}`;
+      link.setAttribute('aria-current', c === focused ? 'page' : 'false');
+      chooser.append(link);
+    }
+    root.append(chooser);
+  }
   for (const candidate of snapshot.candidates) {
     const hasOutdoor = snapshot.nature?.summaries.some(s => s.candidateId === candidate.candidateId && s.outdoorStops.length);
-    if (!outdoorOnly || hasOutdoor) candidates.append(renderCandidate(candidate, snapshot));
+    if (!outdoorOnly || hasOutdoor || currentView !== 'overview') {
+      const card = renderCandidate(candidate, snapshot);
+      card.hidden = currentView !== 'overview' && candidate !== focused;
+      candidates.append(card);
+    }
   }
   if (candidates.childElementCount) root.append(candidates);
   else root.append(element('div', 'empty', outdoorOnly && snapshot.candidates.length ? 'No current plans have tagged outdoor stops. Choose All plans to see the other options.' : planState.empty));
@@ -76,6 +119,7 @@ function render(snapshot) {
 
 function renderCandidate(candidate, snapshot) {
   const card = element('article', 'candidate');
+  card.setAttribute('aria-label', candidate.title);
   card.append(element('h3', '', candidate.title));
   if (snapshot.selectedCandidate?.candidateId === candidate.candidateId && snapshot.selectedCandidate.revision === candidate.revision) {
     card.append(element('p', 'selected-plan', snapshot.status === 'approved' ? 'Approved plan' : 'Selected plan · awaiting everyone’s acceptance'));
@@ -83,7 +127,8 @@ function renderCandidate(candidate, snapshot) {
   const dataLabel = candidate.dataSource === 'fixture' ? 'Demo data · prices made up'
     : candidate.dataSource === 'live' ? 'Estimates from web search · availability not confirmed'
     : 'Planning estimates · availability not confirmed';
-  card.append(element('p', '', `Plan ${candidate.candidateId} | revision ${candidate.revision} | ${dataLabel}`));
+  card.append(element('p', 'data-label', dataLabel));
+  card.append(viewPart(element('p', 'plan-reference', `Plan ${candidate.candidateId} | revision ${candidate.revision}`), 'sources'));
   card.append(element('div', 'date', dateRange(candidate.startAt, candidate.endAt)));
   const nature = snapshot.nature?.summaries.find(item => item.candidateId === candidate.candidateId);
   if (nature) {
@@ -92,9 +137,9 @@ function renderCandidate(candidate, snapshot) {
     for (const stop of nature.outdoorStops) section.append(element('p', '', `${stop.label} · ${stop.location}`));
     if (!nature.outdoorStops.length) section.append(element('p', '', 'No outdoor stops identified in the plan tags.'));
     section.append(element('p', '', `${nature.drivingMinutes} minutes of recorded driving${nature.unknownLegs ? `; ${nature.unknownLegs} legs are unestimated` : ''}. Drive home is not counted.${candidate.dataSource === 'fixture' ? ' Synthetic demo data.' : ''}`));
-    card.append(section);
+    card.append(viewPart(section, 'itinerary'));
   }
-  for (const tradeoff of candidate.tradeoffs) card.append(element('p', '', tradeoff));
+  candidate.tradeoffs.forEach((tradeoff, index) => card.append(viewPart(element('p', 'tradeoff', tradeoff), index === 0 ? 'overview' : 'sources')));
 
   if (candidate.itinerary.length) {
     const itinerary = disclosure(`${candidate.candidateId}:${candidate.revision}:itinerary`, 'Itinerary and map links', true);
@@ -112,11 +157,16 @@ function renderCandidate(candidate, snapshot) {
       if (item.notes) itinerary.append(element('p', '', item.notes));
       if (item.travelMinutesEstimate !== undefined) itinerary.append(element('p', '', `Estimated travel: ${item.travelMinutesEstimate} minutes`));
     }
-    card.append(itinerary);
+    itinerary.className += ' route-timeline';
+    let stopNumber = 0;
+    for (const row of itinerary.children) {
+      if (row.className === 'cost-row') { row.className += ' route-stop'; row.setAttribute('data-stop', String(++stopNumber)); }
+    }
+    card.append(viewPart(itinerary, 'itinerary'));
   }
 
   if (candidate.costs.length) {
-    const costs = disclosure(`${candidate.candidateId}:${candidate.revision}:costs`, 'Explore the cost breakdown');
+    const costs = disclosure(`${candidate.candidateId}:${candidate.revision}:costs`, 'Explore the cost breakdown', currentView === 'costs');
     for (const item of candidate.costs) {
       const row = element('div', 'cost-row');
       const priceLabel = item.priceStatus === 'unknown' ? 'price not found' : 'estimate';
@@ -124,32 +174,53 @@ function renderCandidate(candidate, snapshot) {
       row.append(element('strong', '', item.priceStatus === 'unknown' ? 'Price not found' : `${money(item.lowCents)} to ${money(item.highCents)}`));
       costs.append(row);
     }
-    card.append(costs);
+    card.append(viewPart(costs, 'costs'));
   }
 
   const personCosts = element('section', 'costs');
   personCosts.append(element('h4', '', candidate.feasibility.unknownEssentials.length ? 'Known portion per person | essential prices missing' : 'Upper estimate per person'));
+  const largestEstimate = Math.max(1, ...candidate.perPersonTotals.map(t => t.highCents));
   for (const total of candidate.perPersonTotals) {
     const name = snapshot.participants.find((person) => person.memberId === total.memberId)?.displayName ?? 'Participant';
     const row = element('div', 'cost-row');
     row.append(element('span', '', name));
     row.append(element('strong', '', candidate.feasibility.unknownEssentials.length && total.highCents === 0 ? 'No priced costs yet' : money(total.highCents)));
     personCosts.append(row);
+    if (total.highCents > 0) {
+      const bar = element('progress', 'estimate-bar');
+      bar.max = largestEstimate;
+      bar.value = total.highCents;
+      bar.setAttribute('aria-label', `${name}: ${money(total.highCents)} ${candidate.feasibility.unknownEssentials.length ? 'known portion, essential prices missing' : 'upper estimate'}`);
+      personCosts.append(bar);
+    }
   }
-  card.append(personCosts);
+  card.append(viewPart(personCosts, 'costs'));
+  const totals = candidate.perPersonTotals.map(t => t.highCents);
+  if (totals.length) {
+    const low = Math.min(...totals), high = Math.max(...totals);
+    const label = candidate.feasibility.unknownEssentials.length ? 'Known portion · essential prices missing' : 'Upper estimate per person';
+    card.append(viewPart(element('p', 'overview-price', `${low === high ? money(high) : `${money(low)}–${money(high)}`} · ${label}`), 'overview'));
+  }
 
   const accepted = snapshot.acceptances.filter((item) => item.candidateId === candidate.candidateId && item.revision === candidate.revision);
   const approved = snapshot.participants.length > 0 && accepted.length === snapshot.participants.length;
   const feasible = candidate.feasibility.feasible && candidate.feasibility.unknownEssentials.length === 0;
   const feasibilityText = candidate.feasibility.unknownEssentials.length ? 'Maybe · essential prices missing'
     : feasible ? 'Fits stated limits · estimated costs' : 'Does not fit current constraints';
-  card.append(element('span', `feasibility${feasible ? '' : ' blocked'}`, feasibilityText));
-  card.append(element('p', '', `Acceptance: ${accepted.length} of ${snapshot.participants.length} for this exact revision${approved ? ' | all accepted' : ''}.`));
+  card.append(viewPart(element('span', `feasibility${feasible ? '' : ' blocked'}`, feasibilityText), 'overview'));
+  if (snapshot.participants.length) {
+    const approvalBar = element('progress', 'estimate-bar approval-bar');
+    approvalBar.max = snapshot.participants.length;
+    approvalBar.value = accepted.length;
+    approvalBar.setAttribute('aria-label', `${accepted.length} of ${snapshot.participants.length} accepted this plan revision`);
+    card.append(viewPart(approvalBar, 'overview'));
+  }
+  card.append(viewPart(element('p', 'acceptance-note', `Acceptance: ${accepted.length} of ${snapshot.participants.length} for this exact revision${approved ? ' | all accepted' : ''}.`), 'overview'));
   if (candidate.feasibility.unknownEssentials.length) {
     card.append(element('p', '', `Unverified essentials: ${candidate.feasibility.unknownEssentials.join(', ')}`));
   }
 
-  const sources = disclosure(`${candidate.candidateId}:${candidate.revision}:sources`, `Research sources (${candidate.evidence.length})`);
+  const sources = disclosure(`${candidate.candidateId}:${candidate.revision}:sources`, `Research sources (${candidate.evidence.length})`, currentView === 'sources');
   for (const evidence of candidate.evidence) {
     const source = element('div', 'source-record');
     let safeUrl;
@@ -170,7 +241,16 @@ function renderCandidate(candidate, snapshot) {
     if (evidence.uncertainty) source.append(element('p', 'source-uncertainty', `Uncertainty: ${evidence.uncertainty}`));
     sources.append(source);
   }
-  card.append(sources);
+  card.append(viewPart(sources, 'sources'));
+  if (!candidate.evidence.length) sources.append(element('p', '', 'No sources saved for this option yet.'));
+  if (!candidate.itinerary.length && currentView === 'itinerary') card.append(element('p', 'empty', 'No itinerary stops saved for this option yet.'));
+  const shortcuts = element('div', 'view-shortcuts');
+  for (const view of ['itinerary', 'costs', 'sources']) {
+    const link = element('a', 'view-button', VIEWS[view]);
+    link.href = `#${view}/${encodeURIComponent(candidate.candidateId)}`;
+    shortcuts.append(link);
+  }
+  card.append(viewPart(shortcuts, 'overview'));
   return card;
 }
 

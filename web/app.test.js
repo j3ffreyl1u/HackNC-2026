@@ -12,7 +12,8 @@ class Element {
   append(...children) { this.children.push(...children); }
   replaceChildren(...children) { this.children = children; }
   setAttribute(name, value) { this.attributes[name] = value; }
-  addEventListener() {}
+  listeners = {};
+  addEventListener(name, callback) { this.listeners[name] = callback; }
   get childElementCount() { return this.children.length; }
 }
 const text = (node) => [node.textContent, ...node.children.map(text)].join(' ');
@@ -39,10 +40,12 @@ async function page(initialFund = ledger(), fetchPage, options = {}) {
   let snapshotFailed = false;
   let fundStatus = 200;
   let pendingFund;
+  const events = {};
+  const location = { search: options.search ?? '', hash: options.hash ?? '' };
   const context = createContext({
     URL, URLSearchParams, Intl,
     document: { querySelector: query, createElement: () => new Element(), body: { dataset: {} } },
-    window: { location: { search: options.search ?? '' }, setInterval() {}, matchMedia: () => ({ matches: false, addEventListener() {} }) },
+    window: { location, addEventListener(name, callback) { events[name] = callback; }, scrollTo() {}, setInterval() {}, matchMedia: () => ({ matches: false, addEventListener() {} }) },
     localStorage: { getItem: () => null },
     fetch: async (url) => {
       if (fetchPage) return fetchPage(url);
@@ -61,6 +64,9 @@ async function page(initialFund = ledger(), fetchPage, options = {}) {
   await context.initialRefresh;
   return {
     fund: query('#fund'),
+    navigation: query('#view-nav'),
+    navigate(hash) { location.hash = hash; events.hashchange?.(); },
+    visibleTrip: () => visibleText(query('#trip')),
     trip: query('#trip'),
     setSnapshot(value) { currentSnapshot = value; },
     refresh: () => runInContext('refresh()', context),
@@ -255,4 +261,44 @@ describe('Live price presentation', () => {
     expect(text(p.trip)).toMatch(/Hotel.*estimate/);
     expect(text(p.trip)).not.toMatch(/\bverified\b/i);
   });
+});
+
+const visibleText = (node) => node.hidden ? '' : [node.textContent, ...node.children.map(visibleText)].join(' ');
+
+describe('focused trip views', () => {
+  it('keeps route and source details out of the overview, then navigates to their own views', async () => {
+    const c = candidate();
+    c.itinerary = [{ location: 'Trailhead', startAt: c.startAt, endAt: c.endAt, travelMinutesEstimate: 45 }];
+    c.evidence = [{ title: 'Trail source', url: 'https://example.com/trail', kind: 'official', uncertainty: 'Hours may change' }];
+    const p = await page(ledger(), undefined, { snapshot: { ...snapshot, candidates: [c] } });
+    expect(p.visibleTrip()).not.toContain('Trailhead');
+    expect(p.visibleTrip()).not.toContain('Trail source');
+    p.navigate('#itinerary');
+    expect(p.visibleTrip()).toContain('Trailhead');
+    expect(p.visibleTrip()).not.toContain('Trail source');
+    p.navigate('#sources');
+    expect(p.visibleTrip()).toContain('Trail source');
+    expect(p.visibleTrip()).toContain('Hours may change');
+    expect(p.visibleTrip()).not.toContain('Trailhead');
+  });
+  it('opens a deep-linked view and falls back from an unknown view', async () => {
+    const p = await page(ledger(), undefined, { hash: '#costs', snapshot: { ...snapshot, candidates: [candidate()] } });
+    expect(p.visibleTrip()).toContain('Upper estimate per person');
+    p.navigate('#not-a-view');
+    expect(p.visibleTrip()).toContain('Your shared plan');
+  });
+});
+
+it('a specific-option link shows that option and returning home restores the overview', async () => {
+  const a = candidate({ candidateId: 'first', title: 'Forest weekend' });
+  const b = candidate({ candidateId: 'second', title: 'Town weekend' });
+  const state = { ...snapshot, candidates: [a, b], selectedCandidate: a };
+  const p = await page(ledger(), undefined, { snapshot: state, hash: '#costs/second' });
+  const cards = () => p.trip.children.find(n => n.className?.includes('candidate-grid')).children;
+  expect(cards()[0].hidden).toBe(true);
+  expect(cards()[1].hidden).toBe(false);
+  p.navigate('#overview');
+  expect(cards().every(c => !c.hidden)).toBe(true);
+  expect(p.visibleTrip()).toContain('Approved plan');
+  expect(state.selectedCandidate.candidateId).toBe('first');
 });

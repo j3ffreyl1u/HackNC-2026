@@ -10,29 +10,29 @@
   <body>
     <div class="sky-bubbles" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
     <header class="topbar">
-      <a class="brand" href="./" aria-label="Weekend, together home"><span class="brand-mark">✦</span> weekend, together</a>
+      <a class="brand" href="#overview" aria-label="Weekend, together home"><span class="brand-mark">✦</span> weekend, together</a>
       <span class="live-pill"><span class="pulse"></span> Shared plan</span>
     </header>
     <main>
-      <nav class="explorer-bar" aria-label="Plan sections"><span class="explorer-icon" aria-hidden="true">◈</span><span>weekend / shared explorer</span><a href="#trip">Saved plans</a><a href="#about">About this view</a></nav>
+      <nav id="view-nav" class="view-nav" aria-label="Trip information">
+        <a id="view-overview" href="#overview" aria-current="page"><span aria-hidden="true">◈</span> Overview</a>
+        <a id="view-itinerary" href="#itinerary"><span aria-hidden="true">↝</span> Itinerary</a>
+        <a id="view-costs" href="#costs"><span aria-hidden="true">$</span> Costs</a>
+        <a id="view-sources" href="#sources"><span aria-hidden="true">◎</span> Sources</a>
+      </nav>
       <section class="hero">
         <canvas id="anemone" role="img" aria-label="An underwater clownfish family beside their sea anemone home. Move over the tentacles to make them bend."></canvas>
         <div class="hero-copy">
-          <h1>Just keep<br /><span>exploring.</span></h1>
-          <p class="lede">Your next weekend starts in an iMessage DM. Find your shared plan, clear costs, and a little room to explore right here.</p>
-          <a class="aero-button" href="#trip">Explore your shared plan <span aria-hidden="true">↗</span></a>
+          <h1>Your weekend,<br /><span>at a glance.</span></h1>
+          <p class="lede">Check the plan. Follow the route. See the costs. Everything your friends agreed to, in one place.</p>
+          <a class="aero-button" href="#itinerary">See the itinerary <span aria-hidden="true">↗</span></a>
         </div>
         <div class="view-controls"><button id="reef-wave" type="button">Make the anemone wave</button><button id="scene-toggle" type="button" aria-pressed="false">Enjoy the scenery</button><button id="motion-toggle" type="button" aria-pressed="false">Reef motion</button></div>
       </section>
-      <div class="feature-dock" aria-label="What you can find here">
-        <a href="#trip"><span class="dock-icon globe-icon" aria-hidden="true">◎</span><span><strong>A world of possibilities</strong><small>Explore your shared options</small></span></a>
-        <a href="#trip"><span class="dock-icon leaf-icon" aria-hidden="true">❧</span><span><strong>Room to reconnect</strong><small>Your places, dates, and itinerary</small></span></a>
-        <a href="#trip"><span class="dock-icon chat-icon" aria-hidden="true">✦</span><span><strong>Planned in your DMs</strong><small>Shared costs. One current revision.</small></span></a>
-      </div>
       <p id="status" class="status" role="status" aria-live="polite">Loading the latest plan…</p>
-      <div class="plan-filters" aria-label="Filter displayed plans"><span>Explore your options</span><button id="filter-all" type="button" aria-pressed="true">All plans</button><button id="filter-outdoors" type="button" aria-pressed="false">With outdoor stops</button></div>
-      <section id="trip" aria-live="polite"></section>
-      <section id="fund" aria-live="polite" aria-label="Who covered what"></section>
+      <div id="overview-filters" class="plan-filters" aria-label="Filter displayed plans"><span>Explore your options</span><button id="filter-all" type="button" aria-pressed="true">All plans</button><button id="filter-outdoors" type="button" aria-pressed="false">With outdoor stops</button></div>
+      <section id="trip" tabindex="-1" aria-live="polite"></section>
+      <div id="spending-view" hidden><section id="fund" aria-live="polite" aria-label="Who covered what"></section></div>
       <footer id="about"><span class="footer-leaf" aria-hidden="true">❧</span> Made for weekends together.<br />This page is read-only. Plan and accept with the assistant in your iMessage DMs.<br />Estimates are planning aids, not bookings or guaranteed availability. Check current details with each source.</footer>
     </main>
     <script type="module" src="./app.js"></script>
