@@ -2,8 +2,9 @@ import { extractText } from './gemini.js';
 
 /**
  * The "voice" of the organizer: takes a message the bot already decided to send and rewords it so it reads like a
- * friend texting, not a form. It never decides anything. It only sees text that has no money in it, and its answer
- * is checked against the original; if anything looks off, the original text is sent unchanged.
+ * friend texting, not a form. It never decides anything. It can see a message that contains a dollar amount (for example a private
+ * "your max is $250" confirmation), so that text is sent to Gemini; its answer must keep every amount exactly as written
+ * and is checked against the original. If anything looks off, the original text is sent unchanged.
  */
 export interface Voice {
   polish(text: string): Promise<string>;
