@@ -6,19 +6,49 @@ Built at HackNC 2026.
 
 ## The pitch
 
-You know the group chat. Someone says "we should do a trip this fall", everyone replies "omg yes", and then nothing happens. Nobody wants to be the one chasing four people for their dates, guessing what everyone can afford, digging through hotel prices, and then figuring out who owes who for gas afterwards. So the trip quietly dies.
+Every group chat has a trip that never happens. Someone says "we should go somewhere this fall", everyone replies "yes!!", and then nobody wants to be the one chasing dates, guessing what people can afford and digging through hotel prices. The trip gets lost.
 
-Finding N.E.M.O is the friend who actually makes it happen. It's an assistant you text like anyone else in your contacts. It reaches out to each person, asks for the specific things it still needs, passes messages between everyone, settles disagreements, and turns a vague idea into an organized itinerary that the whole group has agreed to.
+**Finding N.E.M.O finds it.** It's the friend who takes charge of the planning. It texts each of you, asks for exactly what it still needs, passes messages between everyone, settles disagreements, and comes back with an itinerary the whole group has agreed to.
 
-**It's convenient.** Nobody downloads an app or fills out a form. You text the way you already do ("i can do like 400 tops", "free the weekend of Nov 21", "ask Mason if he has a car"), and the assistant does the chasing, the research and the follow-ups.
+Here's a trimmed example using the assistant's real replies:
 
-**It saves money.** Every person sets their own private maximum, and every option is checked against all of them before anyone sees it, so nobody gets talked into a trip they can't afford. Options come with a cost breakdown and sourced prices, including real hotel rates when available, so the group can compare before committing. Once the trip happens, shared costs are split evenly from what each person actually paid, so nobody quietly overpays.
+```text
+You:            leaving from chapel hill, 2 nights, my max is 400
+N.E.M.O:        Got it: your max is $400 (just between us), 2 nights, leaving from Chapel Hill.
+N.E.M.O:        Are you planning on driving or flying?
+You:            ask mason if he has a car
+N.E.M.O:        Done, I asked Mason. I'll tell you what they say.
+Mason's phone:  Hey Mason! Jeffrey was wondering: Does anyone have a car we can take?
+```
+
+**It saves time.** Nobody has to chase four people for answers, compare notes or research options by hand. The assistant does the asking, the follow-ups and the research.
+
+**It's convenient.** No app to download and no forms. You text the way you already do: "i can do like 400 tops", "free the weekend of Nov 21", "I just paid $60 for gas".
+
+**It saves money.** You tell it your max privately, and every option is checked against everyone's limit before the group sees it. If your max is $300, you'll never be shown a $350 trip. Prices come with sources, including real hotel rates when available, and after the trip shared costs are split fairly from what each person actually paid, so nobody quietly overpays.
+
+**No awkward money talk.** Group trips stall because nobody wants to say "I can only do $300" in front of everyone. Your budget stays between you and the assistant. It's never shared with anyone else.
+
+## How it's different
+
+Most trip planners help one person plan. Finding N.E.M.O gets a whole group to agree.
+
+| | Typical trip planner | Finding N.E.M.O |
+| --- | --- | --- |
+| **Where it lives** | An app or website one person fills in | iMessage, where your friends already are. Nothing to install. |
+| **Who it talks to** | The organizer, who types in everyone's details | Every friend directly, relaying between them |
+| **Budgets** | Shared out loud, or guessed | Collected privately; only options everyone can afford are shown |
+| **Getting to "yes"** | Suggests an itinerary | Tracks who has agreed to which version, and rechecks when something changes |
+| **After the trip** | A separate app to split costs | Logs who paid for what and works out who owes whom |
+
+It's like having a personal AI travel agent for the group, with no app to download and nothing to pay to use it.
 
 ---
 
 ## Contents
 
 - [The pitch](#the-pitch)
+- [How it's different](#how-its-different)
 - [How it works](#how-it-works)
 - [Features](#features)
 - [How we built it](#how-we-built-it)
