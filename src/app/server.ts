@@ -72,7 +72,7 @@ async function route(request: IncomingMessage, response: ServerResponse, options
     await sendFile(response, resolve(webRoot, 'index.html'), 'text/html; charset=utf-8');
     return;
   }
-  if (request.method === 'GET' && ['/app.js', '/styles.css', '/aero-ocean.jpg', '/aero-meadow.webp'].includes(url.pathname)) {
+  if (request.method === 'GET' && ['/app.js', '/reef.js', '/styles.css', '/aero-ocean.jpg', '/aero-meadow.webp'].includes(url.pathname)) {
     const name = basename(url.pathname);
     await sendFile(response, resolve(webRoot, name), name.endsWith('.jpg') ? 'image/jpeg' : name.endsWith('.webp') ? 'image/webp' : name.endsWith('.js') ? 'text/javascript; charset=utf-8' : 'text/css; charset=utf-8');
     return;

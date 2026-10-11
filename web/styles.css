@@ -130,3 +130,18 @@ body[data-motion="on"] .candidate { background:radial-gradient(circle at var(--l
 @media(max-width:760px) { .view-controls { left:14px; bottom:auto; top:14px; right:14px; }.plan-filters { padding:15px 10px 0; }.plan-filters>span { flex-basis:100%; }.scenery-mode { background-size:auto 100%; }.hero-copy { position:relative; z-index:2; } }
 @media(prefers-reduced-motion:reduce) { .hero,.candidate,.hero-copy,.dock-icon,.feature-dock a { transition:none; transform:none !important; } }
 body[data-motion="off"] .hero,body[data-motion="off"] .candidate,body[data-motion="off"] .hero-copy,body[data-motion="off"] .dock-icon { transition:none; }
+/* Clownfish reef: jewel-blue water, a soft anemone home, and glossy Aero glass. */
+body { background:radial-gradient(ellipse at 40% 0%,#55f4ec88,transparent 50%),linear-gradient(180deg,#0873b0,#053f84 45%,#051e4d); }
+.hero { background:radial-gradient(ellipse at 28% 0%,#4ddcdba6,transparent 60%),linear-gradient(170deg,#087db7,#074a94 60%,#09265b); min-height:650px; overflow:hidden; }
+#anemone { position:absolute; inset:0; width:100%; height:100%; touch-action:pan-y; }
+.hero-copy { margin-top:30px; background:linear-gradient(135deg,#edffffe8,#c8eaf2ca); }
+.hero h1 { font-size:3.75rem; color:#075289; }
+.view-controls { max-width:calc(100% - 40px); }.view-controls button { padding:8px 12px; font-size:.76rem; }
+main { background:linear-gradient(135deg,#c2f6ff8c,#6abbdd66); }
+.live-pill { background:linear-gradient(#f3ffff,#aee8f4); }
+.feature-dock { background:linear-gradient(#e6fffff2,#d2edf6e3 48%,#84bdd8df 51%,#beeaf5ed); }
+.sky-bubbles { opacity:.7; }
+body[data-motion="on"] .hero,body[data-motion="on"] .candidate { transform:none; }
+body[data-motion="on"] .hero::after { display:none; }
+body[data-motion="on"] .candidate { background:linear-gradient(135deg,#ffffffed,#e7f8ffef); }
+@media(max-width:760px) { .hero { min-height:860px; padding:370px 16px 22px; background:linear-gradient(#168fc2,#074482 65%,#052e64); align-items:flex-end; }.hero-copy { margin:0 0 42px; }.hero h1 { font-size:3.4rem; }.view-controls { top:auto; bottom:16px; left:12px; right:12px; max-width:none; justify-content:center; }.view-controls button { font-size:.7rem; padding:7px 9px; } }

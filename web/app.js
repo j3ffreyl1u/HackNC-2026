@@ -195,29 +195,16 @@ async function refreshFund(revision) {
 
 function setupInteractions() {
   const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
-  const finePointer = window.matchMedia('(hover: hover) and (pointer: fine)');
   const motionButton = document.querySelector('#motion-toggle');
   let motionPreference = true;
   try { motionPreference = localStorage.getItem('weekend-motion') !== 'off'; } catch { /* Storage is optional. */ }
-  let activeSurface;
-  let pendingFrame;
-  let latestPoint;
-  const resetSurface = () => {
-    if (activeSurface) {
-      activeSurface.style.removeProperty('--tilt-x');
-      activeSurface.style.removeProperty('--tilt-y');
-      activeSurface.style.removeProperty('--light-x');
-      activeSurface.style.removeProperty('--light-y');
-      activeSurface = undefined;
-    }
-  };
   const syncMotion = () => {
     const enabled = motionPreference && !reduced.matches;
     document.body.dataset.motion = enabled ? 'on' : 'off';
     motionButton.setAttribute('aria-pressed', String(enabled));
-    motionButton.textContent = reduced.matches ? 'Reduced motion enabled' : enabled ? '3D effects: on' : '3D effects: off';
+    motionButton.textContent = reduced.matches ? 'Reduced motion enabled' : enabled ? 'Reef motion: on' : 'Reef motion: off';
     motionButton.disabled = reduced.matches;
-    if (!enabled) resetSurface();
+
   };
   motionButton.addEventListener('click', () => {
     motionPreference = !motionPreference;
@@ -226,29 +213,6 @@ function setupInteractions() {
   });
   reduced.addEventListener('change', syncMotion);
   syncMotion();
-  document.addEventListener('pointermove', event => {
-    if (document.body.dataset.motion !== 'on' || !finePointer.matches) return;
-    const surface = event.target.closest?.('.hero, .candidate');
-    if (!surface) { resetSurface(); return; }
-    if (surface !== activeSurface) { resetSurface(); activeSurface = surface; }
-    latestPoint = { x: event.clientX, y: event.clientY, surface };
-    if (pendingFrame) return;
-    pendingFrame = requestAnimationFrame(() => {
-      pendingFrame = undefined;
-      const point = latestPoint;
-      if (!activeSurface || point.surface !== activeSurface) return;
-      const rect = activeSurface.getBoundingClientRect();
-      const x = Math.max(0, Math.min(1, (point.x - rect.left) / rect.width));
-      const y = Math.max(0, Math.min(1, (point.y - rect.top) / rect.height));
-      const depth = activeSurface.matches('.hero') ? 1.5 : 2.5;
-      activeSurface.style.setProperty('--tilt-x', `${(0.5 - y) * depth}deg`);
-      activeSurface.style.setProperty('--tilt-y', `${(x - 0.5) * depth}deg`);
-      activeSurface.style.setProperty('--light-x', `${x * 100}%`);
-      activeSurface.style.setProperty('--light-y', `${y * 100}%`);
-    });
-  });
-  document.documentElement.addEventListener('pointerleave', resetSurface);
-  window.addEventListener('blur', resetSurface);
   const sceneButton = document.querySelector('#scene-toggle');
   const hero = document.querySelector('.hero');
   const heroCopy = document.querySelector('.hero-copy');
@@ -269,3 +233,4 @@ function setupInteractions() {
   }
 }
 setupInteractions();
+import './reef.js';
