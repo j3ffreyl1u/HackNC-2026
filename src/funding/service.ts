@@ -1,6 +1,6 @@
 import type { TripState } from '../contracts/index.js';
 import { toPlanningState } from '../app/planning-adapter.js';
-import { ledgerStatus, planContributions, trackCoverage } from '../planning/funding.js';
+import { ledgerStatus, planContributions, reviewPurchases, trackCoverage, type PurchaseAnswer } from '../planning/funding.js';
 import type { FundReader, FundLedger } from './nessie-reader.js';
 
 const DAY_MS = 86_400_000;
@@ -41,8 +41,12 @@ export function createFundService(reader: FundReader, mode: 'mock' | 'nessie', o
       const plan = planContributions(toPlanningState(state));
       if (!plan.ok) return { status: 'not_ready' as const, reason: plan.reason, mode, revision: state.revision };
       const ledger = await readLedger();
-      const coverage = trackCoverage(plan, ledger.purchases, tripPeriod(state));
-      return { status: ledgerStatus(coverage), mode, revision: plan.revision, plan, coverage };
+      const period = tripPeriod(state);
+      const answers: Record<string, PurchaseAnswer> = {};
+      for (const [id, check] of Object.entries(state.purchaseChecks ?? {})) if (check.status !== 'asked') answers[id] = check.status;
+      const review = reviewPurchases(plan, ledger.purchases, answers, period);
+      const coverage = trackCoverage(plan, review.counted, period);
+      return { status: ledgerStatus(coverage), mode, revision: plan.revision, plan, coverage, toCheck: review.flagged };
     },
     /**
      * What the shared page may show: first names, what each person covered in the shared categories, who owes whom, and
@@ -62,6 +66,7 @@ export function createFundService(reader: FundReader, mode: 'mock' | 'nessie', o
         spending: coverage.spend,
         unclassifiedDollars: coverage.unclassifiedDollars,
         unattributedDollars: coverage.unattributedDollars,
+        awaitingConfirmationDollars: result.toCheck.reduce((sum, f) => sum + f.purchase.amountDollars, 0),
       };
     },
   };

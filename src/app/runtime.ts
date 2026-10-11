@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { FundService } from '../funding/service.js';
-import { describeCoverage, describeWrapUp, driftNotices, settleUpFor } from '../planning/funding.js';
+import { describeCoverage, describePurchaseCheck, describeWrapUp, driftNotices, parsePurchaseAnswer, settleUpFor } from '../planning/funding.js';
 import { accumulatePreferences } from '../planning/constraints.js';
 import { toPlanningState } from './planning-adapter.js';
 import type {
@@ -49,12 +49,16 @@ export interface ApplicationRuntimeDependencies {
   stillLookingMs?: number;
   /** How long `stop()` waits for work in flight (a search) before giving up on it. A search cut off here is resumed on the next start. Default 5 seconds. */
   stopWaitMs?: number;
+  /** How often the bank is read for purchases worth asking the buyer about (default 2 minutes, 0 turns it off). */
+  purchaseCheckMs?: number;
 }
 
 export interface ApplicationRuntime {
   start(): Promise<void>;
   stop(): Promise<void>;
   handleInbound(message: InboundMessage): Promise<void>;
+  /** Reads the bank and privately asks buyers about purchases the plan does not explain, one question per person at a time. */
+  checkPurchases(): Promise<void>;
   drainOutbox(): Promise<void>;
   waitForIdle(): Promise<void>;
 }
@@ -82,6 +86,7 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
   let outboxDrain: Promise<void> | undefined;
   let stopped = false;
   let retryTimer: ReturnType<typeof setInterval> | undefined;
+  let purchaseTimer: ReturnType<typeof setInterval> | undefined;
   const researchRevisions = new Set<number>();
 
   const runtime: ApplicationRuntime = {
@@ -91,6 +96,11 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
       await runtime.drainOutbox();
       retryTimer = setInterval(() => { void runtime.drainOutbox().catch(() => undefined); }, 5000);
       retryTimer.unref();
+      const checkEvery = dependencies.purchaseCheckMs ?? 120_000;
+      if (fundService && checkEvery > 0) {
+        purchaseTimer = setInterval(() => { void runtime.checkPurchases().catch(() => undefined); }, checkEvery);
+        purchaseTimer.unref();
+      }
       const state = await repository.loadTrip(tripId);
       if (state?.status === 'researching') scheduleResearch(state);
     },
@@ -98,6 +108,7 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
     async stop() {
       stopped = true;
       clearInterval(retryTimer);
+      clearInterval(purchaseTimer);
       await conversation.stop();
       // A hung search must not make a clean shutdown hang too: wait a little, then leave it (it resumes on the next start).
       let timer: NodeJS.Timeout | undefined;
@@ -115,6 +126,13 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
     async handleInbound(message) {
       if (stopped) return;
       const task = processQueue.then(() => handleMessage(message));
+      processQueue = task.catch(() => undefined);
+      await task;
+    },
+
+    async checkPurchases() {
+      if (!fundService || stopped) return;
+      const task = processQueue.then(() => askAboutPurchases());
       processQueue = task.catch(() => undefined);
       await task;
     },
@@ -145,6 +163,34 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
     },
   };
 
+  /** Purchases the plan does not explain are held back until the buyer says whether they were for the trip. */
+  async function askAboutPurchases(): Promise<void> {
+    if (!fundService) return;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const state = await repository.loadTrip(tripId);
+      if (!state || state.status !== 'approved') return;
+      let flagged;
+      try { const report = await fundService.inspect(state); flagged = report.toCheck ?? []; } catch { return; }
+      const checks = { ...state.purchaseChecks };
+      // One question per person at a time: the next one comes after they answer, never a burst.
+      const busy = new Set(flagged.filter((f) => checks[f.purchase.id]?.status === 'asked').map((f) => f.purchase.memberId));
+      const now = new Date().toISOString();
+      const replies: OutboundMessage[] = [];
+      for (const flag of flagged) {
+        const { id, memberId } = flag.purchase;
+        if (checks[id] || busy.has(memberId)) continue;
+        busy.add(memberId);
+        checks[id] = { memberId, status: 'asked', askedAt: now, dollars: flag.purchase.amountDollars };
+        replies.push(makeMessage(tripId, `purchase-ask:${id}`, { audience: { kind: 'private', memberId }, text: describePurchaseCheck(flag) }));
+      }
+      if (replies.length === 0) return;
+      const result = await repository.commitEvent({ eventId: `purchase-check:${replies.map((r) => r.deliveryId).join(',')}`, state: { ...state, purchaseChecks: checks }, expectedRevision: state.revision, messages: replies });
+      if (result === 'stale') continue;
+      if (result === 'committed') await runtime.drainOutbox();
+      return;
+    }
+  }
+
   async function handleMessage(message: InboundMessage): Promise<void> {
     if (await repository.hasProcessedEvent(message.eventId)) return;
     eventAttempt: for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -156,6 +202,20 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
       if (!member || (message.visibility === 'group' && message.spaceId !== enrollment.groupSpaceId)) {
         const result = await repository.commitEvent({ eventId: message.eventId, state, expectedRevision: state.revision, messages: [] });
         if (result === 'stale') continue;
+        return;
+      }
+
+      // A short "trip" or "personal" answers the oldest purchase question this person has open (only when nothing else is waiting on a yes).
+      const answer = fundService && state.status === 'approved' && !state.pendingConfirmations?.[member.memberId] && !state.pendingQuestions.some((q) => q.memberId === member.memberId) ? parsePurchaseAnswer(message.text) : undefined;
+      const openCheck = answer ? Object.entries(state.purchaseChecks ?? {}).filter(([, c]) => c.memberId === member.memberId && c.status === 'asked' && Date.parse(message.occurredAt) - Date.parse(c.askedAt) < 3 * 86_400_000).sort((a, b) => a[1].askedAt.localeCompare(b[1].askedAt))[0] : undefined;
+      if (answer && openCheck) {
+        const [purchaseId, check] = openCheck;
+        const text = answer === 'trip'
+          ? `Thanks, I'll count your $${check.dollars} as a shared trip cost. This is simulated sandbox money.`
+          : `Okay, I'll leave your $${check.dollars} out of the split. It stays personal.`;
+        const result = await repository.commitEvent({ eventId: message.eventId, state: { ...state, purchaseChecks: { ...state.purchaseChecks, [purchaseId]: { ...check, status: answer } } }, expectedRevision: state.revision, messages: [makeMessage(tripId, `purchase-answer:${message.eventId}`, { audience: { kind: 'private', memberId: member.memberId }, text })] });
+        if (result === 'stale') continue;
+        if (result === 'committed') await runtime.drainOutbox();
         return;
       }
 
@@ -347,7 +407,9 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
                   : already.length > 0 ? `I already reminded ${nameList(already)} today, so I'll leave them alone until tomorrow.` : "Nobody else owes anything right now, so there's nobody to remind.";
                 replies.push(privately(member.memberId, own ? `${told}\n${own}` : told, `fund:${message.eventId}`));
               } else {
-                replies.push(privately(member.memberId, describeCoverage(planning, report.plan, report.coverage, { simulated: true }), `fund:${message.eventId}`));
+                const waiting = report.toCheck.reduce((sum, f) => sum + f.purchase.amountDollars, 0);
+                const note = waiting > 0 ? `\n$${waiting} is waiting on whoever bought it to say if it was for the trip, so it isn't counted yet.` : '';
+                replies.push(privately(member.memberId, describeCoverage(planning, report.plan, report.coverage, { simulated: true }) + note, `fund:${message.eventId}`));
               }
             }
           } else if (fundRequested) replies.push(makeMessage(tripId, `fund:${message.eventId}`, { audience: { kind: 'private', memberId: member.memberId }, text: report.reason ?? 'Approve the current plan before I track who covered what.' }));

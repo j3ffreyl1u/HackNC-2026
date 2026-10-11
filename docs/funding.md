@@ -56,3 +56,11 @@ Member ids must match the trip's member ids. Without `--execute` it only preview
 ## Not verified
 
 The reader and simulator have been checked against mocks only for this per-friend design. The earlier single-account version was probed live (read endpoints returned 200). A full run of `--provision --execute` followed by the page and chat has not been done yet.
+
+## Checking odd purchases with the buyer
+
+Nobody is asked about everything. The bot reads each friend's own Nessie account (GET only) and counts a purchase on its own when the plan explains it: a shared category that fits the plan's budget, with overruns absorbed by the plan's contingency. Food stays personal and is never questioned.
+
+A purchase the plan does not explain is held back and its buyer gets one private question: "did your $80 purchase (casino) on Oct 15 go toward the trip? Reply trip or personal". Flagged when the category is unknown, or when it is a shared category the plan never budgeted, or when it pushes a category past its budget by more than the contingency has left. Replying "trip" (or yes) counts it as a shared cost (unknown categories count as other); "personal" (or no) leaves it out. Rules: one question per person at a time (the next comes after they answer), each purchase is asked once, a bare yes counts only while a question is open and nothing else is waiting on a yes, nothing is asked before approval or when the bank cannot be read, and the question never mentions anyone's limit.
+
+The check runs every 2 minutes (`purchaseCheckMs`, 0 turns it off). "Who covered what?" mentions the dollars still waiting on an answer. The page view has an optional `awaitingConfirmationDollars`. Code: `reviewPurchases` in `src/planning/funding.ts`, `checkPurchases` in `src/app/runtime.ts`, tests in `tests/planning/purchase-review.test.ts` and `tests/human/purchase-check.test.ts`.

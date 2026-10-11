@@ -68,7 +68,7 @@ describe('L. who covered what', () => {
   });
   it('L4 when everyone covered the same, there is nobody to remind', async () => {
     const h = await humans({ fund: 'mock' }); await approved(h);
-    for (const w of ['mason', 'alex', 'jordan'] as const) h.paid(w, 40, 'gas');
+    for (const w of ['mason', 'alex', 'jordan'] as const) h.paid(w, 25, 'gas');
     const r = await h.say('mason', 'remind everyone'); expect(said(r)).toMatch(/nobody to remind/i);
     expect(notNotice(r.alex.concat(r.jordan))).toEqual([]); await h.stop();
   });

@@ -67,6 +67,7 @@ The "Who covered what" panel. `200` always has `revision`; the page must ignore 
               overCategories, unclassifiedDollars, totalSpentDollars, contingencyDollars },
   unclassifiedDollars,                    // left out of the split (no category)
   unattributedDollars                     // from an account not on the trip, never credited
+  awaitingConfirmationDollars             // optional: purchases held back until the buyer says if they were for the trip; not in the totals yet. A short note is fine, never who or what.
 }
 ```
 Whole dollars. Categories here: `accommodation`, `fuel_parking_tolls`, `food`, `activities`, `taxes_fees`, `other` (note `fuel_parking_tolls`/`activities`, unlike the snapshot's cost categories). Food is personal and is not in `members[].byCategory`. The page must never imply the bot moves money.

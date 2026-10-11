@@ -219,6 +219,97 @@ export function driftNotices(report: SpendReport, announced: ReadonlySet<string>
 /** Food is bought by the person eating it unless someone says they covered the group, so by default it is personal and never split. */
 const PERSONAL_CATEGORIES: ReadonlySet<CostCategory> = new Set<CostCategory>(['food']);
 
+// ---- checking odd purchases with the buyer -------------------------------------------------------------------
+
+export type PurchaseAnswer = 'trip' | 'personal';
+export interface PurchaseFlag {
+  purchase: Purchase & { id: string; memberId: MemberId };
+  /** `unrecognised`: no category we know. `not_in_plan`: a shared category the plan never budgeted. `over_plan`: it takes the category past its budget. */
+  reason: 'unrecognised' | 'not_in_plan' | 'over_plan';
+}
+
+/**
+ * Splits purchases into what can be counted as is and what the buyer should be asked about once. Most purchases are
+ * never questioned: anything that fits the plan's budget counts, and food stays personal. Only a purchase the plan
+ * does not explain (and the plan's contingency cannot absorb) is held back until its buyer answers "trip" (counts, as shared) or "personal" (does not count).
+ */
+export function reviewPurchases(
+  plan: Extract<ContributionPlan, { ok: true }>,
+  purchases: readonly Purchase[],
+  answers: Readonly<Record<string, PurchaseAnswer>>,
+  period: { from?: string; to?: string } = {},
+): { counted: Purchase[]; flagged: PurchaseFlag[] } {
+  const members = new Set(plan.requests.map((r) => r.memberId));
+  const planned = new Map(plan.pooledByCategory.map((p) => [p.category, toDollarsUp(p.plannedCents)]));
+  const seen = new Set<string>();
+  const live: Purchase[] = [];
+  for (const purchase of purchases) {
+    if (purchase.id !== undefined) { if (seen.has(purchase.id)) continue; seen.add(purchase.id); }
+    if (purchase.status !== undefined && purchase.status !== 'completed') continue;
+    if (!usable(purchase.amountDollars)) continue;
+    if (purchase.date !== undefined && ((period.from !== undefined && purchase.date < period.from) || (period.to !== undefined && purchase.date > period.to))) continue;
+    live.push(purchase);
+  }
+  // The earliest purchases use up a category's budget first, whatever order the bank lists them in.
+  live.sort((a, b) => (a.date ?? '9999').localeCompare(b.date ?? '9999') || (a.id ?? '').localeCompare(b.id ?? ''));
+  const counted: Purchase[] = [];
+  const flagged: PurchaseFlag[] = [];
+  const running = new Map<CostCategory, number>();
+  let contingencyLeft = Math.floor(plan.contingencyCents / 100);
+  for (const purchase of live) {
+    const answer = purchase.id === undefined ? undefined : answers[purchase.id];
+    if (answer === 'personal') continue;
+    const category = categoryOfPurchase(purchase);
+    const canAsk = purchase.id !== undefined && purchase.memberId !== undefined && members.has(purchase.memberId);
+    if (answer === 'trip') {
+      const as = category ?? 'other';
+      counted.push(category ? purchase : { ...purchase, category: as });
+      running.set(as, (running.get(as) ?? 0) + purchase.amountDollars);
+      contingencyLeft = Math.max(0, contingencyLeft - Math.max(0, purchase.amountDollars - (planned.get(as) ?? 0)));
+      continue;
+    }
+    if (category !== undefined && PERSONAL_CATEGORIES.has(category)) { counted.push(purchase); continue; }
+    if (!canAsk) { counted.push(purchase); continue; }
+    const asked = purchase as PurchaseFlag['purchase'];
+    if (category === undefined) { flagged.push({ purchase: asked, reason: 'unrecognised' }); continue; }
+    const budget = planned.get(category) ?? 0;
+    const used = running.get(category) ?? 0;
+    // Going past a category's budget is normal, and the plan set contingency aside for it: only what the contingency cannot absorb is worth a question.
+    const overrun = Math.max(0, used + purchase.amountDollars - budget) - Math.max(0, used - budget);
+    if (overrun > contingencyLeft) { flagged.push({ purchase: asked, reason: budget <= 0 ? 'not_in_plan' : 'over_plan' }); continue; }
+    contingencyLeft -= overrun;
+    running.set(category, used + purchase.amountDollars);
+    counted.push(purchase);
+  }
+  return { counted, flagged };
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** The one private question to the buyer. It says what was seen and why it is being asked, and never mentions anyone's limit. */
+export function describePurchaseCheck(flag: PurchaseFlag): string {
+  const { purchase, reason } = flag;
+  const day = purchase.date && /^\d{4}-\d{2}-\d{2}$/.test(purchase.date) ? ` on ${MONTHS[Number(purchase.date.slice(5, 7)) - 1]} ${Number(purchase.date.slice(8, 10))}` : '';
+  const raw = purchase.category?.trim();
+  const category = categoryOfPurchase(purchase);
+  const what = raw ? ` (${category ? CATEGORY_WORDS[category] : raw})` : '';
+  const why = reason === 'unrecognised'
+    ? "I can't tell what it was for"
+    : `it's more than the plan has set aside for ${CATEGORY_WORDS[category ?? 'other']}`;
+  return `Quick check on your bank activity: ${why}, so did your ${money(purchase.amountDollars)} purchase${what}${day} go toward the trip? Reply "trip" to split it with everyone, or "personal" and I'll leave it out. This is simulated sandbox money.`;
+}
+
+const TRIP_ANSWER = /^(?:yes|y|yep|yeah|yup|trip|shared|share it|split it|for the trip|it was for the trip|it's for the trip)\W*$/i;
+const PERSONAL_ANSWER = /^(?:no|n|nope|nah|personal|mine|my own|just me|not for the trip|it's personal|its personal)\W*$/i;
+
+/** A reply to a purchase question: only a short, clear answer counts. Anything else is left for the normal parser. */
+export function parsePurchaseAnswer(text: string | undefined): PurchaseAnswer | undefined {
+  const plain = text?.trim() ?? '';
+  if (TRIP_ANSWER.test(plain)) return 'trip';
+  if (PERSONAL_ANSWER.test(plain)) return 'personal';
+  return undefined;
+}
+
 export interface CoverageOptions {
   /** Only purchases on or after this day (YYYY-MM-DD) count. A purchase with no date always counts. */
   from?: string;

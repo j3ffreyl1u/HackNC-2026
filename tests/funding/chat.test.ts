@@ -57,7 +57,7 @@ describe('fund chat (who covered what)', () => {
   });
 
   it('sends each notice on its own, one per message, instead of all at once', async () => {
-    const t = await chat({ purchases: [buy('mason', 100, 'hotel'), buy('mason', 20, 'gas')] });
+    const t = await chat({ purchases: [buy('mason', 100, 'hotel'), buy('mason', 100, 'gas')] });
     const notices = (out: OutboundMessage[]) => out.filter((m) => /simulated sandbox money/.test(m.text));
     expect(notices(await t.say('e1', 'status'))).toHaveLength(1);
     expect(notices(await t.say('e2', 'status'))).toHaveLength(1);
