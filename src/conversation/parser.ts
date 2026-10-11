@@ -50,13 +50,15 @@ function ackPart(v: ConstraintValue, tentative: boolean): string {
     case 'budget': return `your max is ${money(v.value)} (just between us)`;
     case 'availability': return `you're free ${v.value.filter((w): w is { start: string; end: string } => 'start' in w).map(formatWindow).join(' or ')}`;
     case 'duration': return `${v.value} night${v.value === 1 ? '' : 's'}`;
-    case 'origin': return `leaving from ${v.value}`;
-    case 'region': return v.value;
+    case 'origin': return `leaving from ${titleCase(v.value)}`;
+    case 'region': return /^(?:within|any)\b/.test(v.value) ? v.value : titleCase(v.value);
     case 'transport': return v.vehicleAvailable === true ? "there's a car" : v.vehicleAvailable === false ? 'no car for you' : `transport: ${v.value}`;
     case 'preferences': return v.value.includes('no preference') ? 'no strong preferences' : `you ${tentative ? 'might be' : "'re"} into ${list(v.value)}`.replace("you 're", "you're");
     case 'must_dos': return v.value.length ? `must-haves: ${list(v.value)}` : 'no must-haves';
   }
 }
+/** "chapel hill" -> "Chapel Hill": only words typed in lower case, so "NC" and "DC" stay as written. */
+const titleCase = (text: string) => text.replace(/\b([a-z])([a-z.']*)/g, (word, first: string, rest: string) => (['of', 'the', 'and', 'in', 'on', 'by'].includes(word) ? word : first.toUpperCase() + rest));
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 export function createParser(deps: ConversationDependencies) {
@@ -330,7 +332,12 @@ export function createParser(deps: ConversationDependencies) {
       // Small talk needs no model. In a one-on-one chat answer it warmly; in a group stay out of it.
       if (!talkative) return { kind: 'ignored', reason: 'small talk' };
       if (/^(?:thanks?|thank you|thx|ty|appreciate)/i.test(text)) return reply(msg, 'Anytime! Tell me if you want to change anything, or say "show us some options" when you\'re ready.', 'welcome');
-      if (/^(?:hi|hey|hello|yo|hiya|good )/i.test(text)) return reply(msg, 'Hey! Want to plan a trip? Say "let\'s plan a trip" to get started.', 'greeting');
+      if (/^(?:hi|hey|hello|yo|hiya|good )/i.test(text)) {
+        // Someone has already started: don't tell this person to start another trip.
+        const starters = (ctx.others ?? []).filter((o) => o.shared.length > 0).map((o) => o.name);
+        if (starters.length > 0 || ctx.confirmBasics?.length) return reply(msg, `Hey! ${starters.length > 0 ? list(starters) : 'Someone'} already started planning a trip. Tell me your free dates and what you're into, or say "show us some options" when you're ready.`, 'greeting-joined');
+        return reply(msg, 'Hey! Want to plan a trip? Say "let\'s plan a trip" to get started.', 'greeting');
+      }
       return reply(msg, 'Sounds good. I\'m here whenever you want to add something or see options.', 'smalltalk');
     }
     // A request tucked into a longer message ("..., can you show us some options?") is understood by rule, not sent away.

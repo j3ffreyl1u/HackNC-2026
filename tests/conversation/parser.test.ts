@@ -479,6 +479,16 @@ describe('relaying what someone else said', () => {
     expect(json).not.toMatch(/"value":\[[^\]]*(?:max|\$)[^\]]*\]/);
     expect(json).toMatch(/40000/);
   });
+  it('shows what you said with proper capitals, not your typing', async () => {
+    const r = await setup().service.parseInbound(msg({ text: 'leaving from chapel hill', visibility: 'private' }));
+    expect(r.kind === 'commands' ? r.acknowledgement?.text : '').toMatch(/leaving from Chapel Hill/);
+  });
+  it('a hello from someone joining an existing plan does not tell them to start another one', async () => {
+    const joined = setup({ others: [{ memberId: 'jeffrey', name: 'Jeffrey', shared: ['is free Nov 14-17'], missing: [] }] } as never).service;
+    const reply = text(await joined.parseInbound(msg({ text: 'hi', visibility: 'private' })));
+    expect(reply).toMatch(/^Hey! Jeffrey already started planning a trip\./);
+    expect(reply).not.toMatch(/let's plan a trip/);
+  });
   it('answers no when the person has given everything', async () => {
     const done = setup({ others: [{ memberId: 'mason', name: 'Mason', shared: ['is free Nov 14-17', 'is into food'], missing: [] }] } as never).service;
     expect(text(await done.parseInbound(msg({ text: 'did Mason finish?', visibility: 'private' })))).toBe("Yes, Mason has finished. Mason is free Nov 14-17 and is into food. I have Mason's budget too, but I keep that one private.");

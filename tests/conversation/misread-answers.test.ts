@@ -5,7 +5,7 @@ const REF = '2026-10-11T12:00:00Z';
 const values = (text: string, pending?: Parameters<typeof extractConstraints>[2]) => extractConstraints(text, REF, pending).map((e) => e.value);
 
 describe('short replies while waiting for a place are not saved as one', () => {
-  it.each(['next weekend', 'cancel', 'never mind', 'nvm', 'mostly food', 'tomorrow', 'maybe later'])('"%s" is not an origin', (t) => {
+  it.each(['next weekend', 'cancel', 'never mind', 'nvm', 'mostly food', 'tomorrow', 'maybe later', 'historical monuments and food', 'hiking and museums'])('"%s" is not an origin', (t) => {
     expect(values(t, 'origin')).toEqual([]);
   });
   it('reads "from Raleigh" as Raleigh', () => {
@@ -36,7 +36,7 @@ describe('wanting to see a place and talking about the options are not likings',
 });
 
 describe('more ways to say a budget and dates', () => {
-  it.each([['i can spend 300', 30000], ['300 is my max', 30000], ['my budget is around 400', 40000], ['my max is $250', 25000]])('"%s"', (t, cents) => {
+  it.each([['i can spend 300', 30000], ['I have 500 to spend', 50000], ['I got 250 for the trip', 25000], ['300 is my max', 30000], ['my budget is around 400', 40000], ['my max is $250', 25000]])('"%s"', (t, cents) => {
     expect(values(t)).toEqual([{ field: 'budget', value: cents }]);
   });
   it('does not read nights or dates as a budget', () => {

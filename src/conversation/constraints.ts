@@ -17,7 +17,7 @@ const MONEY = '\\$\\s*([\\d,]+(?:\\.\\d{1,2})?)|([\\d,]+(?:\\.\\d{1,2})?)\\s*(?:
 const BUDGET_KEYWORD = '(?:budget|max(?:imum)?|cap|limit|spend|afford|up to|at most|no more than|(?:can|could|may|might|able to) (?:only )?(?:do|pay|swing|spend|afford)|can swing|able to (?:do|pay|spend|afford)|only (?:got|have|has)|all[- ]in)';
 const BUDGET_AFTER = new RegExp(`\\b${BUDGET_KEYWORD}\\b[^.!?\\n$\\d]{0,30}?(?:${MONEY})`, 'i');
 const BUDGET_BEFORE = new RegExp(`(?:${MONEY})\\s*(?:(?:is|'s)\\s+(?:my|the|our)\\s+(?:(?:firm|hard|absolute|final)\\s+)?)?(?:max|maximum|total|tops|cap|limit|all[- ]in|budget|at most)\\b`, 'i');
-const BUDGET_BARE = /\b(?:budget|max(?:imum)?|cap|limit)\b\s*(?:(?:is|of|:|=)\s*)?(?:(?:around|about|roughly|approximately|like|at)\s*)?\$?([\d,]+(?:\.\d{1,2})?)\b(?!\s*[a-z])|\b(?:spend|afford|pay|swing)\s+(?:about\s+|around\s+|up to\s+)?\$?([\d,]+(?:\.\d{1,2})?)\b(?!\s*[a-z])|(?:^|[\s,])\$?([\d,]+(?:\.\d{1,2})?)\s*(?:is|'s)\s+(?:my|the|our)\s+(?:(?:firm|hard|absolute|final)\s+)?(?:max|maximum|budget|cap|limit)\b/i;
+const BUDGET_BARE = /\b(?:budget|max(?:imum)?|cap|limit)\b\s*(?:(?:is|of|:|=)\s*)?(?:(?:around|about|roughly|approximately|like|at)\s*)?\$?([\d,]+(?:\.\d{1,2})?)\b(?!\s*[a-z])|\b(?:spend|afford|pay|swing)\s+(?:about\s+|around\s+|up to\s+)?\$?([\d,]+(?:\.\d{1,2})?)\b(?!\s*[a-z])|\b(?:have|got)\s+\$?([\d,]+(?:\.\d{1,2})?)\s+(?:dollars\s+|bucks\s+)?(?:to|for)\s+(?:spend|the trip|this trip)\b|(?:^|[\s,])\$?([\d,]+(?:\.\d{1,2})?)\s*(?:is|'s)\s+(?:my|the|our)\s+(?:(?:firm|hard|absolute|final)\s+)?(?:max|maximum|budget|cap|limit)\b/i;
 const BARE_AMOUNT = /^\$?\s*([\d,]+(?:\.\d{1,2})?)\s*(?:dollars|bucks|usd)?[.!]*$/i;
 const AVAIL_WORDS = /\b(free|available|availability|open|works?|can (?:do|go|make(?: it)?|leave)|good|window|off|maybe|perhaps|how about|what about|could (?:do|go|make it))\b/i;
 const NEGATIVE = /\b(not|n't|busy|can'?t|cannot|unavailable|booked|out of town)\b/i;
@@ -32,7 +32,7 @@ export function parseMaxTravelMinutes(text: string): number | undefined {
 }
 
 /** Short replies that are not a place even when a place was asked for: a change of subject, a date, or a liking. */
-const NOT_A_PLACE_ANSWER = /^(?:cancel|never ?mind|nvm|stop|quit|skip|idk|not sure|no idea|later|nothing|none|n\/a|ok(?:ay)?|sure|thanks|thank you|hello|hi|hey)$|\b(?:weekends?|weeks?|months?|days?|today|tomorrow|tonight|next|this|monday|tuesday|wednesday|thursday|friday|saturday|sunday|mostly|mainly|probably|maybe|just|only|really|kind of|whatever|anything|food|nights?)\b/i;
+const NOT_A_PLACE_ANSWER = /^(?:cancel|never ?mind|nvm|stop|quit|skip|idk|not sure|no idea|later|nothing|none|n\/a|ok(?:ay)?|sure|thanks|thank you|hello|hi|hey)$|\b(?:weekends?|weeks?|months?|days?|today|tomorrow|tonight|next|this|monday|tuesday|wednesday|thursday|friday|saturday|sunday|mostly|mainly|probably|maybe|just|only|really|kind of|whatever|anything|food|foods|nights?|monuments?|museums?|histor(?:y|ical)|hiking|nightlife|sightseeing|restaurants?|breweries|brewery|shopping|nature|outdoors?|relax(?:ing)?)\b/i;
 /** "I like the second one better" is about the options, not something the person likes doing. */
 const PICK_TALK = /\b(?:the\s+)?(?:first|second|third|1st|2nd|3rd|last|other)\s+(?:one|option|plan)\b|\b(?:option|plan)\s+\d\b|\bone\s+better\b/i;
 const NOT_A_PLACE = /\b(i|we|you|he|she|they|has|have|had|is|are|was|am|can|will|would|want|like|need|car|trip|my|our|it|not|but|with|for|please|thanks|yes|no)\b/i;
@@ -56,7 +56,7 @@ function splitItems(raw: string): string[] {
 function budgetFrom(sentence: string): number | null {
   const m = BUDGET_AFTER.exec(sentence) ?? BUDGET_BEFORE.exec(sentence);
   const bare = m ? null : BUDGET_BARE.exec(sentence);
-  const raw = m ? (m[1] ?? m[2] ?? m[3] ?? m[4]) : (bare?.[1] ?? bare?.[2] ?? bare?.[3]);
+  const raw = m ? (m[1] ?? m[2] ?? m[3] ?? m[4]) : (bare?.[1] ?? bare?.[2] ?? bare?.[3] ?? bare?.[4]);
   return raw ? parseDollarsToCents(raw) : null;
 }
 
