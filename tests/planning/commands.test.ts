@@ -47,7 +47,7 @@ describe('request_plans', () => {
     expect(result.rejection?.code).toBe('NOT_READY');
     expect(result.researchRequested).toBe(false);
     expect(result.state.status).toBe('gathering');
-    expect(result.replies[0].text).toMatch(/leaving from/i);
+    expect(result.replies.some((r) => /leaving from/i.test(r.text))).toBe(true);
   });
 
   it('does not ask the same unanswered question twice in a row', () => {
@@ -63,11 +63,8 @@ describe('request_plans', () => {
     expect(later.rejection?.code).toBe('NOT_READY');
     expect(later.replies.length).toBeGreaterThan(0);
     const text = later.replies.map((r) => r.text).join(' ');
-    expect(text).toMatch(/what I need to plan this/i);   // nothing has been said yet, so not "still waiting"
-    expect(text).toMatch(/everyone's budget/);
-    expect(text).toMatch(/everyone's dates/);
-    expect(text).toMatch(/where you're leaving from/);
-    expect(text).not.toMatch(/Mason's/);
+    expect(text).toMatch(/waiting on an answer to my last question/i);   // nothing said yet: no checklist, just a nudge
+    expect(text).not.toMatch(/budget|dates|Mason's/);
     expect(later.replies.every((r) => r.audience.kind === 'group' || r.audience.kind === 'private')).toBe(true);
   });
 
@@ -373,9 +370,10 @@ describe('the early-request summary', () => {
   it('comes with the very first request, along with the questions', () => {
     const result = run(createTrip('trip-1', roster), 'mason', { kind: 'request_plans' });
     expect(result.rejection?.code).toBe('NOT_READY');
-    const summary = result.replies.find((r) => /what I need to plan this/i.test(r.text));
-    expect(summary).toBeDefined();
-    expect(result.replies[0]).toBe(summary);                                  // the summary comes first
+    const welcome = result.replies.find((r) => /one at a time/i.test(r.text));
+    expect(welcome).toBeDefined();
+    expect(result.replies[0]).toBe(welcome);                                  // a one-line welcome comes first, not a checklist
+    expect(welcome!.text).not.toMatch(/budget|dates|preferences/i);
     const questions = result.replies.filter((r) => r.text.endsWith('?'));
     expect(questions.map((r) => r.text)).toEqual(['Where are you all leaving from?']); // then exactly one question
   });
@@ -383,7 +381,8 @@ describe('the early-request summary', () => {
   it('goes to the person who asked and says "your" for them', () => {
     let state = createTrip('trip-1', roster);
     state = put(state, 'alex', 'budget', { cents: 25_000 });
-    const result = run(state, 'mason', { kind: 'request_plans' });
+    const first = run(state, 'mason', { kind: 'request_plans' });
+    const result = run(first.state, 'mason', { kind: 'request_plans' });   // the open question holds the next one back
     const summary = result.replies.find((r) => /still waiting on/i.test(r.text))!;
     expect(summary.audience).toEqual({ kind: 'private', memberId: 'mason' });
     expect(summary.text).toMatch(/your budget/);

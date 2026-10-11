@@ -173,9 +173,17 @@ function requestPlans(state: TripState, command: TripCommand, now: string): Appl
   const readiness = checkReadiness(state, { now });
   if (!readiness.ready) {
     const asked = askAboutGaps(state, now);
-    // Always say what is missing, privately to whoever asked, and then the questions that go with it.
-    const summary = { audience: { kind: 'private', memberId: command.actorId } as const, text: describeGaps(state, readiness, command.actorId) };
-    const reply = [summary, ...asked.replies];
+    // A question going out says what is missing by itself. Only when nothing new is asked (everything is waiting on
+    // an earlier answer) is the requester told what the plan is still waiting for, so they are never met with silence.
+    // A brand-new conversation gets a one-line welcome, not a checklist.
+    const to = { kind: 'private', memberId: command.actorId } as const;
+    const fresh = Object.values(state.memberConstraints).every((list) => list.length === 0) && state.groupConstraints.length === 0;
+    const reply =
+      asked.replies.length === 0
+        ? [{ audience: to, text: describeGaps(state, readiness, command.actorId) }]
+        : fresh
+          ? [{ audience: to, text: "Happy to help plan this! I'll ask a few quick questions, one at a time." }, ...asked.replies]
+          : asked.replies;
     return {
       state: asked.state,
       replies: reply,

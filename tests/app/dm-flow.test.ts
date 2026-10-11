@@ -91,12 +91,12 @@ describe('first live DM scenario, end to end (A parser + C runtime + B planner, 
     const jeff = await t.say(JEFF, "Hey let's plan a trip");
     const mason = await t.say(MASON, "Hey let's plan a trip");     // a few seconds later
     // Jeffrey: the summary first, then exactly one question.
-    expect(jeff.jeff[0]).toMatch(/what I need to plan this/i);
+    expect(jeff.jeff[0]).toMatch(/one at a time/i);
     expect(questions(jeff.jeff)).toEqual(['Where are you all leaving from?']);
     expect(questions(jeff.mason)).toEqual(['Where are you all leaving from?']); // the same shared question reaches Mason too
     // Mason's own request: only his private summary. No second batch, nothing for Jeffrey.
     expect(mason.mason.length).toBe(1);
-    expect(mason.mason[0]).toMatch(/what I need to plan this/i);
+    expect(mason.mason[0]).toMatch(/Happy to help/i);
     expect(questions(mason.mason)).toEqual([]);
     expect(mason.jeff).toEqual([]);
     await t.stop();
@@ -148,9 +148,9 @@ describe('first live DM scenario, end to end (A parser + C runtime + B planner, 
   it('the very first request gets the summary first, then exactly one question, and only the asker gets the summary', async () => {
     const t = await live();
     const first = await t.say(JEFF, "Hi, let's plan a trip");
-    expect(first.jeff[0]).toMatch(/what I need to plan this/i);
+    expect(first.jeff[0]).toMatch(/one at a time/i);
     expect(questions(first.jeff).length).toBe(1);
-    expect(first.mason.some((x) => /what I need to plan this/i.test(x))).toBe(false);
+    expect(first.mason.some((x) => /one at a time/i.test(x))).toBe(false);
     await t.stop();
   });
 

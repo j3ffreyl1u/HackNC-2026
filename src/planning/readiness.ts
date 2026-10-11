@@ -208,6 +208,6 @@ export function describeGaps(state: TripState, result: Pick<ReadinessResult, 'mi
   if (parts === '') return tail === '' ? "I'm not ready to plan yet." : `I'm not ready to plan yet. ${tail}`;
   // Nothing has been told to the assistant yet: "still waiting" would be wrong, so say what the plan needs instead.
   const fresh = Object.values(state.memberConstraints).every((list) => list.length === 0) && state.groupConstraints.length === 0;
-  if (fresh) return `Here's what I need to plan this: ${parts}. Tell me in any order, or I'll ask one thing at a time.${tail === '' ? '' : ` ${tail}`}`;
+  if (fresh) return "Happy to help plan this! I'm waiting on an answer to my last question, then I'll ask the next one.";
   return `I'm still waiting on ${parts}.${tail === '' ? '' : ` ${tail}`}`;
 }

@@ -122,8 +122,7 @@ describe('application runtime', () => {
       expect((await repository.loadTrip(state.tripId))?.pendingQuestions).toHaveLength(1);
       const count = conversation.sent.length;
       await conversation.emit(inbound('again'));
-      expect(conversation.sent.slice(count).some(m => m.text.includes("everyone's budget"))).toBe(true);
-      expect(conversation.sent.slice(count).some(m => m.text.includes('where you want to go'))).toBe(true);
+      expect(conversation.sent.slice(count).some(m => /waiting on an answer to my last question/i.test(m.text))).toBe(true);
       expect(conversation.sent.slice(count).filter(m => m.text.endsWith('?')).length).toBe(0);
     } finally { await runtime.stop(); repository.close(); }
   });
