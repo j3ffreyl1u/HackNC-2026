@@ -12,13 +12,14 @@ import type {
 
 export interface PlannerAdapter {
   guidePrivate?: boolean;
-  applyCommand(state: TripState, command: TripCommand, options?: { now: string }): {
+  applyCommand(state: TripState, command: TripCommand, options?: { now: string; deferQuestions?: boolean }): {
     state: TripState;
     replies: OutboundMessage[];
     researchRequested: boolean;
     rejection?: { code: string; userMessage: string };
   };
   generateCandidates(state: TripState): Promise<TripCandidate[]>;
+  finalizeTurn?(state: TripState, now: string): { state: TripState; replies: OutboundMessage[] };
   research?(state: TripState): Promise<{ revision: number; candidates: TripCandidate[]; replies: OutboundMessage[] }>;
   install?(state: TripState, revision: number, candidates: TripCandidate[]): { state: TripState; rejection?: { code: string }; replies: OutboundMessage[] };
   guide?(state: TripState, question: string, now?: string): Promise<string>;
@@ -158,7 +159,7 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
         }
         let applied: ReturnType<PlannerAdapter['applyCommand']>;
         try {
-          applied = planner.applyCommand(nextState, command, { now: message.occurredAt });
+          applied = planner.applyCommand(nextState, command, { now: message.occurredAt, deferQuestions: Boolean(planner.finalizeTurn) });
         } catch (error) {
           const text = error instanceof Error && error.message.includes('group constraint has no author')
             ? 'This saved trip has group constraints with missing author information. An operator needs to migrate that information or start a separate trip before planning can continue. The saved plan is unchanged.'
@@ -175,6 +176,11 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
         nextState = applied.state;
         replies.push(...applied.replies.map((reply, replyIndex) => planner.install ? makeMessage(tripId, `${message.eventId}:${index}:${replyIndex}`, { ...reply, proposalRef: reply.proposalRef ? { ...reply.proposalRef, kind: applied.state.status === 'awaiting_acceptance' || applied.state.status === 'approved' ? 'accept' : 'select' } : undefined }) : reply));
         researchRequested = applied.researchRequested;
+      }
+      if (planner.finalizeTurn && !(parsed.kind === 'commands' && parsed.clarificationQuestion) && commands.some(c => c.action.kind === 'update_constraint' || c.action.kind === 'request_plans')) {
+        const final = planner.finalizeTurn(nextState, message.occurredAt);
+        nextState = final.state;
+        replies.push(...final.replies.map((reply, index) => makeMessage(tripId, `questions:${message.eventId}:${index}`, reply)));
       }
       if (parsed.kind === 'commands' && parsed.clarificationQuestion) {
         replies.push(makeMessage(tripId, `clarification:${message.eventId}`, {

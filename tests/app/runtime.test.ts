@@ -77,6 +77,30 @@ afterEach(() => {
 });
 
 describe('application runtime', () => {
+  it('asks at most two readiness questions for a multi-command message and answers a cooldown-blocked request', async () => {
+    const { repository, enrollment, state } = setup();
+    state.roster = enrollment.participants.map(p => ({ memberId: p.memberId, displayName: p.displayName, consented: true }));
+    const conversation = new FakeConversation();
+    conversation.parseInbound.mockImplementation(async message => message.eventId === 'start'
+      ? { kind: 'commands', commands: [0, 1].map(index => ({ commandId: `start-${index}`, eventId: message.eventId, actorId: 'alex', tripId: state.tripId, action: { kind: 'request_plans' as const } })) }
+      : command(message.eventId));
+    const planner = createPlannerAdapter(createResearchProvider({ mode: 'mock', fixtures: defaultFixtures }), enrollment.groupSpaceId);
+    await repository.bootstrapTrip(enrollment, state);
+    const runtime = createApplicationRuntime({ repository, conversation, planner, tripId: state.tripId });
+    try {
+      await runtime.start();
+      await conversation.emit(inbound('start'));
+      const questions = conversation.sent.filter(m => m.text.endsWith('?'));
+      expect(questions).toHaveLength(2);
+      expect(questions.map(m => m.text)).toEqual(['Where are you all leaving from?', 'How many nights are you thinking?']);
+      expect((await repository.loadTrip(state.tripId))?.pendingQuestions).toHaveLength(2);
+      const count = conversation.sent.length;
+      await conversation.emit(inbound('again'));
+      expect(conversation.sent.slice(count).some(m => m.text.includes("Mason's budget"))).toBe(true);
+      expect(conversation.sent.slice(count).some(m => m.text.includes('where you want to go'))).toBe(true);
+      expect(conversation.sent.slice(count).filter(m => m.text.endsWith('?')).length).toBeLessThanOrEqual(2);
+    } finally { await runtime.stop(); repository.close(); }
+  });
   it('reports missing legacy group authors privately without changing the saved trip', async () => {
     const { repository, enrollment, state } = setup();
     state.groupConstraints = [{ memberId: '', field: 'origin', value: { city: 'Chapel Hill', region: 'NC', timeZone: 'America/New_York' }, sourceMessageId: 'legacy-origin', certainty: 'confirmed' }];
