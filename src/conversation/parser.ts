@@ -93,7 +93,9 @@ export function createParser(deps: ConversationDependencies) {
 
   // ----- constraints -----
 
+  const GROUP_WORDS = /\b(?:everyone|everybody|everyone's|everybody's|each of us|all of us|the whole group|the group's|the team's|their|his|her)\b/i;
   function mentionsOtherMember(text: string, senderId: string): boolean {
+    if (GROUP_WORDS.test(text)) return true;
     return trip.members
       .filter((m) => m.userId !== senderId)
       .some((m) => new RegExp(`\\b${escapeRe(m.displayName)}(?:'s)?\\b`, 'i').test(text));
@@ -260,8 +262,14 @@ export function createParser(deps: ConversationDependencies) {
       if (/^(?:hi|hey|hello|yo|hiya|good )/i.test(text)) return reply(msg, 'Hey! Want to plan a trip? Say "let\'s plan a trip" to get started.', 'greeting');
       return reply(msg, 'Sounds good. I\'m here whenever you want to add something or see options.', 'smalltalk');
     }
+    // A request tucked into a longer message ("..., can you show us some options?") is understood by rule, not sent away.
+    const requested: TripAction[] = [];
+    for (let i = unmatched.length - 1; i >= 0; i--) {
+      const clause = unmatched[i]!.replace(GREETING, '').replace(/^(?:(?:and|also|so|then|ok|okay)\s+)+/i, '').replace(/[?!.\s]+$/, '');
+      if (extracted.length && REQUEST_PLANS.test(clause)) { requested.push({ kind: 'request_plans' }); unmatched.splice(i, 1); }
+    }
+    if (extracted.length && unmatched.length === 0) return fromConstraints(msg, ctx, text, extracted, requested);
     const handoffText = extracted.length ? unmatched.join(' ') : text;
-    if (extracted.length && unmatched.length === 0) return fromConstraints(msg, ctx, text, extracted);
 
     const raw = await deps.intentModel.interpret({
       text: handoffText,
@@ -278,7 +286,7 @@ export function createParser(deps: ConversationDependencies) {
     if (extracted.length) {
       // Partly understood by rules, the rest by the model: keep the rules' answers, add anything new the model found.
       const items = [...extracted];
-      const extra: TripAction[] = [];
+      const extra: TripAction[] = [...requested];
       if (intent.intent === 'constraints') {
         for (const value of intent.items) if (!items.some((i) => i.value.field === value.field)) items.push({ value, hedged });
       } else if (intent.intent === 'request_plans') extra.push({ kind: 'request_plans' });

@@ -44,7 +44,7 @@ export const corpus: Case[] = [
   c('my limit is three hundred dollars', { budget: 30000 }, false),
   c("ok so I can only really afford like two hundred bucks for this whole thing", { budget: 20000 }, false),
   c('I can swing $225 all in', { budget: 22500 }),
-  c('I might be able to do $250 but not sure', { reply: /firm max/i, nothing: true }, false),
+  c('I might be able to do $250 but not sure', { reply: /firm max/i, nothing: true }),
   c('My budget might be around $250', { reply: /firm max/i, nothing: true }),
   c("I'm broke lol, maybe $100", { reply: /firm max/i, nothing: true }, false),
   c("Alex's max is $50", { reply: /only take a budget from the person/i, not: ['budget'] }),
@@ -107,7 +107,7 @@ export const corpus: Case[] = [
   c("I don't have a car", { vehicle: false }),
   c('no car for me', { vehicle: false }),
   c("I can't drive", { vehicle: false }),
-  c('we can take my truck', { vehicle: true }, false),
+  c('we can take my truck', { vehicle: true }),
   c("I'll bring my Subaru", { vehicle: true }, false, { soft: true }),
   c('my car fits 4 people', { vehicle: true }, false, { soft: true }),
   c('Does anyone have a car?', { not: ['transport'] }),
@@ -137,7 +137,7 @@ export const corpus: Case[] = [
   c("I’ve got a car and I’m free Nov 14-16", { vehicle: true, avail: ['2026-11-14', '2026-11-16'] }),
   c("I'm free Nov 14-16 and honestly anywhere with a good brewery works", { avail: ['2026-11-14', '2026-11-16'], prefs: /brewer/i }, false),
   c("My max is $250. Also I'm vegetarian, and I want to go to Asheville.", { budget: 25000, mustdos: /vegetarian/, region: /Asheville/ }),
-  c("budget $200, free Nov 21-22, can you show us some options?", { budget: 20000, avail: ['2026-11-21', '2026-11-22'], actions: ['request_plans'] }, false),
+  c("budget $200, free Nov 21-22, can you show us some options?", { budget: 20000, avail: ['2026-11-21', '2026-11-22'], actions: ['request_plans'] }),
 
   // ---------- asking for options / starting ----------
   c("Hi, let's plan a trip", { actions: ['request_plans'] }),

@@ -14,7 +14,7 @@ export interface Extracted {
 }
 
 const MONEY = '\\$\\s*([\\d,]+(?:\\.\\d{1,2})?)|([\\d,]+(?:\\.\\d{1,2})?)\\s*(?:dollars|bucks|usd)';
-const BUDGET_KEYWORD = '(?:budget|max(?:imum)?|cap|limit|spend|afford|up to|at most|no more than|can (?:only )?do|can (?:only )?pay|can swing|only (?:got|have|has)|all[- ]in)';
+const BUDGET_KEYWORD = '(?:budget|max(?:imum)?|cap|limit|spend|afford|up to|at most|no more than|(?:can|could|may|might|able to) (?:only )?(?:do|pay|swing|spend|afford)|can swing|able to (?:do|pay|spend|afford)|only (?:got|have|has)|all[- ]in)';
 const BUDGET_AFTER = new RegExp(`\\b${BUDGET_KEYWORD}\\b[^.!?\\n$\\d]{0,30}?(?:${MONEY})`, 'i');
 const BUDGET_BEFORE = new RegExp(`(?:${MONEY})\\s*(?:(?:is|'s)\\s+(?:my|the|our)\\s+(?:(?:firm|hard|absolute|final)\\s+)?)?(?:max|maximum|total|tops|cap|limit|all[- ]in|budget|at most)\\b`, 'i');
 const BUDGET_BARE = /\b(?:budget|max(?:imum)?|cap|limit)\b\s*(?:is|of|:|=|around|about)?\s*([\d,]+(?:\.\d{1,2})?)\b(?!\s*[a-z])/i;
@@ -55,8 +55,11 @@ function budgetFrom(sentence: string): number | null {
   return raw ? parseDollarsToCents(raw) : null;
 }
 
+/** A trailing request or question clause (", can you show us some options?") says nothing about how sure the earlier facts are. */
+const TRAILING_REQUEST = /[,;]\s*(?:and\s+|so\s+)?(?:(?:can|could|would|will)\s+you|please|pls|what|how|where|when)\b[^,;]*$/i;
+
 function extractSentence(s: string, reference: string, pending: ConstraintField | undefined, out: Extracted[]): void {
-  const hedged = HEDGE.test(s);
+  const hedged = HEDGE.test(s.replace(TRAILING_REQUEST, ''));
   const push = (value: ConstraintValue, extra: Partial<Extracted> = {}) => out.push({ value, hedged, ...extra });
   let m: RegExpExecArray | null;
 
@@ -88,7 +91,7 @@ function extractSentence(s: string, reference: string, pending: ConstraintField 
     const maxTravelMinutes = parseMaxTravelMinutes(value);
     push({ field: 'region', value, ...(maxTravelMinutes !== undefined ? { maxTravelMinutes } : {}) });
   }
-  if (/\bi(?:'ve|\s+have|\s+got)\s+(?:got\s+)?(?:a\s+|my\s+)?(?:own\s+)?(?:car|vehicle|truck|suv)\b|\bi\s+can\s+drive\b|\bi(?:'ll| will)\s+drive\b/i.test(s)) push({ field: 'transport', value: 'own_vehicle', vehicleAvailable: true });
+  if (/\bi(?:'ve|\s+have|\s+got)\s+(?:got\s+)?(?:a\s+|my\s+)?(?:own\s+)?(?:car|vehicle|truck|suv)\b|\bi\s+can\s+drive\b|\bi(?:'ll| will)\s+drive\b|\b(?:we|i)(?:'ll| will| can| could)?\s+(?:take|use|bring|drive)\s+(?:my|our|the)\s+(?:own\s+)?(?:car|truck|suv|van|vehicle)\b/i.test(s)) push({ field: 'transport', value: 'own_vehicle', vehicleAvailable: true });
   else if (!s.includes('?') && THIRD_PERSON_VEHICLE.test(s)) push({ field: 'transport', value: 'own_vehicle', vehicleAvailable: true });
   else if (/\bi\s+(?:don'?t|do not)\s+have\s+(?:a\s+)?(?:car|vehicle)\b|\bno car\b|\bi\s+(?:can'?t|cannot)\s+drive\b/i.test(s)) push({ field: 'transport', value: 'no_vehicle', vehicleAvailable: false });
 
