@@ -105,3 +105,11 @@ Live startup now warns if fewer than two participants are enrolled. Enrollment i
 `npm run diagnose:trip -- --trip TRIP_ID [--event EVENT_ID]` is a read-only SQLite diagnostic. It prints budget/date record presence and certainty per internal member ID without values, dates, phone numbers or message text, and optionally whether an event was recorded. Missing Mason records cannot be diagnosed as data loss without confirmation that the messages were sent, received, attributed and parsed. Jeffrey should run it against the actual live database and compare his local provider/parse evidence; C has not accessed that database or sent any live messages.
 
 Mason owns planner-level readiness summaries/copy and preference merge semantics; his pending message-turn fixes should be checked with C's deferQuestions/finalizeTurn adapter before the next integration. No planner or conversation source snapshots are included in C's follow-up.
+
+## Readiness ownership after Mason's live DM fixes
+
+Supersedes the private NOT_READY summary and question-copy behavior described above. C now passes B's readiness replies and wording through unchanged. The duplicate missingSummary reply and its text filter, plus warmQuestion, have been removed. Integrate Mason's latest always-answer and friendly-copy commits together with this change; the older local B snapshot does not provide that behavior.
+
+C retains deferQuestions/finalizeTurn: intermediate questions are withheld without recording them as asked, and only final-state questions are recorded and delivered once per inbound message. Mason reviewed that behavior against his cooldown rules. Fixed enrollment and the startup warning for fewer than two participants remain in C. The planner's invitation wording does not dynamically enroll anyone; the organizer still has to update the configured roster.
+
+No live messages or research calls were sent for this cleanup. Combined verification and the next live DM test remain coordinated by Jeffrey.
