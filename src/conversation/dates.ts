@@ -54,6 +54,8 @@ const ISO_RANGE = new RegExp(`(\\d{4}-\\d{2}-\\d{2})(?:\\s*${SEP}\\s*(\\d{4}-\\d
 const MD_RANGE = new RegExp(`\\b${MONTH}\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:\\s*${SEP}\\s*(?:the\\s+)?(?:${MONTH}\\.?\\s+)?(\\d{1,2})(?:st|nd|rd|th)?)?\\b`, 'gi');
 const SLASH_RANGE = new RegExp(`\\b(\\d{1,2})/(\\d{1,2})(?:\\s*${SEP}\\s*(?:(\\d{1,2})/)?(\\d{1,2}))?\\b`, 'gi');
 // "14-16 Nov", "14th Nov", "14 to 16 November": day first. "may" is left out because "20 may" is far more often a verb.
+/** "all of November", "anytime in Nov", "the whole month of November": the rest of that month (this year's, or next year's once it is over). */
+const WHOLE_MONTH = new RegExp(`\\b(?:(?:all|any\\s*time|whenever|sometime|some\\s+time)\\s+(?:of\\s+|in\\s+|during\\s+)?(?:the\\s+month\\s+of\\s+)?|(?:the\\s+)?(?:whole|entire|full)\\s+(?:month\\s+of\\s+)?|throughout\\s+)${MONTH}\\b`, 'gi');
 const DAY_FIRST_MONTH = '(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
 const DM_RANGE = new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?(?:\\s*${SEP}\\s*(\\d{1,2})(?:st|nd|rd|th)?)?\\s+(?:of\\s+)?${DAY_FIRST_MONTH}\\b`, 'gi');
 // "Nov 14 and 15", "Nov 14, 15 and 16": several days of one month, said as a list.
@@ -70,6 +72,11 @@ const iso = (y: number, m: number, d: number) => `${y}-${String(m).padStart(2, '
  * is the reference year, or the next year if that date has already passed. Impossible or reversed
  * ranges are dropped. Returns de-duplicated windows sorted by start (at most 6).
  */
+/** True for "all of November" and the like: on its own it answers "when are you free?". */
+export function mentionsWholeMonth(input: string): boolean {
+  return new RegExp(WHOLE_MONTH.source, 'i').test(input);
+}
+
 export function parseDateWindows(input: string, reference: string): ParsedWindow[] {
   const ref = new Date(reference);
   if (Number.isNaN(ref.getTime())) return [];
@@ -93,7 +100,18 @@ export function parseDateWindows(input: string, reference: string): ParsedWindow
     out.push({ start, end });
   };
 
-  let rest = input.replace(WEEKDAY, ' ');   // "Fri Nov 14 - Sun Nov 16" is Nov 14 - Nov 16
+  let rest = input.replace(WEEKDAY, ' ');
+  rest = rest.replace(WHOLE_MONTH, (_m, word: string) => {
+    const i = monthIndex(word.toLowerCase());
+    if (i === undefined) return _m;
+    const m = i + 1;
+    const lastDay = (y: number) => new Date(Date.UTC(y, m, 0)).getUTCDate();
+    let y = refYear;
+    if (iso(y, m, lastDay(y)) < today) y += 1;
+    const first = iso(y, m, 1);
+    out.push({ start: first < today ? today : first, end: iso(y, m, lastDay(y)) });
+    return ' ';
+  });   // "Fri Nov 14 - Sun Nov 16" is Nov 14 - Nov 16
   rest = rest.replace(ISO_RANGE, (_m, a: string, b?: string) => {
     const end = b ?? a;
     if (isValidIsoDate(a) && isValidIsoDate(end) && end >= a) out.push({ start: a, end });

@@ -120,8 +120,11 @@ describe('tapbacks that arrive as text', () => {
     expect(cmds(await liked('Liked “A weekend in DC, Nov 14-16. In DC: Old Town, Central Market.”'))[0]?.action).toEqual(second);
   });
 
-  it('a like on the single plan awaiting acceptance is an acceptance of that exact version', async () => {
-    expect(cmds(await liked('Liked “DC food and museums is the pick. Choosing it isn\'t agreeing to pay.”', { actionable: [accept] }))[0]?.action).toEqual({ kind: 'accept_candidate', candidateId: 'dm-r12-gem-opt-2', revision: 12 });
+  it('a like typed as text on a plan awaiting acceptance never accepts: it asks for "accept <id> v<n>" or "I\'m in"', async () => {
+    const r = await liked('Liked “DC food and museums is the pick. Choosing it isn\'t agreeing to pay.”', { actionable: [accept] });
+    expect(cmds(r)).toEqual([]);
+    expect(r.kind).toBe('reply');
+    expect(r.kind === 'reply' && r.message.text).toMatch(/accept dm-r12-gem-opt-2 v12.*I'm in/);
   });
 
   it('a like on something that is not a proposal is ignored, never answered with "I didn\'t catch that"', async () => {

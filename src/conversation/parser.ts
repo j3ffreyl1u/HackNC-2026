@@ -17,6 +17,8 @@ import { formatCents } from './money.js';
 import type { ConversationDependencies } from './types.js';
 
 const APPROVE_REACTIONS = new Set(['👍', '👍🏻', '👍🏼', '👍🏽', '👍🏾', '👍🏿', '❤️', '❤', '✅', '✔️', 'like', 'love', 'thumbsup', '+1']);
+/** Taking back one's own yes to the plan. Only meaningful while a plan is up for approval or approved. */
+const WITHDRAW = /^(?:i'?m out|im out|count me out|i'?m not in(?: anymore)?|i'?m no longer in|take (?:back |away )?my (?:yes|acceptance|approval|ok)(?: back)?|(?:i )?withdraw(?: my (?:yes|acceptance|approval))?|i (?:have )?changed my mind|i take it back)$/i;
 const YES = /^(?:(?:ok(?:ay)?|yeah|yes|alright|sure)[, ]+)?(?:(?:yes|yep|yeah|yup|sure)(?:[ ,]+(?:it is|that is|that'?s right|that'?s it|correct|exactly|please|firm))?|ok|okay|accept|accepted|i accept|i'?m in(?:\s+too)?|me too|i'?m down|count me in|sounds good|works for me|let'?s do it|do it|confirm|confirmed|correct|that'?s right|exactly)[.!]*$/i;
 /** "yes that works", "sounds good to me", "all good": agreement, as long as nothing in it asks for a change. */
 const AGREES_START = /^(?:yes|yeah|yep|yup|yea|sure|ok|okay|absolutely|definitely|totally|sounds|that works|that'?ll work|works|all good|fine|good|perfect|great|i'?m (?:good|fine|down|in)|let'?s do it|love it|looks good)\b/i;
@@ -30,7 +32,7 @@ const NO = /^(no|nope|nah|decline|i decline|not for me|not now|no thanks|pass)[.
 const WRONG = /^(?:(?:no|nope|nah)[ ,]+)?(?:that'?s|that is|it'?s|it is|this is)?\s*(?:not right|not correct|wrong|incorrect|not what i (?:said|meant))[.!]*$/i;
 const ID = '([A-Za-z0-9][\\w:.\\-]*)';
 const REQUEST_PLANS = /^(?:(?:please|pls|ok|okay|alright|so)[,\s]+)?(?:(?:can|could) you\s+)?(?:(?:show|give|get|send)\s+(?:me\s+|us\s+)?(?:the\s+|some\s+|a few\s+|a couple of\s+|a couple\s+)?(?:trip\s+)?(?:options|plans|proposals|itineraries|ideas)|(?:pull|put) together\s+(?:a\s+|some\s+)?(?:(?:few|couple of|couple)\s+)?(?:trip\s+)?(?:options|plans|ideas)(?:\s+for us)?|(?:plan|research)\s+(?:it|this|the trip|our trip)|find\s+(?:us\s+)?(?:trip\s+)?options|what are (?:our|the) options|(?:(?:let'?s|lets|can we|could we|we should|i want to|we want to|i'?d like to)\s+)?(?:start|begin|get started)(?:\s+(?:on\s+)?(?:planning|plan))?(?:\s+(?:a|the|our|this))?(?:\s+(?:road\s+)?trip)?|(?:let'?s|lets|can we|could we|we should|i want to|we want to|i'?d like to)\s+plan(?:\s+(?:a|the|our|this))?(?:\s+(?:road\s+)?trip)?(?:\s+together)?)$/i;
-const STATUS = /^(?:(?:so\s+)?(?:what'?s|whats|how'?s|hows)\s+(?:the\s+)?(?:status|progress|plan|it going)(?:\s+(?:so far|looking|going))?|where (?:are we|do we stand)(?:\s+(?:at|on this))?|what do you have(?:\s+so far)?|any (?:updates?|news|progress)|status(?: update)?)$/i;
+const STATUS = /^(?:(?:so\s+)?(?:what'?s|whats|what is)\s+(?:happening|going on|up with (?:the |our )?(?:trip|plan))(?:\s+(?:right now|now|so far|with (?:the |our )?(?:trip|plan)))?|(?:so\s+)?(?:what'?s|whats|how'?s|hows)\s+(?:the\s+)?(?:status|progress|plan|it going)(?:\s+(?:so far|looking|going))?|where (?:are we|do we stand)(?:\s+(?:at|on this))?|what do you have(?:\s+so far)?|any (?:updates?|news|progress)|status(?: update)?)$/i;
 const ABOUT_SOMEONE = /^(?:so\s+)?(?:what(?:'s|s| did| has| does| is)\s+(\w+)\s+(?:say|said|tell you|told you|put|give you|gave you|send|sent|want|think|thinking|saying)|(?:did|has)\s+(\w+)\s+(?:answer|reply|respond|text|say anything|send anything|tell you anything)|(?:any word from|have you heard from|heard from|anything from)\s+(\w+)|how(?:'s| is)\s+(\w+)\s+doing|how(?:'s| is)\s+(\w+?)(?:'s|s)?\s+(?:planning|progress)(?:\s+going)?|(?:is|has|did)\s+(\w+)\s+(?:still\s+)?(?:planning|done|finished|finish|ready|all set|set|in|on board|there|responded|replied)(?:\s+(?:planning|yet|so far))?)(?:\s+(?:yet|so far))?$/i;
 const GREETING = /^(?:hi|hey|hello|yo|hiya|good (?:morning|afternoon|evening))\b[,!.\s]*/i;
 const REQUEST_FUNDING = /^(?:request|start|set up|send)\s+(?:the\s+)?(?:contributions?|funding|contribution requests)$/i;
@@ -77,7 +79,8 @@ function ackPart(v: ConstraintValue, tentative: boolean): string {
     case 'availability': return `you're free ${v.value.filter((w): w is { start: string; end: string } => 'start' in w).map(formatWindow).join(' or ')}`;
     case 'duration': return `${v.value} night${v.value === 1 ? '' : 's'}`;
     case 'origin': return `leaving from ${titleCase(v.value)}`;
-    case 'region': return /^(?:within|any)\b/.test(v.value) ? v.value : /\b(?:beach(?:es)?|coast|mountains?|lakes?|shore|countryside)\b/i.test(v.value) ? (/^the\b/i.test(v.value) ? v.value : `the ${v.value}`) : titleCase(v.value);
+    // "going to" so a destination is never read as a second starting point ("leaving from Chapel Hill and Washington").
+    case 'region': return /^(?:within|any)\b/.test(v.value) ? v.value : `going to ${/\b(?:beach(?:es)?|coast|mountains?|lakes?|shore|countryside)\b/i.test(v.value) ? (/^the\b/i.test(v.value) ? v.value : `the ${v.value}`) : titleCase(v.value)}`;
     case 'transport': return v.value === 'plane' ? "you're flying" : v.value === 'driving' ? "you're driving" : v.vehicleAvailable === true ? "there's a car" : v.vehicleAvailable === false ? 'no car for you' : `transport: ${v.value}`;
     case 'preferences': if (v.value.length > 0 && v.value.every((x) => x.startsWith('not:'))) return `I'll drop ${list(v.value.map((x) => x.slice(4)))} from what you're into`;
       return v.value.includes('no preference') ? 'no strong preferences' : `you ${tentative ? 'might be' : "'re"} into ${list(v.value)}`.replace("you 're", "you're");
@@ -547,6 +550,10 @@ export function createParser(deps: ConversationDependencies) {
     // Money talk that is not a question about the log: nothing is paid or recorded here.
     if (talkativeChat && /\b(?:venmo|zelle|paypal|cash\s*app|apple\s*pay)\b/i.test(lean) && /^(?:(?:can|could|should|let)\b.*|(?:venmo|zelle|paypal|cash\s*app)\b.*)$/i.test(lean)) return reply(msg, READ_ONLY_MONEY, 'read-only-money', true);
     if (talkativeChat && /\b(?:add|put|send|save|sync)\b.*\b(?:calendar|cal|invite|ics|reminder)\b/i.test(lean) && !/^(?:how|what|when|where|why|who|which|do|does|did|is|are)\b/i.test(lean)) return reply(msg, "I can't add things to a calendar yet. Ask me for the plan and I'll list the dates so you can add them yourself.", 'no-calendar', true);
+    // "can we fly there?" is a question about the plan: both are fine, and saying which is how it gets saved.
+    if (talkativeChat && /^(?:(?:can|could|should|shall|would)\s+(?:we|i)|what about|how about|do we|are we)\b.*\b(?:fly|flying|flight|flights|plane)\b/i.test(lean) && !/\bfly[- ]?fishing\b/i.test(lean)) {
+      return reply(msg, 'We can plan it either way. Say "flying" or "driving" and I\'ll plan around it.', 'fly-or-drive', true);
+    }
     // "can we do a day earlier": the dates are theirs to restate.
     if (talkativeChat && /^(?:(?:can|could|would)\s+we|let'?s|how about|what about)\s+(?:do\s+|go\s+|leave\s+|start\s+|make\s+it\s+)?(?:it\s+)?(?:a|one|1|two|2|a\s+couple\s+of)\s+days?\s+(?:earlier|later|before|after)$/i.test(lean)) return reply(msg, 'Tell me the exact dates you want and I\'ll update the plan, like "free Nov 13-15".', 'dates-shift', true);
     // Spending from the simulated fund: "I spent $60 on gas", "we paid 300 for the hotel", "bought food for $40", "log $20 for parking". The app asks for a yes first.
@@ -713,10 +720,14 @@ export function createParser(deps: ConversationDependencies) {
       const numberedFits = numberedTarget !== undefined && (rest !== '' && numberedTarget.description.toLowerCase().startsWith(rest));
       const target = byName ?? (numberedFits ? numberedTarget : undefined);
       if (!target) return { kind: 'ignored', reason: 'reaction target is not a proposal' };
+      // A tapback typed as text quotes words, not a version, so it cannot prove which revision was meant. Picking is harmless;
+      // agreeing is a commitment, so it needs an explicit word. (A native iMessage reaction names the exact message and is safe.)
+      if ((target.kind as string) === 'accept') return reply(msg, `Thanks for the thumbs up on ${target.description}! A tapback that comes through as text can't tell me which version you meant, so to lock it in please reply "accept ${target.candidateId} v${target.revision}" or just "I'm in".`, 'tapback-confirm', true);
       return one(msg, ctx, target.kind === 'accept'
         ? { kind: 'accept_candidate', candidateId: target.candidateId, revision: target.revision }
         : { kind: 'select_candidate', candidateId: target.candidateId, revision: target.revision });
     }
+    if ((ctx.status === 'awaiting_acceptance' || ctx.status === 'approved') && WITHDRAW.test(text.replace(/[?!.\s]+$/, ''))) return one(msg, ctx, { kind: 'withdraw_acceptance' });
     if (THUMBS.test(text)) {
       // A thumbs-up to "does that work for you?" is a yes to the plan so far, the same as typing "yes".
       if (ctx.confirmBasics?.length && ctx.actionable.length === 0 && !ctx.pendingConfirmation) return fromConstraints(msg, ctx, text, ctx.confirmBasics.map((value) => ({ value, hedged: false })));

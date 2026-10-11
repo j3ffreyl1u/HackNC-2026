@@ -215,6 +215,20 @@ function selectCandidate(state: TripState, command: TripCommand, candidateId: st
   return { state: next, replies: [{ audience: GROUP, text, proposalRef: { candidateId, revision: state.revision } }], researchRequested: false };
 }
 
+function withdrawAcceptance(state: TripState, command: TripCommand): ApplyResult {
+  const chosen = state.candidates.find((c) => c.candidateId === state.selectedCandidateId);
+  const open = chosen !== undefined && (state.status === 'awaiting_acceptance' || state.status === 'approved');
+  const mine = open ? state.acceptances.filter((a) => a.memberId === command.actorId && a.candidateId === chosen.candidateId && a.revision === state.revision) : [];
+  if (!open || mine.length === 0) {
+    return reject(state, command.actorId, 'AMBIGUOUS_ACTION', "You haven't said yes to a plan yet, so there's nothing to take back.");
+  }
+  const acceptances = state.acceptances.filter((a) => !mine.includes(a));
+  const who = displayName(state, command.actorId);
+  const next: TripState = { ...state, acceptances, status: 'awaiting_acceptance' };
+  const text = `${who} took back their yes, so ${chosen.title} isn't approved yet. ${who}, say "I'm in" if that changes, or tell me what you'd like different.`;
+  return { state: next, replies: [{ audience: GROUP, text, proposalRef: { candidateId: chosen.candidateId, revision: state.revision } }], researchRequested: false };
+}
+
 function acceptCandidate(state: TripState, command: TripCommand, candidateId: string, revision: number): ApplyResult {
   if (revision !== state.revision) {
     return reject(state, command.actorId, 'STALE_REVISION', 'That plan has changed since you replied. Please look at the latest version and accept it again.');
@@ -275,6 +289,8 @@ export function applyCommand(state: TripState, command: TripCommand, options: Ap
       return selectCandidate(state, command, action.candidateId, action.revision);
     case 'accept_candidate':
       return acceptCandidate(state, command, action.candidateId, action.revision);
+    case 'withdraw_acceptance':
+      return withdrawAcceptance(state, command);
     case 'ask_guide':
     case 'log_purchase':   // recorded in the simulated bank by the app, not planned here
     case 'relay':   // messages between people are sent by the app, not planned here

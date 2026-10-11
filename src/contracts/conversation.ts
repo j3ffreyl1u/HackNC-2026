@@ -46,6 +46,8 @@ export type TripAction =
   | { kind: 'request_plans' }
   | { kind: 'select_candidate'; candidateId: string; revision: number }
   | { kind: 'accept_candidate'; candidateId: string; revision: number }
+  /** Takes back this person's own yes to the plan that is up for approval (or approved). */
+  | { kind: 'withdraw_acceptance' }
   | { kind: 'ask_guide'; question: string }
   | { kind: 'request_funding'; topic?: 'status' | 'remind' | 'wrap_up' }
   | { kind: 'log_purchase'; category: string; what: string; dollars?: number; shared?: boolean }
