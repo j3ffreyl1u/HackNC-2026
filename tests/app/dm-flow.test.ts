@@ -132,8 +132,11 @@ describe('first live DM scenario, end to end (A parser + C runtime + B planner, 
       await t.say(JEFF, "Hey let's plan a trip"),
       await t.say(JEFF, "I'm leaving from Chapel Hill, 2 nights, I have a car, I want to go to Asheville, I'm free Nov 14-16, my max is $250, I like hiking"),
     ];
-    // First Mason is asked whether the plan so far works for him (that names Jeffrey, who suggested it) ...
-    expect(steps.flatMap((r) => r.mason).some((x) => /Jeffrey suggested leaving from Chapel hill for 2 nights, going to Asheville, and someone has a car\. Does that work for you/i.test(x))).toBe(true);
+    // Mason is not texted out of the blue while Jeffrey answers ...
+    expect(steps.flatMap((r) => r.mason)).toEqual([]);
+    // ... but the moment he starts talking, he is asked whether the plan so far works for him (that names Jeffrey, who started it) ...
+    steps.push(await t.say(MASON, 'I want to plan a trip'));
+    expect(steps.flatMap((r) => r.mason).some((x) => /^Hey Mason! Jeffrey started planning a trip with you\. So far the idea is leaving from Chapel Hill for 2 nights, going to Asheville, with a car\. Does that work for you/i.test(x))).toBe(true);
     steps.push(await t.say(MASON, 'yes that works'));
     // ... and only then his own dates question, one at a time.
     const datesQuestion = /which dates/i;
@@ -214,14 +217,28 @@ describe('first live DM scenario, end to end (A parser + C runtime + B planner, 
   it('starts looking for options on its own once the last detail is in, and tells both people', async () => {
     const t = await live();
     const jeff = await t.say(JEFF, "I'm leaving from Chapel Hill, 2 nights, I want to go to Asheville, I have a car, I'm free Nov 14-17, my max is $500, I like hiking");
-    expect(jeff.mason.some((x) => /Does that work for you/i.test(x))).toBe(true);   // Mason is asked about the basics right away
-    await t.say(MASON, "I'm free Nov 14-17, my max is $500, I like food");
+    expect(jeff.mason).toEqual([]);                                                   // Mason is not texted out of the blue
+    const first = await t.say(MASON, "I'm free Nov 14-17, my max is $500, I like food");
+    expect(first.mason.some((x) => /Does that work for you/i.test(x))).toBe(true);    // he is asked about the basics when he speaks up
     expect((await t.state()).status).toBe('gathering');                              // and the search waits for his answer
-    expect((await t.state()).status).toBe('gathering');
     const r = await t.say(MASON, 'sounds good');
     expect(r.jeff.some((x) => /looking up options now/i.test(x))).toBe(true);
     expect(r.mason.some((x) => /looking up options now/i.test(x))).toBe(true);
     expect((await t.state()).revision).toBeGreaterThan(1);   // the search ran (the mock data has no Asheville trip, so it reports that)
+    await t.stop();
+  });
+
+  it("when Jeffrey asks for options and Mason's details are missing, Mason is messaged for them (once), and Jeffrey is told", async () => {
+    const t = await live();
+    await t.say(JEFF, "I'm leaving from Chapel Hill, 2 nights, I want to go to Asheville, I have a car, I'm free Nov 14-17, my max is $500, I like hiking");
+    const ask = await t.say(JEFF, 'show us some options');
+    expect(ask.mason.length).toBe(1);
+    expect(ask.mason[0]).toMatch(/^Hey Mason! Jeffrey is ready to see trip options and is just waiting on your /);
+    expect(questions(ask.mason).length).toBe(1);                                      // one question, so it is easy to answer
+    expect(ask.mason[0]).not.toMatch(/\$|500/);                                       // nobody's budget is in it
+    expect(ask.jeff.some((x) => /nudge Mason/i.test(x))).toBe(true);                  // Jeffrey knows it was passed on
+    const again = await t.say(JEFF, 'show us some options');
+    expect(again.mason).toEqual([]);                                                  // not nagged again straight away
     await t.stop();
   });
 });

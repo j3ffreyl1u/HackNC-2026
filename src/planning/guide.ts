@@ -11,6 +11,8 @@ export interface GuideAnswer {
   text: string;
   /** Exactly the sources the answer rests on, with their links. */
   evidence: SourceEvidence[];
+  /** The same answer as a short, easy-to-read text message: a few lines, no raw source dumps. This is what goes to chat. */
+  short?: string;
   /** `none` when no research result backs the answer. */
   mode: 'fixture' | 'live' | 'none';
 }
@@ -87,6 +89,30 @@ function effectOf(state: TripState, candidate: TripCandidate | undefined, option
   };
 }
 
+const clip = (text: string, max: number) => (text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`);
+
+/** "kayak.com" from a source's title or link, never the long redirect address. */
+function siteName(e: SourceEvidence): string {
+  const fromTitle = /^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/i.exec(e.title.trim());
+  if (fromTitle) return e.title.trim().toLowerCase();
+  try { return new URL(e.url).hostname.replace(/^www\./, ''); } catch { return clip(e.title, 30); }
+}
+
+/** A few lines a person can read at a glance: up to three ideas with a price, and the sites they came from. */
+function shortGuideText(asked: string, shown: readonly Effect[], evidence: readonly SourceEvidence[], overCap: number, basis: string): string {
+  const lines = [`Based on ${basis}, here's what I'd look at for "${clip(asked, 60)}":`];
+  shown.forEach((e, i) => {
+    const place = [...new Set(e.option.stops.map((s) => s.location))][0];
+    const price = e.unknown.length > 0 ? "couldn't find a price" : `adds about ${formatUsd(e.lowCents)}-${formatUsd(e.highCents)} each`;
+    lines.push(`${i + 1}. ${clip(e.option.name, 50)}${place ? ` (${clip(place, 30)})` : ''}: ${price}`);
+  });
+  if (overCap > 0) lines.push(`I left out ${overCap === 1 ? 'one idea' : `${overCap} ideas`} that would go over someone's budget.`);
+  // A short link is fine to show; a long redirect address is not, so those become just the site name.
+  const sources = [...new Map(evidence.map((e) => [siteName(e), e])).entries()].slice(0, 3).map(([site, e]) => (e.url.length <= 70 ? `${site}: ${e.url}` : site));
+  if (sources.length > 0) lines.push(`Sources: ${sources.join(', ')}. Prices are estimates.`);
+  return lines.join('\n');
+}
+
 function describeAlternative(effect: Effect, evidence: ReadonlyMap<string, SourceEvidence>): string {
   const { option } = effect;
   const places = [...new Set(option.stops.map((s) => s.location))].join(', ');
@@ -147,6 +173,7 @@ export async function answerGuideQuestion(
     const reasons = overCap > 0 ? ` ${overCap === 1 ? 'One option I found would' : `${overCap} options I found would`} put at least one person over their limit, so I left ${overCap === 1 ? 'it' : 'them'} out.` : '';
     return {
       text: `I couldn't find a sourced answer to that for your trip.${reasons} ${result.limitations.join(' ')}`.trim(),
+      short: `I couldn't find a good answer to that for your trip yet.${overCap > 0 ? ` What I did find would put someone over their budget, so I left it out.` : ''} Want to ask it another way?`,
       evidence: [],
       mode: result.mode,
     };
@@ -170,5 +197,5 @@ export async function answerGuideQuestion(
       : "Nothing here is part of a plan yet.",
   );
   lines.push(...result.limitations);
-  return { text: lines.join('\n'), evidence, mode: result.mode };
+  return { text: lines.join('\n'), short: shortGuideText(asked, shown, evidence, overCap, !candidate ? 'your trip so far' : state.status === 'approved' ? 'your approved plan' : 'the plan up for approval'), evidence, mode: result.mode };
 }

@@ -4,7 +4,7 @@ import { applyCommand, installCandidates } from '../planning/commands.js';
 import { planTrip } from '../planning/generate.js';
 import { answerGuideQuestion } from '../planning/guide.js';
 import { publicFeasibilitySummary, reprice } from '../planning/budget.js';
-import { checkReadiness, openQuestionKeys } from '../planning/readiness.js';
+import { checkReadiness, openQuestionKeys, outstandingForOthers } from '../planning/readiness.js';
 import { recordQuestions } from '../planning/questions.js';
 import type { ResearchProvider } from '../research/types.js';
 import type { PlannerAdapter } from './runtime.js';
@@ -148,6 +148,23 @@ export function createPlannerAdapter(provider: ResearchProvider, spaceId: string
       }
       return { ...result, state: result.state === before ? state : fromState(result.state, state), replies: replies(result.replies) };
     },
+    nudgeMissing(state, actorId, now) {
+      const before = toPlanningState(state);
+      // Only once the person asking has actually given details; an opening "let's plan a trip" is not a reason to chase anyone.
+      const gaveSomething = (before.memberConstraints[actorId]?.length ?? 0) > 0 || before.groupConstraints.some((c) => c.memberId === actorId);
+      if (!gaveSomething) return { state, replies: [] };
+      const tenMinutes = 10 * 60_000;
+      const recently = (id: string) => before.pendingQuestions.some((q) => q.audience.kind === 'private' && q.audience.memberId === id && Date.parse(now) - Date.parse(q.askedAt) < tenMinutes);
+      const targets = outstandingForOthers(before, actorId).filter((t) => !recently(t.memberId));
+      if (targets.length === 0) return { state, replies: [] };
+      const who = before.roster.find((m) => m.memberId === actorId)?.displayName ?? 'Someone';
+      const list = (items: string[]) => (items.length <= 1 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`);
+      const nudges = targets.map((t) => {
+        const name = before.roster.find((m) => m.memberId === t.memberId)?.displayName ?? '';
+        return { memberId: t.memberId, text: `Hey ${name}! ${who} is ready to see trip options and is just waiting on your ${list(t.items)}.\n\n${t.question.text.replace(/^Hey \w+! /, '')}` };
+      });
+      return { state: fromState(recordQuestions(before, targets.map((t) => t.question), now), state), replies: replies(nudges.map((n) => ({ audience: { kind: 'private' as const, memberId: n.memberId }, text: n.text }))) };
+    },
     finalizeTurn(state, now, actorId) {
       const before = toPlanningState(state);
       const { questions } = checkReadiness(before, { now, ...(actorId !== undefined ? { actorId } : {}) });
@@ -165,7 +182,8 @@ export function createPlannerAdapter(provider: ResearchProvider, spaceId: string
     },
     async guide(state, question, now) {
       const answer = await answerGuideQuestion(toPlanningState(state), question, provider, { now });
-      return `${answer.text}\n${answer.evidence.map(e => `${e.title}: ${e.url}`).join('\n')}`;
+      // Chat gets the short version: a few lines and the site names, not the full text with long source links.
+      return answer.short ?? answer.text;
     },
   };
 }

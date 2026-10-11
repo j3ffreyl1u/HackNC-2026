@@ -21,6 +21,8 @@ export interface PlannerAdapter {
     rejection?: { code: string; userMessage: string };
   };
   generateCandidates(state: TripState): Promise<TripCandidate[]>;
+  /** Ask whoever is holding things up for what is missing. Used when someone asks for options too early. */
+  nudgeMissing?(state: TripState, actorId: string, now: string): { state: TripState; replies: OutboundMessage[] };
   finalizeTurn?(state: TripState, now: string, actorId?: string): { state: TripState; replies: OutboundMessage[] };
   research?(state: TripState): Promise<{ revision: number; candidates: TripCandidate[]; replies: OutboundMessage[] }>;
   install?(state: TripState, revision: number, candidates: TripCandidate[]): { state: TripState; rejection?: { code: string }; replies: OutboundMessage[] };
@@ -184,6 +186,13 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
           throw new Error('Planner returned a state for another trip or an invalid revision step.');
         }
         nextState = applied.state;
+        // Asked for options too early? Message whoever is holding things up, so it is not left to the requester to chase them.
+        if (command.action.kind === 'request_plans' && applied.rejection?.code === 'NOT_READY' && planner.nudgeMissing) {
+          const nudged = planner.nudgeMissing(nextState, member.memberId, message.occurredAt);
+          nextState = nudged.state;
+          replies.push(...nudged.replies.map((reply, nudgeIndex) => makeMessage(tripId, `nudge:${message.eventId}:${nudgeIndex}`, reply)));
+          if (nudged.replies.length > 0) replies.push(makeMessage(tripId, `nudged:${message.eventId}`, { audience: { kind: 'private', memberId: member.memberId }, text: `I'll nudge ${nudged.replies.map((r) => (r.audience.kind === 'private' ? state.roster?.find((m) => m.memberId === (r.audience as { memberId: string }).memberId)?.displayName : undefined)).filter(Boolean).join(' and ')} for what I'm missing and let you know as soon as I have it.` }));
+        }
         replies.push(...applied.replies.map((reply, replyIndex) => planner.install ? makeMessage(tripId, `${message.eventId}:${index}:${replyIndex}`, { ...reply, proposalRef: reply.proposalRef ? { ...reply.proposalRef, kind: applied.state.status === 'awaiting_acceptance' || applied.state.status === 'approved' ? 'accept' : 'select' } : undefined }) : reply));
         researchRequested = applied.researchRequested;
       }

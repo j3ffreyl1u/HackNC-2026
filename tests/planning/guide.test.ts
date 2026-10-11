@@ -163,3 +163,17 @@ describe('answerGuideQuestion: research boundaries', () => {
     expect(search).not.toHaveBeenCalled();
   });
 });
+
+describe('the chat version of a guide answer', () => {
+  it('is a few short lines: numbered ideas with prices, the plan it is based on, and sources, never a wall of text', async () => {
+    const answer = await answerGuideQuestion(await approvedState(), RAIN, provider, { now: NOW });
+    expect(answer.short).toBeDefined();
+    const lines = answer.short!.split('\n');
+    expect(lines[0]).toMatch(/^Based on your approved plan, here's what I'd look at for/);
+    expect(lines.length).toBeLessThanOrEqual(7);
+    expect(answer.short!.length).toBeLessThan(600);
+    expect(answer.short).toMatch(/^1\. /m);
+    expect(answer.short).toMatch(/Prices are estimates/);
+    expect(answer.short).not.toMatch(/\n\s+-|These are separate individual reports/);   // none of the long per-source paragraphs
+  });
+});

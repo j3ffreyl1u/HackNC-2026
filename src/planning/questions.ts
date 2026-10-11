@@ -45,7 +45,7 @@ export function fieldForKey(key: string): ConstraintField | undefined {
 export type QuestionTopic = 'people' | 'basics' | 'dates' | 'money' | 'preferences';
 
 /** Lower numbers are asked first: who is in, then the basics, then dates, then money, then tastes. */
-const TOPIC_ORDER: readonly QuestionTopic[] = ['people', 'basics', 'dates', 'money', 'preferences'];
+export const TOPIC_ORDER: readonly QuestionTopic[] = ['people', 'basics', 'dates', 'money', 'preferences'];
 
 export interface QuestionCandidate {
   topic: QuestionTopic;
@@ -94,15 +94,14 @@ export function selectQuestions(state: TripState, candidates: readonly QuestionC
 
 /**
  * When two people plan at the same time the work is split, not duplicated. The person talking is asked the next shared
- * question (one shared question is open at a time, held by whoever got it), and everyone else is free to be asked their
- * OWN things (dates, budget, tastes) in the meantime. Nobody gets more than one question per turn.
+ * question (one shared question is open at a time, held by whoever got it) or, if that is taken, their OWN next one
+ * (dates, budget, tastes). Nobody gets more than one question per turn, and nobody is asked anything while not talking.
  */
 function delegateQuestions(state: TripState, candidates: readonly QuestionCandidate[], now: string | undefined, actorId: string): ReadinessQuestion[] {
   const open = state.pendingQuestions.filter((q) => now === undefined || Date.parse(now) - Date.parse(q.askedAt) < QUESTION_COOLDOWN_MS);
   const sharedOpen = open.some((q) => q.audience.kind === 'group');
   const busy = new Set<string>(open.flatMap((q) => (q.audience.kind === 'private' ? [q.audience.memberId] : [])));
   const taken = new Set<string>();
-  const engaged = (id: string) => (state.memberConstraints[id]?.length ?? 0) > 0 || state.groupConstraints.some((r) => r.memberId === id);
   let sharedTaken = false;
   const asking: ReadinessQuestion[] = [];
   const askable = candidates.filter((c) => !recentlyAsked(state, c.question.key, now));
@@ -117,8 +116,9 @@ function delegateQuestions(state: TripState, candidates: readonly QuestionCandid
         taken.add(actorId);
       } else {
         if (busy.has(audience.memberId) || taken.has(audience.memberId)) continue;
-        // Someone who has not joined in yet is only contacted unprompted with a message that explains itself.
-        if (audience.memberId !== actorId && !engaged(audience.memberId) && !question.key.startsWith('confirm_basics:')) continue;
+        // Nobody is texted out of the blue: a person is asked their own questions when THEY are talking to the bot. Others hear
+        // from it only for a disagreement (announced to all) or when someone asks for options and is waiting on them (a nudge).
+        if (audience.memberId !== actorId) continue;
         taken.add(audience.memberId);
       }
       asking.push(question);

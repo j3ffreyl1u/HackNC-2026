@@ -8,7 +8,7 @@ import {
   statedPreferences,
 } from './constraints.js';
 import { formatUsd } from './money.js';
-import { BUDGET_QUESTION, fieldForKey, selectQuestions, type QuestionCandidate } from './questions.js';
+import { BUDGET_QUESTION, TOPIC_ORDER, fieldForKey, selectQuestions, type QuestionCandidate } from './questions.js';
 import { displayName, participants, participantIds } from './state.js';
 import type { ConstraintValues, ReadinessQuestion, ReadinessResult, TripState } from './types.js';
 
@@ -47,11 +47,16 @@ function formatWindows(windows: readonly { startAt: string; endAt: string }[]): 
 
 /** "leaving from Chapel Hill for 2 nights, going to Washington DC": the shared basics in one casual phrase. */
 function describeBasics(origin: ConstraintValues['origin'], duration: ConstraintValues['duration'], region: ConstraintValues['region']): string {
-  const place = region.destination !== undefined ? `going to ${region.destination}`
+  const place = region.destination !== undefined ? `going to ${titleCase(region.destination)}`
     : region.maxTravelMinutes !== undefined && region.maxTravelMinutes >= 1440 ? 'open to any driving distance'
-    : region.searchRegion !== undefined ? `looking around ${region.searchRegion}`
+    : region.searchRegion !== undefined ? `looking around ${titleCase(region.searchRegion)}`
     : region.maxTravelMinutes !== undefined ? `staying within about ${Math.round(region.maxTravelMinutes / 60)} hours of driving` : 'a place to be decided';
-  return `leaving from ${origin.city} for ${nightsText(duration.nights)}, ${place}`;
+  return `leaving from ${titleCase(origin.city)} for ${nightsText(duration.nights)}, ${place}`;
+}
+
+/** "chapel hill" -> "Chapel Hill". Only touches words typed in lower case, so "NC" and "DC" stay as written. */
+function titleCase(text: string): string {
+  return text.replace(/\b([a-z])([a-z.']*)/g, (word, first: string, rest: string) => (['of', 'the', 'and', 'in', 'on', 'by'].includes(word) ? word : first.toUpperCase() + rest));
 }
 
 const nightsText = (n: number) => `${n} night${n === 1 ? '' : 's'}`;
@@ -144,7 +149,7 @@ function evaluate(state: TripState): Evaluation {
     const authors = new Set([...origin.authors, ...duration.authors, ...region.authors, ...transport.authors]);
     for (const id of ids.filter((x) => !authors.has(x))) {
       missing.push(`confirm_basics:${id}`);
-      privately('basics', id, `confirm_basics:${id}`, `${names(state, [...authors])} suggested ${describeBasics(origin.value, duration.value, region.value)}, and someone has a car. Does that work for you, or would you change anything?`);
+      privately('basics', id, `confirm_basics:${id}`, `Hey ${displayName(state, id)}! ${names(state, [...authors])} started planning a trip with you. So far the idea is ${describeBasics(origin.value, duration.value, region.value)}, with a car. Does that work for you, or would you change anything?`);
     }
   }
 
@@ -259,4 +264,22 @@ export function describeGaps(state: TripState, result: Pick<ReadinessResult, 'mi
   // Nothing answered yet: no checklist, just the question that is already open.
   if (fresh) return [...state.pendingQuestions].sort((a, b) => b.askedAt.localeCompare(a.askedAt))[0]?.text ?? "Happy to help! Where are you all leaving from?";
   return `I'm still waiting on ${parts}.${tail === '' ? '' : ` ${tail}`}`;
+}
+
+/** What each other person still owes, in a few words, with the one question to ask them next. Used to nudge them. */
+export function outstandingForOthers(state: TripState, actorId: string): Array<{ memberId: string; items: string[]; question: ReadinessQuestion }> {
+  const { missing, candidates } = evaluate(state);
+  const label = (key: string): string | undefined =>
+    key.startsWith('availability:') ? 'dates' : key.startsWith('budget:') ? 'budget' : key.startsWith('preferences:') ? 'preferences' : key.startsWith('confirm_basics:') ? 'OK on the plan so far' : undefined;
+  const out: Array<{ memberId: string; items: string[]; question: ReadinessQuestion }> = [];
+  for (const id of participantIds(state)) {
+    if (id === actorId) continue;
+    const items = missing.filter((m) => m.endsWith(`:${id}`)).map(label).filter((x): x is string => x !== undefined);
+    if (items.length === 0) continue;
+    const question = candidates
+      .filter((c) => c.question.audience.kind === 'private' && c.question.audience.memberId === id)
+      .sort((a, b) => TOPIC_ORDER.indexOf(a.topic) - TOPIC_ORDER.indexOf(b.topic))[0]?.question;
+    if (question) out.push({ memberId: id, items, question });
+  }
+  return out;
 }
