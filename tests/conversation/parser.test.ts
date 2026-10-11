@@ -402,3 +402,22 @@ describe('status questions are always answered', () => {
     expect(text(await ask('proposed', [pick1, pick2]))).toMatch(/The options are above.*pick 1/s);
   });
 });
+
+describe('relaying what someone else said', () => {
+  const others = [
+    { memberId: 'mason', name: 'Mason', shared: ['is free Nov 14-17', 'is into food and museums'], missing: ['budget'] },
+    { memberId: 'alex', name: 'Alex', shared: [], missing: ['dates', 'preferences', 'budget'] },
+  ];
+  const ask = (t: string) => setup({ others } as never).service.parseInbound(msg({ text: t, visibility: 'private' }));
+  it.each(['what did Mason say?', 'whats mason saying', 'did Mason answer yet?', 'any word from Mason', "what's Mason thinking"])('"%s" repeats what Mason shared', async (t) => {
+    expect(text(await ask(t))).toMatch(/^Mason is free Nov 14-17 and is into food and museums\./);
+  });
+  it('says what is still missing without ever mentioning an amount', async () => {
+    const reply = text(await ask('what did Mason say'));
+    expect(reply).toMatch(/Still waiting on Mason's budget/);
+    expect(reply).not.toMatch(/\$|\d{3,}/);
+  });
+  it('says so plainly when someone has said nothing', async () => {
+    expect(text(await ask('what did Alex say?'))).toMatch(/^Alex hasn't told me anything yet\. Still waiting on Alex's dates, preferences and budget\./);
+  });
+});

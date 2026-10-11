@@ -28,6 +28,7 @@ const WRONG = /^(?:(?:no|nope|nah)[ ,]+)?(?:that'?s|that is|it'?s|it is|this is)
 const ID = '([A-Za-z0-9][\\w:.\\-]*)';
 const REQUEST_PLANS = /^(?:(?:please|pls|ok|okay|alright|so)[,\s]+)?(?:(?:can|could) you\s+)?(?:(?:show|give|get|send)\s+(?:me\s+|us\s+)?(?:the\s+|some\s+|a few\s+|a couple of\s+|a couple\s+)?(?:trip\s+)?(?:options|plans|proposals|itineraries|ideas)|(?:pull|put) together\s+(?:a\s+|some\s+)?(?:(?:few|couple of|couple)\s+)?(?:trip\s+)?(?:options|plans|ideas)(?:\s+for us)?|(?:plan|research)\s+(?:it|this|the trip|our trip)|find\s+(?:us\s+)?(?:trip\s+)?options|what are (?:our|the) options|(?:(?:let'?s|lets|can we|could we|we should|i want to|we want to|i'?d like to)\s+)?(?:start|begin|get started)(?:\s+(?:on\s+)?(?:planning|plan))?(?:\s+(?:a|the|our|this))?(?:\s+(?:road\s+)?trip)?|(?:let'?s|lets|can we|could we|we should|i want to|we want to|i'?d like to)\s+plan(?:\s+(?:a|the|our|this))?(?:\s+(?:road\s+)?trip)?(?:\s+together)?)$/i;
 const STATUS = /^(?:(?:so\s+)?(?:what'?s|whats|how'?s|hows)\s+(?:the\s+)?(?:status|progress|plan|it going)(?:\s+(?:so far|looking|going))?|where (?:are we|do we stand)(?:\s+(?:at|on this))?|what do you have(?:\s+so far)?|any (?:updates?|news|progress)|status(?: update)?)$/i;
+const ABOUT_SOMEONE = /^(?:so\s+)?(?:what(?:'s|s| did| has| does| is)\s+(\w+)\s+(?:say|said|tell you|told you|put|give you|gave you|send|sent|want|think|thinking|saying)|(?:did|has)\s+(\w+)\s+(?:answer|reply|respond|text|say anything|send anything|tell you anything)|(?:any word from|have you heard from|heard from|anything from)\s+(\w+)|how(?:'s| is)\s+(\w+)\s+doing)(?:\s+(?:yet|so far))?$/i;
 const GREETING = /^(?:hi|hey|hello|yo|hiya|good (?:morning|afternoon|evening))\b[,!.\s]*/i;
 const REQUEST_FUNDING = /^(?:request|start|set up|send)\s+(?:the\s+)?(?:contributions?|funding|contribution requests)$/i;
 const GUIDE = /^(?:guide|ask guide|\/guide)\s*[:\-]?\s+(.{3,500})$/is;
@@ -234,6 +235,15 @@ export function createParser(deps: ConversationDependencies) {
   function explicit(msg: InboundMessage, ctx: TripConversationContext, text: string): ParseResult | null {
     const plain = text.replace(GREETING, '').replace(/[?!.\s]+$/, '');
     let m: RegExpExecArray | null;
+    // "What did Mason say?": the bot is the go-between, so it repeats what is fine to repeat (never a budget).
+    const about = ABOUT_SOMEONE.exec(plain);
+    const aboutName = about ? (about[1] ?? about[2] ?? about[3] ?? about[4])?.toLowerCase() : undefined;
+    const person = aboutName ? ctx.others?.find((o) => o.name.toLowerCase() === aboutName || o.name.toLowerCase().startsWith(`${aboutName} `)) : undefined;
+    if (person) {
+      const said = person.shared.length > 0 ? `${person.name} ${person.shared.join(' and ')}.` : `${person.name} hasn't told me anything yet.`;
+      const left = person.missing.length > 0 ? ` Still waiting on ${person.name}'s ${person.missing.length > 1 ? `${person.missing.slice(0, -1).join(', ')} and ${person.missing.at(-1)}` : person.missing[0]}. Say "show us options" and I'll nudge for it.` : ' I have everything I need from them.';
+      return reply(msg, `${said}${left}`, 'about-someone', true);
+    }
     if (STATUS.test(plain)) {
       // Where things stand: while still gathering the planner recaps what is missing; after that, say what is happening.
       if (ctx.status === 'researching') return reply(msg, "I'm still looking up options for you two. Give me a minute and I'll send them over.", 'status-researching', true);

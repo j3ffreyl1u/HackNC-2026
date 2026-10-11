@@ -368,10 +368,41 @@ async function conversationContext(repository: Repository, state: TripState, mes
     actionable,
     ...(confirmBasics.length > 0 ? { confirmBasics } : {}),
     ...(openFields.length > 1 ? { openFields } : {}),
+    others: othersShared(state, actorId),
     pendingConfirmation: state.pendingConfirmations?.[actorId],
     ...(targetProposal ? { targetProposal } : {}),
     ...(pendingQuestion?.field ? { pendingQuestion: { questionId: pendingQuestion.questionId, field: pendingQuestion.field } } : {}),
   };
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** "Nov 14-17": a saved window shown as days in its own time zone (a midnight end means through the day before). */
+function dayRange(startAt: string, endAt: string, timeZone: string): string {
+  const part = (ms: number) => {
+    const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone, month: 'numeric', day: 'numeric', hour: 'numeric', hourCycle: 'h23' }).formatToParts(ms).map((x) => [x.type, x.value]));
+    return { m: Number(p.month), d: Number(p.day), h: Number(p.hour) };
+  };
+  const s = part(Date.parse(startAt));
+  const endMs = Date.parse(endAt);
+  const e = part(part(endMs).h === 0 ? endMs - 3_600_000 : endMs);
+  return s.m === e.m && s.d === e.d ? `${MONTHS[s.m - 1]} ${s.d}` : s.m === e.m ? `${MONTHS[s.m - 1]} ${s.d}-${e.d}` : `${MONTHS[s.m - 1]} ${s.d}-${MONTHS[e.m - 1]} ${e.d}`;
+}
+
+/** What each other person has said that is fine to repeat, and what is still missing from them. Never a budget. */
+function othersShared(state: TripState, actorId: string): Array<{ memberId: string; name: string; shared: string[]; missing: string[] }> {
+  return (state.roster ?? []).filter((m) => m.memberId !== actorId && m.consented).map((m) => {
+    const latest = (field: string) => [...state.memberConstraints].reverse().find((c) => c.memberId === m.memberId && c.field === field && c.certainty === 'confirmed');
+    const shared: string[] = [];
+    const missing: string[] = [];
+    const dates = latest('availability');
+    if (dates && dates.field === 'availability') shared.push(`is free ${dates.value.map((w) => dayRange(w.startAt, w.endAt, w.timeZone)).join(' and ')}`); else missing.push('dates');
+    const prefs = latest('preferences');
+    if (prefs && prefs.field === 'preferences') shared.push(prefs.value.includes('no preference') ? 'has no strong preferences' : `is into ${prefs.value.join(' and ')}`); else missing.push('preferences');
+    const must = latest('must_dos');
+    if (must && must.field === 'must_dos' && must.value.length > 0) shared.push(`has must-haves: ${must.value.join(', ')}`);
+    if (!latest('budget')) missing.push('budget');
+    return { memberId: m.memberId, name: m.displayName, shared, missing };
+  });
 }
 
 /** A friendly line for a disagreement that has just been settled. */

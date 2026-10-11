@@ -173,10 +173,17 @@ function evaluate(state: TripState): Evaluation {
     if (windows.length === 0) {
       conflicts.push('dates');
       const freeWhen = ids.map((id) => `${displayName(state, id)} is free ${formatWindows(effectiveAvailability(state, id) ?? [])}`);
+      // With two people the organizer picks who has more room and asks them, by name, for something specific.
+      const room = (id: string) => (effectiveAvailability(state, id) ?? []).reduce((sum, w) => sum + (Date.parse(w.endAt) - Date.parse(w.startAt)), 0);
+      const [first, second] = ids;
+      const flexer = ids.length === 2 && room(first!) !== room(second!) ? (room(first!) > room(second!) ? first! : second!) : undefined;
+      const other = flexer === undefined ? undefined : flexer === first ? second! : first!;
       group(
         'dates',
         'conflict:dates',
-        `${freeWhen.join(' and ')}, so there's no ${nightsText(nights)} stretch that works for everyone. Could either of you open up other dates?`,
+        flexer !== undefined && other !== undefined
+          ? `${freeWhen.join(' and ')}, so there's no ${nightsText(nights)} stretch that works for you both. ${displayName(state, flexer)}, since you've got more room, any chance you could do ${formatWindows(effectiveAvailability(state, other) ?? [])}?`
+          : `${freeWhen.join(' and ')}, so there's no ${nightsText(nights)} stretch that works for everyone. Could either of you open up other dates?`,
       );
     }
   }
@@ -263,7 +270,26 @@ export function describeGaps(state: TripState, result: Pick<ReadinessResult, 'mi
   const fresh = Object.values(state.memberConstraints).every((list) => list.length === 0) && state.groupConstraints.length === 0;
   // Nothing answered yet: no checklist, just the question that is already open.
   if (fresh) return [...state.pendingQuestions].sort((a, b) => b.askedAt.localeCompare(a.askedAt))[0]?.text ?? "Happy to help! Where are you all leaving from?";
-  return `I'm still waiting on ${parts}.${tail === '' ? '' : ` ${tail}`}`;
+  const known = settledBasics(state);
+  return `${known === '' ? '' : `So far I have ${known}. `}I'm still waiting on ${parts}.${tail === '' ? '' : ` ${tail}`}`;
+}
+
+/** The shared basics that are already agreed, in a phrase: "leaving from Chapel Hill, 2 nights, Washington DC and a car". */
+function settledBasics(state: TripState): string {
+  const origin = resolveGroupField(state, 'origin');
+  const duration = resolveGroupField(state, 'duration');
+  const region = resolveGroupField(state, 'region');
+  const transport = resolveGroupField(state, 'transport');
+  const parts: string[] = [];
+  if (origin.status === 'agreed') parts.push(`leaving from ${titleCase((origin.value as ConstraintValues['origin']).city)}`);
+  if (duration.status === 'agreed') parts.push(nightsText((duration.value as ConstraintValues['duration']).nights));
+  if (region.status === 'agreed') {
+    const r = region.value as ConstraintValues['region'];
+    const place = r.destination ?? r.searchRegion;
+    if (place !== undefined) parts.push(titleCase(place));
+  }
+  if (transport.status === 'agreed' && (transport.value as ConstraintValues['transport']).vehicleAvailable) parts.push('a car');
+  return parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}` : parts.join('');
 }
 
 /** What each other person still owes, in a few words, with the one question to ask them next. Used to nudge them. */

@@ -61,6 +61,7 @@ export async function createChatAdapter(enrollment: C.TripEnrollment, timeZone: 
         ...(context.confirmBasics ? { confirmBasics: context.confirmBasics } : {}),
         ...(context.openFields?.length ? { openFields: context.openFields } : {}),
         status: context.status,
+        ...(context.others ? { others: context.others } : {}),
         pendingConfirmation: context.pendingConfirmation,
         targetProposal: context.targetProposal?.kind ? { ...context.targetProposal, kind: context.targetProposal.kind } : undefined });
       if (parsed.kind === 'ignored') return parsed;

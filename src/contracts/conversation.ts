@@ -139,6 +139,8 @@ export interface TripConversationContext {
   targetProposal?: { kind: 'select' | 'accept'; candidateId: string; revision: number };
   /** The field this actor was last asked about, so a bare "200" or "Oct 17-19" has meaning. */
   pendingQuestion?: { field: ConstraintField };
+  /** What each OTHER person has told the bot that is fine to repeat (dates, car, tastes; never a budget), so "what did Mason say?" can be answered. */
+  others?: Array<{ memberId: string; name: string; shared: string[]; missing: string[] }>;
   /** Where the trip stands, so "what's the status?" can be answered without guessing. */
   status?: 'gathering' | 'researching' | 'proposed' | 'awaiting_acceptance' | 'approved';
   /** Every field there is an open question about for this actor (their own and the shared one), most relevant first, so a volunteered answer to any of them is understood. */

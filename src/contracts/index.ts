@@ -258,6 +258,7 @@ export interface ConversationContext {
   /** The shared basics this actor was asked to sign off on; a bare "yes" records them as theirs. */
   confirmBasics?: SharedConstraintValue[];
   openFields?: ConstraintField[];
+  others?: Array<{ memberId: string; name: string; shared: string[]; missing: string[] }>;
 }
 
 export interface ConversationService {

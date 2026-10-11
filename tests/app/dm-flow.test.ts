@@ -241,4 +241,22 @@ describe('first live DM scenario, end to end (A parser + C runtime + B planner, 
     expect(again.mason).toEqual([]);                                                  // not nagged again straight away
     await t.stop();
   });
+
+  it('"what did Mason say?" is answered from what Mason told the bot, and never includes his budget', async () => {
+    const t = await live();
+    await t.say(MASON, "I'm free Nov 14-17, my max is $777, I like food and museums");
+    const r = await t.say(JEFF, 'what did Mason say?');
+    const answer = r.jeff.join(' ');
+    expect(answer).toMatch(/Mason is free Nov 14-17 and is into food and museums/);
+    expect(answer).not.toMatch(/777|\$/);
+    await t.stop();
+  });
+
+  it('a date clash asks the person with more room, by name, to flex to the other\'s dates', async () => {
+    const t = await live();
+    await t.say(JEFF, "I'm leaving from Chapel Hill, 2 nights, I want to go to Asheville, I have a car, I'm free Dec 20-31, my max is $500, I like hiking");
+    const r = await t.say(MASON, "I'm free Nov 14-17, my max is $500, I like food");
+    for (const who of [r.jeff, r.mason]) expect(who.some((x) => /Jeffrey, since you've got more room, any chance you could do Nov 14-17\?/.test(x))).toBe(true);
+    await t.stop();
+  });
 });
