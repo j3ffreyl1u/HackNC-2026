@@ -253,6 +253,22 @@ describe('recording and reading constraints', () => {
     expect(statedPreferences(trip, 'jordan')).toBeUndefined();
   });
 
+  it('a later preference adds to earlier ones, and "no preference" resets them', () => {
+    let trip = createTrip('t', roster);
+    const say = (items: string[], id: string) => {
+      trip = apply(trip, 'alex', { memberId: 'alex', field: 'preferences', value: { items }, sourceMessageId: id, certainty: 'confirmed' });
+    };
+    say(['Hiking'], 'p1');
+    say(['historical places'], 'p2');
+    say(['hiking', 'food'], 'p3');
+    expect(statedPreferences(trip, 'alex')).toEqual(['food', 'hiking', 'historical places']);
+    say(['no preference'], 'p4');
+    expect(statedPreferences(trip, 'alex')).toEqual(['no preference']);
+    say(['beach'], 'p5');
+    expect(statedPreferences(trip, 'alex')).toEqual(['beach']);
+    expect(statedPreferences(trip, 'mason')).toBeUndefined();
+  });
+
   it('a tentative must-do is not enforced', () => {
     let trip = createTrip('t', roster);
     trip = apply(trip, 'mason', { memberId: 'mason', field: 'must_dos', value: { items: ['waterfall'] }, sourceMessageId: 'x', certainty: 'tentative' });

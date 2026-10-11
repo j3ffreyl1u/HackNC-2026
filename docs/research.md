@@ -11,7 +11,7 @@ Status as of 2026-10-10. Everything here is pure TypeScript with no database, ch
 | `installCandidates(state, researchedAtRevision, candidates)` | `src/planning/commands.ts` | Installs researched candidates; discards results for an older revision (`STALE_REVISION`). |
 | `validateCandidate(state, candidate)` | `src/planning/budget.ts` | Hard-limit check: caps, dates, duration, must-dos, drive limit. Returns `{ feasible, violations, unknownEssentials }`. |
 | `allocateCosts`, `reprice` | `src/planning/budget.ts` | Exact-cent per-person totals; `reprice` recomputes totals and feasibility against current state. |
-| `rankCandidates`, `explainRanking` | `src/planning/rank.ts` | Feasible only; preferences covered, then lower upper cost, then less driving, then ID. |
+| `rankCandidates`, `explainRanking` | `src/planning/rank.ts` | Feasible only; preferences (a member's later preferences add to earlier ones; "no preference" resets them) covered, then lower upper cost, then less driving, then ID. |
 | `planTrip(state, provider, { timeZone? })` / `generateCandidates` | `src/planning/generate.ts` | Research, build candidates, return up to two feasible options plus a provisional one, or explain the conflict. Itineraries are scheduled by `src/planning/schedule.ts`. |
 | `answerGuideQuestion(state, question, provider, { now? })` | `src/planning/guide.ts` | Cited, plan-relative answers with budget effect. Never changes the plan. |
 | `ResearchProvider`, `createResearchProvider`, `createFixtureProvider`, `guardLiveProvider` | `src/research/` | Provider interface, fixture provider, validation wrapper for live providers. |
