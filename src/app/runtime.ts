@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { FundService } from '../funding/service.js';
+import { Q } from '../planning/wording.js';
 import { describeFund, describeSettlement, driftNotices, reminderFor, settleTrip } from '../planning/funding.js';
 import { toPlanningState } from './planning-adapter.js';
 import type {
@@ -80,6 +81,23 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
   let stopped = false;
   let retryTimer: ReturnType<typeof setInterval> | undefined;
   const researchRevisions = new Set<number>();
+  /** Who asked whom what through the bot, so the answer can be passed back. Kept in memory: lost if the app restarts mid-question. */
+  const relayAsks = new Map<string, { askerId: string; field?: string }>();
+  /** This person was asked something through the bot: tell whoever asked what they just said (never anything about money). */
+  const relayBack = (member: { memberId: string; displayName: string }, message: InboundMessage, before: TripState, after: TripState): OutboundMessage[] => {
+    const asked = relayAsks.get(member.memberId);
+    const said = (message.text ?? '').trim();
+    if (!asked || !said || message.reaction) return [];
+    const heard = (st: TripState) => othersShared(st, asked.askerId).find((o) => o.memberId === member.memberId)?.shared ?? [];
+    const was = heard(before);
+    const fresh = heard(after).filter((x) => !was.includes(x));
+    const to = { kind: 'private' as const, memberId: asked.askerId };
+    relayAsks.delete(member.memberId);
+    if (asked.field && fresh.length > 0) return [makeMessage(tripId, `relay-answer:${message.eventId}`, { audience: to, text: `${member.displayName} ${fresh.join(' and ')}.` })];
+    if (/\$|\bbudgets?\b|\bmax(?:imum)?\b|\b\d{3,}\b|\bdollars?\b|\bbucks\b/i.test(said)) return [makeMessage(tripId, `relay-answer:${message.eventId}`, { audience: to, text: `${member.displayName} answered, but I keep anything about money private.` })];
+    // A free-form question has no field to read the answer from: pass the words on as they were said.
+    return [makeMessage(tripId, `relay-answer:${message.eventId}`, { audience: to, text: `${member.displayName} says: "${said.slice(0, 200)}"` })];
+  };
 
   const runtime: ApplicationRuntime = {
     async start() {
@@ -154,6 +172,9 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
       }
 
       const context = await conversationContext(repository, state, message);
+      // Someone was just asked a specific question through the bot: a bare "yes" or "no" from them answers it.
+      const relayed = relayAsks.get(member.memberId);
+      if (relayed?.field) context.pendingQuestion = { questionId: `relay:${relayed.field}`, field: relayed.field as never };
       const parsed = await conversation.parseInbound(message, context);
       if (parsed.kind === 'ignored') {
         const result = await repository.commitEvent({ eventId: message.eventId, state, expectedRevision: state.revision, messages: [] });
@@ -164,7 +185,7 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
         const confirmations = { ...state.pendingConfirmations };
         if (parsed.expects) confirmations[member.memberId] = parsed.expects;
         else delete confirmations[member.memberId];
-        const result = await repository.commitEvent({ eventId: message.eventId, state: { ...state, pendingConfirmations: confirmations }, expectedRevision: state.revision, messages: await polishAll([parsed.message]) });
+        const result = await repository.commitEvent({ eventId: message.eventId, state: { ...state, pendingConfirmations: confirmations }, expectedRevision: state.revision, messages: [...await polishAll([parsed.message]), ...relayBack(member, message, state, state)] });
         if (result === 'stale') continue;
         if (result === 'committed') await runtime.drainOutbox();
         return;
@@ -196,6 +217,21 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
           tripId,
         };
         if (command.action.kind === 'request_funding') { fundRequested = true; fundTopic = command.action.topic ?? 'status'; continue; }
+        if (command.action.kind === 'relay') {
+          const relay = command.action;
+          const target = (state.roster ?? []).find((m) => m.consented && m.memberId !== member.memberId && m.displayName.toLowerCase() === relay.to.toLowerCase());
+          const toAsker = (text: string) => makeMessage(tripId, `relay-ack:${message.eventId}:${index}`, { audience: { kind: 'private', memberId: member.memberId }, text });
+          if (!target) { replies.push(toAsker(`I'm not sure who ${relay.to} is.`)); continue; }
+          const asker = member.displayName;
+          const wording: Record<string, string> = { availability: Q.dates, budget: Q.budget, preferences: Q.preferences, origin: Q.origin, duration: Q.duration, region: Q.region, transport: Q.transport };
+          const body = relay.mode === 'ask'
+            ? (relay.field && wording[relay.field] ? `Hey ${target.displayName}! ${asker} was wondering: ${wording[relay.field]}` : `Hey ${target.displayName}! ${asker} would like to know: ${toSecondPerson(relay.text, asker)}${/[?.!]$/.test(relay.text) ? '' : '?'}`)
+            : `Hey ${target.displayName}! ${asker} wanted you to know: "${relay.text}"`;
+          replies.push(makeMessage(tripId, `relay:${message.eventId}:${index}`, { audience: { kind: 'private', memberId: target.memberId }, text: body }));
+          replies.push(toAsker(relay.mode === 'ask' ? `Done, I asked ${target.displayName}. I'll tell you what they say.` : `Done, I let ${target.displayName} know.`));
+          if (relay.mode === 'ask') relayAsks.set(target.memberId, { askerId: member.memberId, ...(relay.field ? { field: relay.field } : {}) });
+          continue;
+        }
         if (command.action.kind === 'ask_guide' && planner.guide) {
           let text: string;
           try { text = await planner.guide(nextState, command.action.question, message.occurredAt); }
@@ -283,6 +319,7 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
       // Someone changed a shared detail the others already had? Tell them, so nobody plans around the old one.
       // Each note gets its own number: two changes in one message start with the same words, and an id built from the
       // wording alone made them collide and the whole message fail.
+      replies.push(...relayBack(member, message, state, nextState));
       basicsChangeNotes(state, nextState, member.memberId).forEach((text, noteIndex) => {
         // Only people who have joined in: someone who has never texted the bot is not told about changes out of the blue.
         for (const other of (state.roster ?? []).filter((m) => m.memberId !== member.memberId && m.consented && state.memberConstraints.some((c) => c.memberId === m.memberId))) {
@@ -512,6 +549,19 @@ function dayRange(startAt: string, endAt: string, timeZone: string): string {
   return s.m === e.m && s.d === e.d ? `${MONTHS[s.m - 1]} ${s.d}` : s.m === e.m ? `${MONTHS[s.m - 1]} ${s.d}-${e.d}` : `${MONTHS[s.m - 1]} ${s.d}-${MONTHS[e.m - 1]} ${e.d}`;
 }
 
+/** "if he can pick me up at 8" -> "if you can pick Jeffrey up at 8": a question carried to someone else is spoken to them. */
+function toSecondPerson(text: string, asker: string): string {
+  const verbs: Record<string, string> = { has: 'have', is: 'are', was: 'were', wants: 'want', likes: 'like', needs: 'need', does: 'do', goes: 'go', gets: 'get', thinks: 'think', prefers: 'prefer' };
+  return text
+    .replace(/\b(?:he|she)\s+(has|is|was|wants|likes|needs|does|goes|gets|thinks|prefers)\b/gi, (_m, v: string) => `you ${verbs[v.toLowerCase()]}`)
+    .replace(/\b(?:he|she|they)\b/gi, 'you')
+    .replace(/\b(?:his|her|their)\b/gi, 'your')
+    .replace(/\b(?:him|them)\b/gi, 'you')
+    .replace(/\bme\b/gi, asker)
+    .replace(/\bmy\b/gi, `${asker}'s`)
+    .replace(/\bI\b/g, asker);
+}
+
 /** What each other person has said that is fine to repeat, and what is still missing from them. Never a budget. */
 function othersShared(state: TripState, actorId: string): Array<{ memberId: string; name: string; shared: string[]; missing: string[] }> {
   return (state.roster ?? []).filter((m) => m.memberId !== actorId && m.consented).map((m) => {
@@ -548,7 +598,7 @@ function basicsChangeNotes(before: TripState, after: TripState, actorId: string)
   for (const b of now) {
     const a = was.find((x) => x.field === b.field);
     if (!a || JSON.stringify(a) === JSON.stringify(b) || open(b.field) || wasOpen(b.field)) continue;   // new, unchanged, or already being sorted out as a disagreement
-    const ask = " Does that still work for you?";
+    const ask = " Let me know if that doesn't work for you.";
     if (b.field === 'origin') notes.push(`${who} changed the starting point to ${b.value}.${ask}`);
     else if (b.field === 'duration') notes.push(`${who} changed the trip to ${b.value} night${b.value === 1 ? '' : 's'}.${ask}`);
     else if (b.field === 'region') notes.push(`${who} changed the place to ${b.value}.${ask}`);

@@ -277,7 +277,7 @@ describe('first live DM scenario, end to end (A parser + C runtime + B planner, 
     await t.say(JEFF, "I'm leaving from Chapel Hill, 2 nights, I want to go to Asheville, I have a car, I'm free Nov 14-17, my max is $500, I like hiking");
     await t.say(MASON, "I'm free Nov 14-17");   // Mason has joined in but has not weighed in on the basics
     const r = await t.say(JEFF, 'actually make it 3 nights');
-    expect(r.mason.some((x) => /Jeffrey changed the trip to 3 nights\. Does that still work for you\?/.test(x))).toBe(true);
+    expect(r.mason.some((x) => /Jeffrey changed the trip to 3 nights\. Let me know if that doesn't work for you\./.test(x))).toBe(true);
     expect(r.jeff.some((x) => /changed the trip to/.test(x))).toBe(false);
     await t.stop();
   });

@@ -319,8 +319,45 @@ export function createParser(deps: ConversationDependencies) {
     if (/^(?:please\s+)?(?:start over|restart|reset|begin again|start again|from scratch)(?:\s+please)?$/i.test(plain)) {
       return reply(msg, 'I can\'t clear a trip yet, but you can change anything by telling me, like "leaving from Raleigh", "3 nights" or "my max is $300".', 'start-over', true);
     }
-    // "tell Mason to hurry up", "nudge Mason": the same as asking for options, which nudges whoever is still missing and tells the asker.
-    const nudge = /^(?:(?:please|can you|could you|pls)\s+)*(?:tell|ask|nudge|ping|poke|text|message)\s+(\w+)\b/i.exec(plain);
+    // "ask Mason if he has a car", "tell Mason I have a car": the bot carries the message to that person, since it speaks for everyone.
+    const relay = /^(?:(?:please|can you|could you|would you|pls)\s+)*(ask|tell|let)\s+(\w+)\s+(.+)$/i.exec(plain);
+    const relayTo = relay ? ctx.others?.find((o) => o.name.toLowerCase() === relay[2]!.toLowerCase()) : undefined;
+    const talkativeChat = msg.visibility === 'private' || trip.mode === 'direct';
+    if (relay && !relayTo && talkativeChat && ctx.others?.length && !/^(?:me|us|everyone|everybody|them|him|her|the|a|an|my|our|you|it|this|that|all)$/i.test(relay[2]!)) {
+      return reply(msg, `I'm not sure who ${relay[2]} is. I can pass things to ${list(ctx.others.map((o) => o.name))}.`, 'relay-unknown', true);
+    }
+    const bareRelay = /^(?:(?:please|can you|could you|pls)\s+)*(ask|tell)\s+(\w+)$/i.exec(plain);
+    const bareTo = bareRelay ? ctx.others?.find((o) => o.name.toLowerCase() === bareRelay[2]!.toLowerCase()) : undefined;
+    if (bareRelay && bareTo && talkativeChat) return reply(msg, `What would you like me to ${bareRelay[1]!.toLowerCase()} ${bareTo.name}?`, 'relay-what', true);
+    if (relay && relayTo && (msg.visibility === 'private' || trip.mode === 'direct')) {
+      const verb = relay[1]!.toLowerCase();
+      let rest = relay[3]!.trim();
+      // "tell Mason to hurry up" is a nudge to answer, not a message to pass on.
+      if (/^(?:to\s+)?(?:hurry|reply|respond|answer|check|get back|text me|message me|finish|speed)\b|\bhurry up\b/i.test(rest)) return one(msg, ctx, { kind: 'request_plans' });
+      if (verb === 'let') { if (!/^know\b/i.test(rest)) return reply(msg, `I can pass things to ${relayTo.name}. Try "tell ${relayTo.name} I have a car" or "ask ${relayTo.name} if they have a car".`, 'relay-help', true); rest = rest.replace(/^know\s+/i, ''); }
+      rest = rest.replace(/^that\s+/i, '').replace(/[.!\s]+$/, '');
+      // Budgets stay between each person and the bot, so they are never asked for or passed along.
+      if (/\$\s*\d|\bbudgets?\b|\bmax(?:imum)?\b|\bafford|\bspend(?:ing)?\b|\bdollars?\b|\bbucks\b/i.test(rest)) return reply(msg, 'Budgets stay private between each person and me, so I can\'t ask for or pass one along.', 'relay-money', true);
+      if (rest.length >= 2) {
+        const mode = verb === 'ask' ? 'ask' : 'tell';
+        const fieldOf = (t: string): string | undefined =>
+          /\b(?:car|vehicle|ride|truck|drive)\b/i.test(t) || (/\b(?:has|have|got)\s+(?:one|it)\b/i.test(t) && (ctx.pendingQuestion?.field === 'transport' || ctx.openFields?.includes('transport'))) ? 'transport'
+          : /\b(?:budget|spend|afford|max(?:imum)?)\b/i.test(t) ? 'budget'
+          : /\b(?:dates?|free|available|availability|when)\b/i.test(t) ? 'availability'
+          : /\b(?:likes?|prefer\w*|into|wants? to do|interests?)\b/i.test(t) ? 'preferences'
+          : /\b(?:nights?|how long|how many days)\b/i.test(t) ? 'duration'
+          : /\b(?:leav\w*|start\w* from|depart\w*)\b/i.test(t) ? 'origin'
+          : /\b(?:where|destination|place|go to)\b/i.test(t) ? 'region'
+          : undefined;
+        const field = mode === 'ask' ? fieldOf(rest) : undefined;
+        const action = { kind: 'relay' as const, to: relayTo.name, mode: mode as 'ask' | 'tell', text: rest, ...(field ? { field } : {}) };
+        // What the sender says about themselves while telling ("I have a car") also counts for them.
+        const own = mode === 'tell' ? extractWithCoverage(rest, localReference(msg.occurredAt, trip.timezone)).items : [];
+        return own.length ? fromConstraints(msg, ctx, rest, own, [action]) : one(msg, ctx, action);
+      }
+    }
+    // "nudge Mason", "ping Mason": the same as asking for options, which nudges whoever is still missing and tells the asker.
+    const nudge = /^(?:(?:please|can you|could you|pls)\s+)*(?:nudge|ping|poke|text|message)\s+(\w+)\b/i.exec(plain);
     if (nudge && ctx.others?.some((o) => o.name.toLowerCase() === nudge[1]!.toLowerCase())) return one(msg, ctx, { kind: 'request_plans' });
     if (FUND_REMIND.test(plain)) return one(msg, ctx, { kind: 'request_funding', topic: 'remind' });
     if (FUND_WRAP.test(plain)) return one(msg, ctx, { kind: 'request_funding', topic: 'wrap_up' });

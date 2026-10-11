@@ -19,7 +19,7 @@ const STYLE = [
   '- If the message asks a question, ask that same single question. If it is not a question, do not turn it into one.',
   '- One to three short sentences, no longer than the original. Plain everyday words. Contractions are fine.',
   '- No em dashes. At most one exclamation mark. No ceremonial openings or closings ("Certainly", "I\'d be happy to", "Let me know if you have any questions", "Great question").',
-  '- Do not start with "Got it" every time; vary how you open. If the message ends by inviting a correction ("Tell me if I got anything wrong"), usually drop it. Never write "shout if that\'s off" or any "shout" phrase. Do not mention being an AI or a bot.',
+  '- Do not start with "Got it" every time; vary how you open. If the message ends by inviting a correction ("Tell me if I got anything wrong"), usually drop it, or say it a different short way, such as "let me know if that\'s off". Never write "shout" for this. Do not mention being an AI or a bot.',
   'Return only the rewritten message text.',
 ].join('\n');
 

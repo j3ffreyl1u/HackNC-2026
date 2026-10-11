@@ -84,7 +84,8 @@ export type TripAction =
   | { kind: 'ask_guide'; question: string }
   | { kind: 'confirm_cost'; candidateId: string; revision: number; costId: string; lowCents: number; highCents: number; sourceMessageId: string }
   | { kind: 'confirm_stop'; candidateId: string; revision: number; item: ItineraryItem; sourceMessageId: string }
-  | { kind: 'request_funding'; topic?: 'status' | 'remind' | 'wrap_up' };
+  | { kind: 'request_funding'; topic?: 'status' | 'remind' | 'wrap_up' }
+  | { kind: 'relay'; to: string; mode: 'ask' | 'tell'; text: string; field?: string };
 
 export interface TripCommand {
   commandId: string;
