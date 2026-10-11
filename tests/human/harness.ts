@@ -21,7 +21,7 @@ export const cleanup = () => { for (const d of dirs.splice(0)) rmSync(d, { recur
 export interface Heard { mason: string[]; alex: string[]; jordan: string[]; all: string[] }
 
 /** Three real people texting the real parser + runtime + planner over a mock phone line (direct mode). */
-export async function humans(opts: { names?: Partial<Record<Who, string>>; start?: string; provider?: ReturnType<typeof createResearchProvider>; fund?: 'mock' | 'broken' } = {}) {
+export async function humans(opts: { names?: Partial<Record<Who, string>>; start?: string; provider?: ReturnType<typeof createResearchProvider>; fund?: 'mock' | 'broken'; fundService?: ReturnType<typeof createFundService> } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'human-')); dirs.push(dir);
   const path = join(dir, 'trip.json');
   const names = { mason: 'Mason', alex: 'Alex', jordan: 'Jordan', ...opts.names };
@@ -35,7 +35,7 @@ export async function humans(opts: { names?: Partial<Record<Who, string>>; start
   const planner = createPlannerAdapter(opts.provider ?? createResearchProvider({ mode: 'mock', fixtures: demoResearchFixtures }), trip.enrollment.groupSpaceId);
   /** Fake bank accounts the test can change: each friend's own purchases, as a bank would report them. */
   const ledger: FundLedger = { purchases: [] };
-  const fundService = opts.fund ? createFundService({ read: async () => { if (opts.fund === 'broken') throw new Error('bank down'); return ledger; } }, 'mock', { cacheMs: 0 }) : undefined;
+  const fundService = opts.fundService ?? (opts.fund ? createFundService({ read: async () => { if (opts.fund === 'broken') throw new Error('bank down'); return ledger; } }, 'mock', { cacheMs: 0 }) : undefined);
   const runtime = createApplicationRuntime({ repository, conversation: chat.conversation, planner, tripId: 'h', stillLookingMs: 0, ...(fundService ? { fundService } : {}) });
   await runtime.start();
   let n = 0;
