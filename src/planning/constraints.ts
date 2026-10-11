@@ -257,7 +257,20 @@ export function effectiveAvailability(state: TripState, memberId: MemberId): Int
 
 /** Whether a member has said anything about their preferences, firm or not ("no preference" counts). */
 export function statedPreferences(state: TripState, memberId: MemberId): string[] | undefined {
-  return recordsFor(state, memberId, 'preferences').at(-1)?.value.items;
+  const records = recordsFor(state, memberId, 'preferences');
+  if (records.length === 0) return undefined;
+  // Preferences are soft and people add to them ("also historical places"), so they accumulate. Saying
+  // "no preference" starts over, and so does the first preference after it.
+  let stated = new Set<string>();
+  for (const record of records) {
+    const items = record.value.items;
+    if (items.includes(NO_PREFERENCE)) stated = new Set(items);
+    else {
+      if (stated.has(NO_PREFERENCE)) stated = new Set();
+      for (const item of items) stated.add(item);
+    }
+  }
+  return [...stated].sort();
 }
 
 /** Hard must-dos, accessibility and dietary needs: only confirmed ones are enforced. */
