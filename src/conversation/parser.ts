@@ -93,7 +93,7 @@ function chatFacts(ctx: TripConversationContext): string[] {
   const needed = [...new Set([...(ctx.pendingQuestion ? [ctx.pendingQuestion.field] : []), ...(ctx.openFields ?? [])].map((f) => word[f] ?? f))];
   facts.push(needed.length ? `Still needed from the person asking: ${needed.join(', ')}.` : 'Nothing else is needed from the person asking right now.');
   if (ctx.actionable.length) facts.push('There are options waiting for the person asking to pick or approve.');
-  if (ctx.optionFacts?.length) facts.push(`Options on offer: ${ctx.optionFacts.join(' | ')}.`);
+  if (ctx.optionFacts?.length) facts.push(`${ctx.status === 'approved' ? 'The approved plan' : 'Options on offer'}: ${ctx.optionFacts.join(' | ')}.`);
   if (ctx.approval) facts.push(`The picked plan is ${ctx.approval.title}. Said "I'm in": ${ctx.approval.youIn ? 'the person asking' : 'not the person asking'}${ctx.approval.inNames.length ? ` (people in: ${ctx.approval.inNames.join(', ')})` : ''}. Still waiting on: ${[...(ctx.approval.youIn ? [] : ['the person asking']), ...ctx.approval.waitingNames].join(', ') || 'nobody'}.`);
   facts.push('How plans change: when anyone changes the dates, the number of nights, the place, the starting city, the car, or their own maximum budget, the old options are dropped and a fresh search starts. Budgets are private, so never say whose budget changed or by how much; say only that someone changed a detail or a limit.');
   return facts;
@@ -253,6 +253,7 @@ export function createParser(deps: ConversationDependencies) {
       // Nothing is waiting on an answer, so this is probably a reply to our "Got it ... tell me if I got anything wrong".
       // In a one-on-one chat never go silent; in a group, stay out of it.
       if (msg.visibility !== 'private' && trip.mode !== 'direct') return { kind: 'ignored', reason: 'nothing to answer' };
+      if (ctx.status === 'approved') return reply(msg, yes ? 'Sounds good! The trip is all set. Ask me anything about it, or tell me if a detail changes.' : 'No worries. The trip is locked in. Tell me if a detail changes and I will look again.', yes ? 'approved-ok' : 'approved-no', true);
       return yes
         ? reply(msg, `Great! Anything else to add? When you're ready, say "show us some options".`, 'thanks')
         : reply(msg, `No worries! If anything's off, just tell me the right detail, like "my max is $300" or "free Nov 21-23". Otherwise say "show us some options" when you're ready.`, 'neutral-no');

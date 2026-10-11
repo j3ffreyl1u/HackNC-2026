@@ -658,7 +658,8 @@ async function conversationContext(repository: Repository, state: TripState, mes
   const relays = (state.relayLog ?? []).filter((e) => e.fromId === actorId || e.toId === actorId).slice(-12)
     .map((e) => ({ withName: nameOf(e.fromId === actorId ? e.toId : e.fromId), byMe: e.fromId === actorId, kind: e.kind, text: e.text }));
   // The options on offer in plain words, for answering "how much is the second one?" (costs are the group's, never anyone's budget).
-  const optionFacts = (state.status === 'proposed' || state.status === 'awaiting_acceptance') ? describeOptions(state, true) : [];
+  const optionFacts = (state.status === 'proposed' || state.status === 'awaiting_acceptance') ? describeOptions(state, true)
+    : state.status === 'approved' ? describeOptions(state, true, state.selectedCandidateId) : [];
   // What this person has told the bot about themselves (their own budget is theirs to hear back).
   const mineLatest = (field: string) => [...state.memberConstraints].reverse().find((c) => c.memberId === actorId && c.field === field && c.certainty === 'confirmed');
   const ownBudget = mineLatest('budget'), ownDates = mineLatest('availability'), ownLikes = mineLatest('preferences');
@@ -715,10 +716,11 @@ const fundService_disabled = (fund: unknown) => fund === undefined;
 const CATEGORY_WORDS: Record<string, string> = { accommodation: 'lodging', fuel_parking_tolls: 'gas, parking and tolls', food: 'food', activities: 'activities', taxes_fees: 'taxes and fees', other: 'other costs' };
 
 /** The options on offer in plain words: what is in each, rough cost each, and the drive. Group costs only, never a budget. */
-function describeOptions(state: TripState, detailed: boolean): string[] {
+function describeOptions(state: TripState, detailed: boolean, onlyCandidateId?: string): string[] {
   const zone = state.timeZone ?? 'America/New_York';
   const planning = toPlanningState(state);
   return state.candidates.filter((c) => c.revision === state.revision && c.feasibility.feasible).map((c, i) => {
+    if (onlyCandidateId && c.candidateId !== onlyCandidateId) return '';
     const people = c.perPersonTotals.length || 1;
     const first = c.perPersonTotals[0]?.memberId;
     const mid = (x: { lowCents: number; highCents: number }) => (x.lowCents + x.highCents) / 2;
@@ -733,7 +735,7 @@ function describeOptions(state: TripState, detailed: boolean): string[] {
     const places = [...new Set(c.itinerary.map((x) => x.label).filter((l): l is string => typeof l === 'string' && !/^drive\b/i.test(l)))].slice(0, 4).join(', ');
     const drive = planned ? outdoorSummary(planned).drivingMinutes : 0;
     return `Option ${i + 1} is ${c.title}${planned ? `, ${tripDates(planned, zone)}` : ''}: ${cost}${parts ? `, covering ${parts}` : ''}${places ? `; things to do: ${places}` : ''}${drive ? `; driving about ${formatMinutes(drive)} each way` : ''}`;
-  });
+  }).filter((line) => line !== '');
 }
 
 /** "remind Mason to lock it in" while a plan waits on them: ask for the "I'm in" instead of a vague nudge. */

@@ -72,3 +72,19 @@ describe('likings are the thing liked, not the verb', () => {
     expect(extractConstraints('I want to go to museums and eat yummy food', '2026-10-11T12:00:00Z', 'preferences').map((e) => e.value)).toEqual([{ field: 'preferences', value: ['museums', 'yummy food'] }]);
   });
 });
+
+describe('safeChatAnswer on option prices', () => {
+  const facts = 'Option 1 is State park weekend: about $229 each (up to $255), covering hotel $153, food $18. Option 2 is Cabin weekend: about $240 each (up to $270), covering hotel $165, food $18; which is cheaper';
+  it('accepts a price followed by a comma or parenthesis in the facts', () => {
+    expect(safeChatAnswer('Option 2 covers hotel ($165) and food ($18).', facts)).not.toBeNull();
+  });
+  it('accepts the gap between two prices in the facts', () => {
+    expect(safeChatAnswer('Option 1 is cheaper by $11 each.', facts)).not.toBeNull();
+  });
+  it('still rejects an amount that is neither a price nor a gap', () => {
+    expect(safeChatAnswer('Option 1 is cheaper by $7 each.', facts)).toBeNull();
+  });
+  it('rejects an answer that talks about "the facts"', () => {
+    expect(safeChatAnswer('The facts do not list a total.', facts)).toBeNull();
+  });
+});

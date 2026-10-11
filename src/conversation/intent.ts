@@ -113,14 +113,20 @@ export function validateIntent(raw: unknown): ValidIntent {
  */
 export function safeChatAnswer(answer: string, allowedText: string): string | null {
   const text = answer.trim();
-  if (!text || text.length > 400 || /\u2014|\u2013|[*_`#<>]/.test(text) || /shout if that'?s off/i.test(text)) return null;
+  if (!text || text.length > 400 || /\u2014|\u2013|[*_`#<>]/.test(text) || /shout if that'?s off/i.test(text) || /\bfacts\b/i.test(text)) return null;
   // A dollar amount may only be one that is written in the facts or the message itself (an option's price), never an invented or private one.
-  const amounts = (t: string) => (t.match(/\$\s?\d[\d,]*(?:\.\d+)?/g) ?? []).map((a) => a.replace(/\s/g, ''));
+  const amounts = (t: string) => (t.match(/\$\s?\d(?:[\d,]*\d)?(?:\.\d+)?/g) ?? []).map((a) => a.replace(/\s/g, ''));
   const allowedAmounts = new Set(amounts(allowedText));
-  if (amounts(text).some((a) => !allowedAmounts.has(a))) return null;
+  // "which is cheaper and by how much?": the gap between two prices that are written in the facts is fine to say.
+  const figures = [...allowedAmounts].map((a) => Number(a.replace(/[$,]/g, '')));
+  const gaps = new Set<number>();
+  for (const x of figures) for (const y of figures) if (x > y) gaps.add(x - y);
+  const isGap = (a: string) => gaps.has(Number(a.replace(/[$,]/g, '')));
+  if (amounts(text).some((a) => !allowedAmounts.has(a) && !isGap(a))) return null;
   const digits = (t: string) => t.match(/\d+/g) ?? [];
   const allowed = new Set(digits(allowedText));
-  if (digits(text).some((d) => !allowed.has(d))) return null;
+  const gapDigits = new Set(amounts(text).filter(isGap).flatMap((a) => digits(a)));
+  if (digits(text).some((d) => !allowed.has(d) && !gapDigits.has(d))) return null;
   if ((text.match(/[.!?](?:\s|$)/g) ?? []).length > 3) return null;
   return text;
 }
