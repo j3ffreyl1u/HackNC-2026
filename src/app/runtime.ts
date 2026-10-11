@@ -320,7 +320,7 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
               : relay.mode === 'request'
               ? `Hey ${toTarget}! ${asker} would like you to ${toSecondPerson(relay.text, asker, target.displayName)}.`
               : relay.mode === 'ask'
-                ? (relay.field && wording[relay.field] ? `Hey ${toTarget}! ${asker} was wondering: ${wording[relay.field]}` : `Hey ${toTarget}! ${asker} would like to know: ${toSecondPerson(relay.text, asker, target.displayName)}${/[?.!]$/.test(relay.text) ? '' : '?'}`)
+                ? (relay.field && wording[relay.field] ? `Hey ${toTarget}! ${asker} was wondering: ${wording[relay.field]}` : askedAsText(toTarget, asker, toSecondPerson(relay.text, asker, target.displayName)))
                 : `Hey ${toTarget}! ${asker} wanted you to know: "${relay.text}"`;
           nextState = { ...nextState, relayLog: [...(nextState.relayLog ?? []), { fromId: member.memberId, toId: target.memberId, kind: relay.mode, text: relay.text, at: message.occurredAt }].slice(-30) };
           replies.push(makeMessage(tripId, `relay:${message.eventId}:${index}`, { audience: { kind: 'private', memberId: target.memberId }, text: body }));
@@ -415,7 +415,8 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
       // Someone changed a shared detail the others already had? Tell them, so nobody plans around the old one.
       // Each note gets its own number: two changes in one message start with the same words, and an id built from the
       // wording alone made them collide and the whole message fail.
-      replies.push(...relayBack(member, message, state, nextState));
+      // A message that is itself a request to pass something on ("ask Jeffrey ...") is not the answer to the question they were just asked.
+      if (!commands.some((c) => c.action.kind === 'relay')) replies.push(...relayBack(member, message, state, nextState));
       basicsChangeNotes(state, nextState, member.memberId).forEach((text, noteIndex) => {
         // Only people who have joined in: someone who has never texted the bot is not told about changes out of the blue.
         for (const other of (state.roster ?? []).filter((m) => m.memberId !== member.memberId && m.consented && state.memberConstraints.some((c) => c.memberId === m.memberId))) {
@@ -755,6 +756,14 @@ function approvalPrompt(state: TripState, askerId: string, targetId: string, tex
 }
 
 /** "if he can pick me up at 8" -> "if you can pick Jeffrey up at 8": a question carried to someone else is spoken to them. */
+/** "what you want to eat" is an indirect question ("would like to know what you want to eat."); a direct one keeps its question mark. */
+function askedAsText(toName: string, asker: string, question: string): string {
+  const indirect = /^(?:what|where|when|which|who|how|why)\s+(?:you|you're|you'd|your)\b/i.test(question);
+  const body = question.replace(/[?.!\s]+$/, '');
+  if (/^(?:if|whether)\s/i.test(body)) return `Hey ${toName}! ${asker} was wondering ${body}?`;
+  return indirect ? `Hey ${toName}! ${asker} would like to know ${body}.` : `Hey ${toName}! ${asker} would like to know: ${body}?`;
+}
+
 function toSecondPerson(text: string, asker: string, target?: string): string {
   const verbs: Record<string, string> = { has: 'have', is: 'are', was: 'were', wants: 'want', likes: 'like', needs: 'need', does: 'do', goes: 'go', gets: 'get', thinks: 'think', prefers: 'prefer', had: 'had' };
   const named = target ? new RegExp(`\\b${target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:'s)?\\b`, 'gi') : undefined;
@@ -765,7 +774,7 @@ function toSecondPerson(text: string, asker: string, target?: string): string {
   }
   return out
     .replace(/\b(?:he|she)\s+(has|is|was|wants|likes|needs|does|goes|gets|thinks|prefers)\b/gi, (_m, v: string) => `you ${verbs[v.toLowerCase()]}`)
-    .replace(/\b(?:he's|she's)\b/gi, "you're")
+    .replace(/\b(?:he's|she's|hes|shes)\b/gi, "you're")
     .replace(/\b(?:he|she|they)\b/gi, 'you')
     .replace(/\b(?:his|her|their)\b/gi, 'your')
     .replace(/\b(?:him|them)\b/gi, 'you')

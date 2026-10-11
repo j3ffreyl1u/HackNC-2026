@@ -481,7 +481,7 @@ export function createParser(deps: ConversationDependencies) {
       if (verb === 'let') { if (!/^know\b/i.test(rest)) return reply(msg, `I can pass things to ${relayTo.name}. Try "tell ${relayTo.name} I have a car" or "ask ${relayTo.name} if they have a car".`, 'relay-help', true); rest = rest.replace(/^know\s+/i, ''); }
       if (verb) {
         // "message Mason and ask if he has a car" is a question.
-        const andAsk = /^and\s+ask\s+(?:him|her|them)?\s*(.*)$/i.exec(rest);
+        const andAsk = /^and\s+(?:ask\s+(?:him|her|them)?\s*|(?:see|check|find out|figure out|make sure)\s+)(.*)$/i.exec(rest);
         if (andAsk) { verb = 'ask'; rest = andAsk[1]!.trim(); }
         // "message Mason and tell him to start planning" / "text Mason and let him know I have a car"
         const andTell = /^and\s+(?:tell|let|say to)\s+(?:him|her|them)\s*(?:know\s+)?(.*)$/i.exec(rest);
@@ -507,7 +507,7 @@ export function createParser(deps: ConversationDependencies) {
           : /\b(?:dates?|free|available|availability|when)\b/i.test(text) ? 'availability'
           : /\b(?:likes?|prefer\w*|into|wants? to do|interests?)\b/i.test(text) ? 'preferences'
           : /\b(?:nights?|how long|how many days)\b/i.test(text) ? 'duration'
-          : /\b(?:leav\w*|start\w* from|depart\w*)\b/i.test(text) ? 'origin'
+          : /\b(?:leav\w*|start\w*|depart\w*)\s+from\b|\bwhere\b.*\b(?:leav\w*|start\w*|depart\w*)\b/i.test(text) ? 'origin'
           : /\b(?:where|destination|place|go to)\b/i.test(text) ? 'region'
           : undefined;
         const field = mode === 'ask' ? fieldOf(rest) : undefined;

@@ -49,6 +49,19 @@ async function live() {
 const START = "I'm leaving from Chapel Hill, 2 nights, NC mountains, my max is $137, I like hiking";
 
 describe('asking and telling through the bot', () => {
+  it('"text Mason and see if he is cool with it" is a question, and a request back is not passed on as the answer', async () => {
+    const t = await live();
+    await t.say(JEFF, START);
+    await t.say(MASON, "I'm free Nov 14-17");
+    const asked = await t.say(JEFF, 'text mason and see if hes cool with the first one');
+    expect(asked.mason.join(' ')).toMatch(/Jeffrey was wondering if you're cool with the first one\?/);
+    const back = await t.say(MASON, 'ask jeffrey what he wants to eat');
+    expect(back.jeff.join(' ')).toMatch(/Mason would like to know what you want to eat\./);
+    expect(back.jeff.join(' ')).not.toMatch(/Mason says/);
+    expect((await t.say(JEFF, 'ask mason if he wants to leave early')).mason.join(' ')).toMatch(/was wondering if you want to leave early/);
+    await t.stop();
+  });
+
   it('"ask Mason if he has a car" puts the question to Mason and tells the asker, then passes the answer back', async () => {
     const t = await live();
     await t.say(JEFF, START);
@@ -108,7 +121,7 @@ describe('asking and telling through the bot', () => {
     await t.say(JEFF, START);
     await t.say(MASON, "I'm free Nov 14-17");
     const asked = await t.say(JEFF, 'ask Mason if he can pick me up at 8');
-    expect(asked.mason.join(' ')).toMatch(/Jeffrey would like to know: if you can pick Jeffrey up at 8\?/);
+    expect(asked.mason.join(' ')).toMatch(/Jeffrey was wondering if you can pick Jeffrey up at 8\?/);
     const back = await t.say(MASON, 'sure');
     expect(back.jeff.join(' ')).toMatch(/Mason says: "sure"/);
     await t.stop();
