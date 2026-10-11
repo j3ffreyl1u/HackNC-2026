@@ -58,6 +58,13 @@ export function validateConstraintItem(raw: unknown): ConstraintValue | null {
     case 'region': {
       const text = str(o.text, 60)?.replace(/^the\s+/i, '');   // "the NC mountains" is searched as "NC mountains"
       if (!text) return null;
+      // "somewhere warm" is a wish, not a place: keep it as something they like instead of searching for a town of that name.
+      const vague = /^(?:somewhere|anywhere|someplace|any\s*place|a\s+place)\s*(.*)$/i.exec(text);
+      if (vague) {
+        const rest = vague[1]!.replace(/^(?:that'?s|that is|with|near|like)\s+/i, '').trim().toLowerCase();
+        if (!rest) return null;
+        return { field: 'preferences', value: [/^(?:warm|warmer|hot|cold|cool|sunny)$/.test(rest) ? `${rest} weather` : rest] };
+      }
       const given = o.maxTravelMinutes;
       const minutes = typeof given === 'number' && Number.isInteger(given) && given >= 15 && given <= 1440 ? given : parseMaxTravelMinutes(text);
       return { field: 'region', value: text, ...(minutes !== undefined ? { maxTravelMinutes: minutes } : {}) };
