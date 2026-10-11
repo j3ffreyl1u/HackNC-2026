@@ -284,7 +284,8 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
       // Each note gets its own number: two changes in one message start with the same words, and an id built from the
       // wording alone made them collide and the whole message fail.
       basicsChangeNotes(state, nextState, member.memberId).forEach((text, noteIndex) => {
-        for (const other of (state.roster ?? []).filter((m) => m.memberId !== member.memberId && m.consented)) {
+        // Only people who have joined in: someone who has never texted the bot is not told about changes out of the blue.
+        for (const other of (state.roster ?? []).filter((m) => m.memberId !== member.memberId && m.consented && state.memberConstraints.some((c) => c.memberId === m.memberId))) {
           replies.push(makeMessage(tripId, `changed:${message.eventId}:${other.memberId}:${noteIndex}`, { audience: { kind: 'private', memberId: other.memberId }, text }));
         }
       });
@@ -531,10 +532,11 @@ function basicsChangeNotes(before: TripState, after: TripState, actorId: string)
   const was = sharedBasics(before);
   const now = sharedBasics(after);
   const open = (field: string) => after.pendingQuestions.some((q) => q.questionId.startsWith(`conflict:${field}`));
+  const wasOpen = (field: string) => before.pendingQuestions.some((q) => q.questionId.startsWith(`conflict:${field}`));   // a disagreement that was just settled already gets its own "Great, ..." message
   const notes: string[] = [];
   for (const b of now) {
     const a = was.find((x) => x.field === b.field);
-    if (!a || JSON.stringify(a) === JSON.stringify(b) || open(b.field)) continue;   // new, unchanged, or already being sorted out as a disagreement
+    if (!a || JSON.stringify(a) === JSON.stringify(b) || open(b.field) || wasOpen(b.field)) continue;   // new, unchanged, or already being sorted out as a disagreement
     const ask = " Shout if that doesn't work for you.";
     if (b.field === 'origin') notes.push(`${who} changed the starting point to ${b.value}.${ask}`);
     else if (b.field === 'duration') notes.push(`${who} changed the trip to ${b.value} night${b.value === 1 ? '' : 's'}.${ask}`);

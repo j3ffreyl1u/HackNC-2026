@@ -52,11 +52,22 @@ describe('heads-up when someone changes a shared detail', () => {
   it('tells the other person, once, and not the person who changed it', async () => {
     const t = await live();
     await t.say(JEFF, START);
+    await t.say(MASON, "I'm free Nov 14-17");   // Mason has joined in, so he is told about changes
+
     await t.say(JEFF, "let's go to Boone");
     const changed = await t.say(JEFF, "actually I'm leaving from Raleigh");
     expect(changed.mason.filter((x) => /changed the starting point to Raleigh/i.test(x))).toHaveLength(1);
     expect(changed.mason.join(' ')).toMatch(/Jeffrey/);
     expect(changed.jeff.join(' ')).not.toMatch(/changed the starting point/i);
+    await t.stop();
+  });
+
+  it('does not text someone who has never messaged the bot about a change', async () => {
+    const t = await live();
+    await t.say(JEFF, START);
+    await t.say(JEFF, "let's go to Boone");
+    const changed = await t.say(JEFF, "actually I'm leaving from Raleigh");
+    expect(changed.mason).toEqual([]);
     await t.stop();
   });
 
@@ -73,6 +84,8 @@ describe('heads-up when someone changes a shared detail', () => {
   it('says so when the car is no longer available, and when the trip length changes', async () => {
     const t = await live();
     await t.say(JEFF, START);
+    await t.say(MASON, "I'm free Nov 14-17");   // Mason has joined in, so he is told about changes
+
     await t.say(JEFF, "let's go to Boone");
     const length = await t.say(JEFF, 'make it 3 nights');
     expect(length.mason.join(' ')).toMatch(/changed the trip to 3 nights/i);
@@ -82,6 +95,7 @@ describe('heads-up when someone changes a shared detail', () => {
   it('never puts a budget in a heads-up, and two changes in one message are both announced', async () => {
     const t = await live();
     await t.say(JEFF, `${START}, my max is $137`);
+    await t.say(MASON, "I'm free Nov 14-17");   // Mason has joined in, so he is told about changes
     await t.say(JEFF, "let's go to Boone");
     const out = await t.say(JEFF, "actually I'm leaving from Raleigh, make it 3 nights");
     expect(out.mason.filter((x) => /changed/i.test(x))).toHaveLength(2);

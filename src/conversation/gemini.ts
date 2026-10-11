@@ -107,7 +107,7 @@ export function createGeminiIntentModel(opts: GeminiOptions): IntentModel {
             headers: { 'content-type': 'application/json', 'x-goog-api-key': opts.apiKey },
             body: JSON.stringify({
               contents: [{ role: 'user', parts: [{ text: buildPrompt(input) }] }],
-              generationConfig: { responseMimeType: 'application/json', responseJsonSchema: INTENT_SCHEMA, temperature: 0 },
+              generationConfig: { responseMimeType: 'application/json', responseJsonSchema: INTENT_SCHEMA, temperature: 0, thinkingConfig: { thinkingLevel: 'low' } },
             }),
             signal: AbortSignal.timeout(opts.timeoutMs ?? 20_000),
           });
@@ -116,7 +116,8 @@ export function createGeminiIntentModel(opts: GeminiOptions): IntentModel {
           opts.onError?.(err); // never includes the API key or message text
           // A busy moment (rate limit, server hiccup, timeout) usually clears in a second: try once more before telling anyone.
           const status = /Gemini HTTP (\d+)/.exec(String((err as Error)?.message ?? ''))?.[1];
-          if (!retried && (status === undefined || status === '429' || Number(status) >= 500)) {
+          const timedOut = (err as Error)?.name === 'TimeoutError' || (err as Error)?.name === 'AbortError';   // already slow: a second try only doubles the wait
+          if (!retried && !timedOut && (status === undefined || status === '429' || Number(status) >= 500)) {
             await new Promise((resolve) => setTimeout(resolve, opts.retryDelayMs ?? 1500));
             return attempt(true);
           }

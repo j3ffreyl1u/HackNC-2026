@@ -61,7 +61,7 @@ export const corpus: Case[] = [
   c("I'm available Nov 21-22 or Nov 28-29", { avail: ['2026-11-21', '2026-11-22'] }),
   c('I can do the weekend of Nov 14', { avail: ['2026-11-14', '2026-11-14'] }, true, { soft: true }),
   c('the weekend after next works for me, the 24th through the 26th', { avail: ['2026-10-24', '2026-10-26'] }, false, { soft: true }),
-  c("I'm free next weekend", { avail: ['2026-10-17', '2026-10-18'] }, false, { soft: true }),
+  c("I'm free next weekend", { avail: ['2026-10-16', '2026-10-18'] }),   // Friday to Sunday, read by rule so no model call is needed
   c("I'm free thanksgiving week", { avail: ['2026-11-23', '2026-11-29'] }, false, { soft: true }),
   c("can't do Nov 14-16", { reply: /those dates are out/i, not: ['availability'] }),
   c("I'm busy Nov 14-16", { reply: /those dates are out/i, not: ['availability'] }, true, { soft: true }),

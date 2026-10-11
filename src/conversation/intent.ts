@@ -52,11 +52,11 @@ export function validateConstraintItem(raw: unknown): ConstraintValue | null {
       return values ? { field: o.field, value: values } : null;
     }
     case 'origin': {
-      const text = str(o.text, 60);
+      const text = str(o.text, 60)?.replace(/^the\s+/i, '');
       return text ? { field: 'origin', value: text } : null;
     }
     case 'region': {
-      const text = str(o.text, 60);
+      const text = str(o.text, 60)?.replace(/^the\s+/i, '');   // "the NC mountains" is searched as "NC mountains"
       if (!text) return null;
       const given = o.maxTravelMinutes;
       const minutes = typeof given === 'number' && Number.isInteger(given) && given >= 15 && given <= 1440 ? given : parseMaxTravelMinutes(text);

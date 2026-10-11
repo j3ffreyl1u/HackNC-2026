@@ -100,7 +100,7 @@ function extractSentence(s: string, reference: string, pending: ConstraintField 
   if ((m = /\b(?:within|no more than|at most|up to|under|max(?:imum)? of)\s+(?:about\s+|around\s+)?(\d{1,2}(?:\.\d)?)\s*(?:hours?|hrs?|h)\b(?!\s*of\s+(?:sleep|work))/i.exec(s)) ?? (m = /\b(\d{1,2}(?:\.\d)?)\s*[- ]?(?:hours?|hrs?)\s+(?:drive|away|radius)\b/i.exec(s))) {
     push({ field: 'region', value: `within ${m![1]} hours by car`, maxTravelMinutes: Math.round(Number(m![1]) * 60) });
   } else if ((m = /\b(?:[Gg]o|[Tt]ravel|[Dd]rive|[Hh]ead|going|headed|heading|trip)\s+to\s+(?:the\s+)?((?:[A-Z][A-Za-z.'-]*)(?:\s+[A-Z][A-Za-z.'-]*){0,3})/.exec(s)) && !QUESTION_START.test(s)) {
-    push({ field: 'region', value: clean(m[1]!) });
+    push({ field: 'region', value: clean(m[1]!).replace(/^the\s+/i, '') });
   } else if ((m = /\b(?:want|wanna|'d like|would like)\s+to\s+(?:visit|see)\s+((?:[A-Z][A-Za-z.'-]*)(?:\s+[A-Z][A-Za-z.'-]*){0,3})(?=[\s,.;!?]|$)/.exec(s)) && !QUESTION_START.test(s)) {
     visited = clean(m[1]!);
     push({ field: 'region', value: visited });
@@ -208,6 +208,17 @@ export function extractWithCoverage(text: string, reference: string, pending?: C
       const probe: Extracted[] = [];
       extractSentence(clause, reference, pending, probe);
       if (probe.length === 0) unmatched.push(clause);
+    }
+  }
+  // A place named on its own in a list ("leaving from Chapel Hill, 2 nights, Washington DC, I have a car") is where they want to go.
+  if (!out.some((e) => e.value.field === 'region')) {
+    const clauses = text.split(',').map((c) => c.trim().replace(/[.!]+$/, ''));
+    if (clauses.length >= 3) {
+      const origin = out.find((e) => e.value.field === 'origin')?.value;
+      const named = clauses.find((c) => c.length > 2 && !(origin && origin.field === 'origin' && c.toLowerCase() === origin.value.toLowerCase())
+        && (/^(?:[A-Z][A-Za-z.'-]*)(?:\s+[A-Z][A-Za-z.'-]*){0,3}$/.test(c) || /^(?:the\s+)?(?:[a-z]+\s+){0,2}(?:mountains?|coast|beach(?:es)?|lakes?|shore|countryside)$/i.test(c))
+        && !/^(?:I|We|My|Our)\b/.test(c) && !NOT_A_PLACE.test(c) && !NOT_A_PLACE_ANSWER.test(c) && parseDateWindows(c, reference).length === 0);
+      if (named) out.push({ value: { field: 'region', value: named.replace(/^the\s+/i, '') }, hedged: false });
     }
   }
   if (out.length === 0 && pending) {

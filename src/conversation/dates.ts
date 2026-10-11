@@ -106,6 +106,18 @@ export function parseDateWindows(input: string, reference: string): ParsedWindow
     return ' ';
   });
 
+  // "this weekend" / "next weekend": Friday to Sunday. Without this a plain phrase goes to the language model, which can take half a minute to work it out.
+  const weekend = /\b(this|next)\s+weekend\b/i.exec(input);
+  if (weekend) {
+    const day = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+    const base = Date.UTC(ref.getUTCFullYear(), ref.getUTCMonth(), ref.getUTCDate());
+    const dow = ref.getUTCDay();   // 0 Sunday .. 6 Saturday
+    const toFriday = dow === 6 ? -1 : dow === 0 ? -2 : 5 - dow;
+    const thisFriday = base + toFriday * 86_400_000;
+    const start = weekend[1]!.toLowerCase() === 'this' ? Math.max(thisFriday, base) : thisFriday + 7 * 86_400_000;
+    out.push({ start: day(start), end: day(thisFriday + (weekend[1]!.toLowerCase() === 'this' ? 0 : 7 * 86_400_000) + 2 * 86_400_000) });
+  }
+
   const seen = new Set<string>();
   return out
     .filter((w) => !seen.has(w.start + w.end) && !!seen.add(w.start + w.end))
