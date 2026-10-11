@@ -15,6 +15,8 @@ async function check(h: Humans) {
   return { all: out.map((m) => m.text), count: out.length };
 }
 
+const notice = (r: { all: string[] }) => r.all.filter((t) => /didn't budget|over its budget/.test(t));
+
 describe('M. checking odd bank purchases with the buyer', () => {
   it('M1 a purchase the plan explains is counted and nobody is asked anything', async () => {
     const h = await humans({ fund: 'mock' }); await approved(h);
@@ -38,6 +40,11 @@ describe('M. checking odd bank purchases with the buyer', () => {
     expect(said(await h.say('mason', 'who covered what?'))).toMatch(/\$80.*(waiting|isn't counted|not counted)/i);
     const r = await h.say('jordan', 'trip'); expect(said(r)).toMatch(/counting|shared/i);
     const after = await h.say('mason', 'who covered what?'); expect(said(after)).toMatch(/Jordan \$80/); await h.stop();
+  });
+  it('M3b once the buyer says it was for the trip, nobody also gets a "not budgeted" heads-up about it', async () => {
+    const h = await humans({ fund: 'mock' }); await approved(h); h.paid('jordan', 80, 'casino'); await check(h);
+    await h.say('jordan', 'trip'); const r = await h.say('mason', 'who covered what?');
+    expect(notice(r)).toEqual([]); expect(said(r)).toMatch(/Jordan \$80/); await h.stop();
   });
   it('M4 "no" keeps it personal and out of the split', async () => {
     const h = await humans({ fund: 'mock' }); await approved(h); h.paid('jordan', 80, 'casino'); await check(h);

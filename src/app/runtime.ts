@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { FundService } from '../funding/service.js';
-import { describeCoverage, describePurchaseCheck, describeWrapUp, driftNotices, parsePurchaseAnswer, settleUpFor } from '../planning/funding.js';
+import { categoryOfPurchase, describeCoverage, describePurchaseCheck, describeWrapUp, driftNotices, parsePurchaseAnswer, settleUpFor } from '../planning/funding.js';
 import { accumulatePreferences } from '../planning/constraints.js';
 import { toPlanningState } from './planning-adapter.js';
 import type {
@@ -180,7 +180,7 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
         const { id, memberId } = flag.purchase;
         if (checks[id] || busy.has(memberId)) continue;
         busy.add(memberId);
-        checks[id] = { memberId, status: 'asked', askedAt: now, dollars: flag.purchase.amountDollars };
+        checks[id] = { memberId, status: 'asked', askedAt: now, dollars: flag.purchase.amountDollars, category: categoryOfPurchase(flag.purchase) ?? 'other' };
         replies.push(makeMessage(tripId, `purchase-ask:${id}`, { audience: { kind: 'private', memberId }, text: describePurchaseCheck(flag) }));
       }
       if (replies.length === 0) return;
@@ -213,7 +213,10 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
         const text = answer === 'trip'
           ? `Thanks, I'll count your $${check.dollars} as a shared trip cost. This is simulated sandbox money.`
           : `Okay, I'll leave your $${check.dollars} out of the split. It stays personal.`;
-        const result = await repository.commitEvent({ eventId: message.eventId, state: { ...state, purchaseChecks: { ...state.purchaseChecks, [purchaseId]: { ...check, status: answer } } }, expectedRevision: state.revision, messages: [makeMessage(tripId, `purchase-answer:${message.eventId}`, { audience: { kind: 'private', memberId: member.memberId }, text })] });
+        // They have just told us what it was, so the "over budget / not budgeted" heads-up about that category would only nag.
+        const noticeKey = String(state.revision);
+        const quiet = answer === 'trip' && check.category ? { fundingNoticeKeys: { ...state.fundingNoticeKeys, [noticeKey]: [...new Set([...(state.fundingNoticeKeys?.[noticeKey] ?? []), `${check.category}:over`])] } } : {};
+        const result = await repository.commitEvent({ eventId: message.eventId, state: { ...state, ...quiet, purchaseChecks: { ...state.purchaseChecks, [purchaseId]: { ...check, status: answer } } }, expectedRevision: state.revision, messages: [makeMessage(tripId, `purchase-answer:${message.eventId}`, { audience: { kind: 'private', memberId: member.memberId }, text })] });
         if (result === 'stale') continue;
         if (result === 'committed') await runtime.drainOutbox();
         return;

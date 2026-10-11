@@ -201,7 +201,7 @@ export interface TripState {
   /** Internal warning keys by approved revision; never part of the public snapshot. */
   fundingNoticeKeys?: Record<string, string[]>;
   /** Bank purchases the buyer was asked about ("was this for the trip?"), by purchase id. Internal; never part of the public snapshot. */
-  purchaseChecks?: Record<string, { memberId: MemberId; status: 'asked' | 'trip' | 'personal'; askedAt: string; dollars: number }>;
+  purchaseChecks?: Record<string, { memberId: MemberId; status: 'asked' | 'trip' | 'personal'; askedAt: string; dollars: number; category?: string }>;
   pendingConfirmations?: Record<MemberId, PendingConfirmation>;
   costConfirmations?: Array<{ actorId: MemberId; candidateId: string; costId: string; revision: number; sourceMessageId: string; confirmedAt: string }>;
   itineraryConfirmations?: Array<{ actorId: MemberId; candidateId: string; itemId: string; revision: number; sourceMessageId: string; confirmedAt: string }>;
