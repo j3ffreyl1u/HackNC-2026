@@ -170,3 +170,241 @@ body { background:radial-gradient(ellipse at 45% 0%,#87fff4a8,transparent 45%),l
 .hero .aero-button { background:linear-gradient(#0d6597,#0e6e9e 46%,#05537e 50%,#07628e); color:white; }
 .candidate::before { display:none; }
 @media(max-width:760px) { .view-controls button { font-size:.75rem; }.hero-copy { margin-bottom:130px; }.view-controls { padding:8px; }.hero { min-height:1020px; } }
+/* Reference-led Aero: photographic skies and greenery frame the living reef. */
+body { background:linear-gradient(#007eba18,#00529e65 65%,#052451),url('/aero-meadow.webp') center top / cover fixed; }
+main { background:linear-gradient(135deg,#e6ffff9c,#7cceee70); box-shadow:inset 0 1px #fff,0 20px 55px #003c6866; }
+.hero { background:radial-gradient(ellipse at 15% 0%,#affff59e,transparent 65%),linear-gradient(#139fc4,#0879b1 45%,#073676); }
+.hero::before { content:""; position:absolute; inset:0 0 auto; height:34%; background:url('/aero-ocean.jpg') center 31% / cover; opacity:.62; mask-image:linear-gradient(#000,#0009 45%,transparent); pointer-events:none; }
+.hero-copy { background:linear-gradient(145deg,#ffffffee,#d7f9f4d9 47%,#aee8f0dc 49%,#e1ffffe8); box-shadow:inset 0 2px #fff,inset 0 -2px #5fbbd255,0 16px 32px #00456b55; }
+.hero .aero-button { background:linear-gradient(#66c5ef,#1385c0 46%,#045a95 49%,#0779b8); box-shadow:inset 0 1px #fff,inset 0 0 0 1px #a2efff80,0 5px 12px #034b7a55; }
+.nature-window { display:flex; align-items:flex-end; min-height:210px; padding:24px; background:url('/aero-meadow.webp') center 60% / cover; text-decoration:none; }
+.nature-window>span { display:block; max-width:490px; padding:16px 20px; border-radius:12px; background:linear-gradient(#ffffffed,#edffe9e3); box-shadow:0 6px 20px #164e5240; color:#154c42; }
+.nature-window strong { display:block; font-size:1.2rem; margin-bottom:7px; }.nature-window span span { font-size:.9rem; line-height:1.6; }
+.nature-window:focus-visible { outline:3px solid #075fba; outline-offset:-5px; }
+@media(max-width:760px) { body { background-attachment:scroll; }.hero::before { height:210px; background-position:35% 25%; }.nature-window { min-height:225px; padding:16px; }.nature-window>span { padding:14px; }.nature-window strong { font-size:1.1rem; } }
+/* Finish: open-source lettering and icons, with consistent Aero materials. */
+@font-face { font-family:'Varela Round'; src:url('/aero-display.ttf') format('truetype'); font-style:normal; font-weight:400; font-display:swap; }
+:root { --aero-highlight:#f4ffff; --aero-blue:#075b91; --aero-green:#267c4f; }
+.hero h1 { font-family:'Varela Round','Segoe UI',sans-serif; font-weight:400; font-size:clamp(2.7rem,4.3vw,3.65rem); line-height:1.08; letter-spacing:-.03em; }
+.brand-mark svg { width:29px; height:29px; stroke-width:1.8; }.explorer-icon { display:flex; }.explorer-icon svg { width:25px; height:25px; stroke-width:1.6; }
+.dock-icon svg { width:29px; height:29px; stroke-width:1.7; filter:drop-shadow(0 2px 1px #08638966); }.footer-leaf svg { width:23px; height:23px; vertical-align:middle; stroke-width:1.8; }
+.hero-copy { padding:27px; }.hero .lede { font-size:.95rem; line-height:1.7; }.hero .aero-button { min-height:48px; margin-top:24px; }
+.feature-dock { padding:14px 9px; }.feature-dock a { min-height:76px; }.feature-dock strong { font-size:.92rem; }.feature-dock small { font-size:.81rem; line-height:1.5; }
+.view-controls { box-shadow:inset 0 1px #d5ffff66,0 8px 20px #03365740; }.view-controls button:disabled { opacity:1; background:linear-gradient(#cce2ec,#aecad9); color:#345263; box-shadow:inset 0 1px #ffffff66; }
+.aero-button:active { box-shadow:inset 0 3px 7px #03466c88; }.source { text-decoration-thickness:1px; }
+.nature-window { position:relative; min-height:230px; border-bottom:1px solid #d7ffefa3; }.nature-window>span { transition:box-shadow 180ms ease-out; }.nature-window:hover>span { box-shadow:0 10px 25px #164e5260; }
+.live-pill { flex-shrink:0; } .status { line-height:1.5; }
+@media(min-width:761px) and (max-width:1050px) { .hero-copy { max-width:310px; padding:22px; }.hero h1 { font-size:2.9rem; }.feature-dock a { gap:9px; padding:8px; }.feature-dock small { font-size:.76rem; } }
+@media(max-width:760px) { .hero-copy { padding:24px 20px; }.hero h1 { font-size:clamp(2.5rem,10vw,3.2rem); }.brand { font-size:1rem; letter-spacing:-.025em; }.brand-mark { width:38px; height:38px; }.brand-mark svg { width:25px; height:25px; }.live-pill { padding:8px 10px; font-size:.75rem; }.feature-dock a { min-height:74px; }.nature-window { min-height:230px; }.hero .aero-button { font-size:.81rem; padding:12px 15px; gap:9px; } }
+@media(prefers-reduced-motion:reduce) { .nature-window>span { transition:none; } }
+.hero .aero-button { background:linear-gradient(#146c9b,#0c6596 46%,#045a89 49%,#086c9e); }
+.hero-copy { background-color:#dcf8f7; }.view-controls button { background-color:#c8eaff; }
+/* Adventure-reference composition: one white scene frame, quiet navigation, open type. */
+main { max-width:1340px; margin:46px auto 48px; padding:0; border:0; border-radius:18px; background:#ecfaff; box-shadow:0 24px 70px #032b4666; backdrop-filter:none; overflow:hidden; }
+.hero { margin:0; min-height:clamp(720px,86svh,960px); border:12px solid #f5ffff; border-radius:18px; padding:150px 46px 145px; align-items:center; background:radial-gradient(ellipse at 15% 0%,#a3fff199,transparent 58%),linear-gradient(110deg,#188fb8,#096598 55%,#053b67); }
+.hero::before { height:38%; opacity:.58; }
+.hero .topbar { position:absolute; top:0; left:0; width:100%; height:100px; max-width:none; padding:0 32px; z-index:5; gap:18px; }
+.hero .brand { font-size:1.1rem; letter-spacing:-.025em; }.hero .brand-mark { width:38px; height:38px; }.hero .brand-mark svg { width:24px; height:24px; }
+.hero .live-pill { margin-left:auto; }
+.explorer-bar { background:none; min-height:auto; padding:0; gap:8px; border-radius:0; }.explorer-bar>span { display:none; }.explorer-bar a { color:white; background:#064e779c; border:1px solid #bdefff70; padding:11px 14px; text-shadow:none; font-size:.8rem; }
+.hero-copy { max-width:470px; margin:20px 0 0; padding:0; border:0; border-radius:0; background:none; backdrop-filter:none; box-shadow:none; }
+.hero h1 { margin:0 0 28px; font-family:'Varela Round','Segoe UI',sans-serif; font-size:clamp(3.5rem,5.8vw,5.5rem); line-height:1.04; letter-spacing:-.035em; color:#efffff; text-shadow:0 3px 10px #03436a66; }
+.hero h1 span { color:#c5ffd9; }.hero .lede { max-width:340px; font-size:1rem; color:#edffff; text-shadow:0 1px 2px #033e69; }
+.hero .aero-button { background:linear-gradient(#effffb,#bbeecf 48%,#8bc9aa 51%,#b9eed5); color:#124b3c; text-shadow:0 1px #ffffffb0; border-color:#d6ffe9; }
+.view-controls { left:30px; right:30px; bottom:28px; max-width:none; padding:18px 0 0; border:0; border-top:1px solid #d1ffff80; border-radius:0; background:none; backdrop-filter:none; box-shadow:none; }
+.view-controls button { background:linear-gradient(#f4ffffee,#bde6edee); border-color:#e3ffffb0; }
+.feature-dock { border-bottom:1px solid #badce5; }.feature-dock a { padding-top:14px; padding-bottom:14px; }
+@media(min-width:761px) and (max-width:1380px) { main { margin:28px 22px 48px; }.hero-copy { max-width:390px; }.hero h1 { font-size:4.3rem; }.hero { padding-right:28px; } }
+@media(min-width:761px) and (max-width:1050px) { .hero-copy { max-width:310px; }.hero h1 { font-size:3.5rem; }.hero .topbar { padding:0 22px; }.hero .live-pill { display:none; }.explorer-bar { margin-left:auto; } }
+@media(max-width:760px) { main { margin:14px 10px 30px; }.hero { border-width:7px; min-height:1050px; padding:530px 21px 190px; align-items:flex-end; }.hero .topbar { height:110px; padding:12px 14px; align-items:flex-start; flex-wrap:wrap; gap:8px; }.hero .brand { font-size:.91rem; gap:7px; }.hero .brand-mark { width:31px; height:31px; }.hero .brand-mark svg { width:22px; height:22px; }.hero .live-pill { font-size:.66rem; padding:7px; }.explorer-bar { flex-basis:100%; justify-content:flex-end; gap:7px; }.explorer-bar a { padding:8px 11px; font-size:.74rem; }.hero-copy { max-width:none; margin:0; }.hero h1 { font-size:clamp(2.65rem,11vw,3.7rem); margin-bottom:23px; }.hero .lede { font-size:.94rem; }.hero .aero-button { padding:12px 13px; }.view-controls { bottom:23px; left:17px; right:17px; padding-top:16px; gap:7px; }.view-controls button { padding:8px; font-size:.72rem; }.hero::before { height:220px; }.hero .lede { max-width:100%; } }
+body { display:flow-root; }
+@media(min-width:761px) and (max-width:1050px) { .hero .lede { padding:10px 12px; margin-left:-12px; background:#06446be8; border-radius:8px; } }
+/* A transparent WebGL layer gives the reef genuine perspective and depth. */
+.reef-depth { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:1; }
+.hero-copy { z-index:3; }.view-controls { z-index:4; }
+.hero { background:radial-gradient(ellipse at 15% 0%,#9affda77,transparent 58%),linear-gradient(110deg,#188fa4,#096583 55%,#043e59); }
+#trip,.plan-filters { background:#f2fff5; }.nature-window>span { background:linear-gradient(#ffffffed,#e5faecee); }
+@media(max-width:760px) { .reef-depth { height:500px; } }
+.reef-depth { pointer-events:auto; touch-action:none; cursor:grab; }.reef-depth.dragging { cursor:grabbing !important; }.reef-depth:focus-visible { outline:3px solid #c4ffd9; outline-offset:-5px; }
+.reef-hint { color:#efffff; font-size:.8rem; align-self:center; margin-left:auto; max-width:250px; line-height:1.5; }
+@media(max-width:760px) { .reef-hint { flex-basis:100%; margin:2px 0 0; max-width:none; text-align:center; font-size:.74rem; }.view-controls { bottom:18px; }.hero { padding-bottom:215px; } }
+/* Product-first polish: calm surroundings, one clear action, discoverable play. */
+body { background:linear-gradient(#064965d9,#064f63dc 60%,#082e48ed),url('/aero-meadow.webp') center top / cover fixed; }
+.sky-bubbles { opacity:.3; }
+.hero-copy { max-width:465px; padding:22px 0 22px 24px; background:linear-gradient(90deg,#054d6726,#05455e99); border-radius:14px; }
+.hero h1 { font-size:clamp(3.3rem,4.6vw,4.4rem); line-height:1.08; margin-bottom:25px; }.hero .lede { max-width:355px; line-height:1.75; font-size:1rem; }.hero .aero-button { min-height:50px; margin-top:25px; }
+.hero { border-bottom-width:0; border-radius:18px 18px 0 0; }.feature-dock { margin:0 12px; padding:17px 12px; background:linear-gradient(#d5fbf3,#c3eced 49%,#b2dfe5 51%,#d7f5f2); box-shadow:inset 0 1px #f4ffff; }.feature-dock a { border-right:0; padding:10px 14px; }.feature-dock small { max-width:220px; }
+.view-controls { align-items:center; justify-content:space-between; padding-top:17px; }.reef-hint { order:-1; margin:0; max-width:none; padding:9px 14px; border-radius:10px; color:#eaffff; background:#074b6866; font-size:.86rem; }
+.reef-settings { position:relative; }.reef-settings>summary { cursor:pointer; min-height:44px; padding:11px 17px; border:1px solid #d8ffff8a; border-radius:10px; color:#eaffff; background:linear-gradient(#21778eaa,#07546fba); box-shadow:inset 0 1px #f5ffff66; font-size:.84rem; }.reef-settings>summary:focus-visible { outline:3px solid #c5ffd9; outline-offset:4px; }
+.reef-settings-panel { position:absolute; bottom:58px; right:0; width:235px; padding:11px; display:grid; gap:8px; background:linear-gradient(#e8fffff5,#bfe7eaf5); border-radius:12px; box-shadow:0 12px 26px #032a4b66,inset 0 1px white; }.reef-settings-panel button { width:100%; text-align:left; font-size:.83rem; }
+@media(min-width:761px) and (max-width:1050px) { .hero-copy { max-width:330px; padding:20px; }.hero h1 { font-size:3.2rem; }.hero .lede { margin-left:0; padding:0; background:none; }.feature-dock a { padding:10px 5px; } }
+@media(max-width:760px) { body { background-attachment:scroll; }.hero-copy { width:100%; max-width:none; padding:20px 0; background:none; }.hero h1 { font-size:clamp(2.55rem,10vw,3.25rem); }.hero { padding-bottom:160px; }.view-controls { gap:8px; bottom:24px; }.reef-hint { flex-basis:auto; max-width:160px; text-align:left; padding:0; font-size:.77rem; }.reef-settings>summary { font-size:.75rem; padding:12px; }.reef-settings-panel { width:220px; }.feature-dock { margin:0 7px; padding:8px 12px; }.feature-dock a { padding:12px 0; } }
+/* Readable Aero glass and a single, integrated interaction shelf. */
+.hero-copy { padding:30px; border:1px solid #d6ffff70; background:linear-gradient(135deg,#0c607bcf,#064462ec); backdrop-filter:blur(8px); box-shadow:inset 0 1px #e8ffff66,0 18px 40px #032c4340; }
+.hero h1 { margin-bottom:24px; font-size:clamp(3.2rem,4.4vw,4.2rem); }.hero .lede { font-size:1.06rem; line-height:1.75; color:#f5ffff; text-shadow:none; }
+.view-controls { border-top:0; padding:12px 15px; border-radius:13px; background:linear-gradient(#17697ca3,#08445fa6); border:1px solid #c4ffff70; box-shadow:inset 0 1px #eeffff4d,0 8px 22px #02344936; backdrop-filter:blur(6px); }
+.reef-hint { padding:8px 12px 8px 37px; background:none; position:relative; font-size:.95rem; font-weight:600; }.reef-hint::before { content:''; position:absolute; left:10px; top:50%; width:14px; height:19px; border:2px solid #ddfff4; border-radius:8px; transform:translateY(-50%); box-shadow:inset 0 1px #ffffff90; }.reef-hint::after { content:''; position:absolute; left:17px; top:calc(50% - 6px); height:6px; border-left:2px solid #ddfff4; }
+.reef-settings>summary { background:linear-gradient(#e3fff9,#acdacf 48%,#8bc1b9 50%,#bbe5d9); color:#124f4d; border-color:#d6fff1; box-shadow:inset 0 1px white,0 3px 8px #042f4440; }
+@media(min-width:761px) and (max-width:1050px) { .hero-copy { padding:24px; }.hero .lede { font-size:1rem; } }
+@media(max-width:760px) { .hero-copy { padding:24px 20px; margin-top:12px; }.hero h1 { font-size:2.65rem; }.hero .lede { font-size:1rem; }.hero { padding-left:14px; padding-right:14px; padding-bottom:160px; }.view-controls { padding:8px; }.reef-hint { font-size:.8rem; max-width:165px; padding-left:29px; }.reef-hint::before { left:3px; }.reef-hint::after { left:10px; } }
+/* Sunlit aquarium finish, drawn from the supplied water / sky / greenery references. */
+.hero { background:radial-gradient(ellipse at 15% -8%,#efffffa3,transparent 62%),radial-gradient(ellipse at 72% 12%,#4edcff73,transparent 58%),linear-gradient(135deg,#36d6da,#0b9fcf 48%,#056caa); }
+.hero::before { height:43%; opacity:.72; }
+.hero-copy { background:linear-gradient(140deg,#075e87dc,#06446ce8); border-color:#dcffffa6; box-shadow:inset 0 1px #f3ffffa6,0 16px 38px #034c7440; }
+.hero .aero-button { background:linear-gradient(#f1ffdb,#c5f392 47%,#a5d973 51%,#d0f7a8); color:#214c29; border-color:#f4ffe6; box-shadow:inset 0 2px #ffffffcf,0 5px 14px #073f4c42; }
+.view-controls { background:linear-gradient(#207b99a6,#0a5c7fa6); border-color:#d4ffffa1; box-shadow:inset 0 1px #ffffffa6,0 8px 25px #034d7240; }
+.feature-dock { background:linear-gradient(#edfffc,#c1f4f1 48%,#a1e6e8 51%,#dafcf1); }.dock-icon { box-shadow:inset 0 3px 5px white,inset 0 -4px 8px #027c9e66,0 5px 13px #045f873b; }
+.plan-filters { background:linear-gradient(#f4fff9,#effdf7); }
+@media(max-width:760px) { .hero { background:radial-gradient(ellipse at 10% 0%,#d5fffaa1,transparent 43%),linear-gradient(#22c4dd,#087fab 57%,#06658e); }.hero::before { height:240px; }.hero-copy { background:linear-gradient(#065d86e8,#06476fed); } }
+/* Reference artwork surrounds the reef: sky above, liquid texture below. */
+.hero { background:linear-gradient(110deg,#05b8d538,#0a91bf48),url('/aero-ocean.jpg') center center / cover; }
+.hero::before { height:100%; opacity:1; background:linear-gradient(180deg,#b5ffff12 0%,#0aa2cc22 46%,#08b8d73b 70%,#065d9738),url('/aero-ocean.jpg') center center / cover; mask-image:none; }
+.hero::after { content:''; display:block !important; position:absolute; inset:0; z-index:0; pointer-events:none; background:linear-gradient(90deg,#17c4d213,transparent 60%,#0077a530),linear-gradient(0deg,#0b80b529,transparent 34%); }
+#anemone { z-index:1; }.reef-depth { z-index:2; }.hero-copy { z-index:3; }.view-controls { z-index:4; }.hero .topbar { z-index:5; }
+@media(max-width:760px) { .hero { background:#098dbc; }.hero::before { height:530px; background:linear-gradient(#b5ffff0a,#08b8d738 74%,#098dbc),url('/aero-ocean.jpg') 38% center / auto 530px no-repeat; }.hero::after { background:linear-gradient(0deg,#06608a40,transparent 55%); } }
+/* Keep the fish submerged: luminous water in front, distant scenery behind it. */
+.hero { background:radial-gradient(ellipse at 15% -8%,#efffffa3,transparent 62%),radial-gradient(ellipse at 72% 12%,#4edcff73,transparent 58%),linear-gradient(135deg,#36d6da,#0b9fcf 48%,#056caa); }
+.hero::before { height:100%; opacity:.16; background:url('/aero-ocean.jpg') center center / cover; mask-image:linear-gradient(#0008,#000 35%,#0008 70%,transparent); }
+.hero::after { background:linear-gradient(180deg,#42e4e557,#19bbd959 50%,#0588bb8c); }
+@media(max-width:760px) { .hero { background:radial-gradient(ellipse at 10% 0%,#d5fffaa1,transparent 43%),linear-gradient(#22c4dd,#087fab 57%,#06658e); }.hero::before { height:530px; opacity:.12; background:url('/aero-ocean.jpg') 38% center / auto 530px no-repeat; mask-image:linear-gradient(#000,transparent); }.hero::after { background:linear-gradient(#35d5de33,#078ab54d 50%,#06658e33); } }
+/* Separate distant elements, submerged in cyan rather than a pasted collage. */
+.hero::before { display:none; }
+.distant-city { position:absolute; right:1%; top:16%; width:40%; height:26%; background:url('/aero-ocean.jpg') right 44% / 250% auto no-repeat; opacity:.18; filter:blur(1px) saturate(.7); mask-image:radial-gradient(ellipse,#000 25%,transparent 72%); pointer-events:none; z-index:0; }
+.distant-monitor { position:absolute; left:4%; top:27%; width:125px; height:auto; opacity:.22; filter:blur(.7px) saturate(.8); transform:rotate(-9deg); pointer-events:none; z-index:0; }
+.aero-lens { position:absolute; border-radius:50%; pointer-events:none; z-index:0; border:1px solid #e4ffffb0; background:radial-gradient(circle at 29% 18%,#ffffffbf,#d9ffff0d 28%,#7affea08 65%,#95f5ff38 85%,#ffffff9c); box-shadow:inset 5px 7px 12px #ffffff6b,inset -5px -8px 16px #29b4d949,0 12px 35px #047aa62b; }
+.lens-one { width:220px; height:220px; left:8%; top:10%; }.lens-two { width:140px; height:140px; right:8%; top:12%; opacity:.7; }
+@media(max-width:760px) { .distant-city { top:17%; width:65%; height:150px; }.distant-monitor { top:22%; left:0; width:85px; opacity:.16; }.lens-one { width:130px; height:130px; top:12%; left:6%; }.lens-two { width:85px; height:85px; right:5%; top:31%; } }
+.aero-lens::after { content:''; position:absolute; inset:-5%; background:url('/aero-bubble.png') center / 100% 100% no-repeat; opacity:.9; }
+/* The chosen globe, bright laptop, and real leaf cutouts join the aquatic scene. */
+.pouring-globe { position:absolute; left:1%; top:9%; width:clamp(230px,26vw,360px); height:auto; opacity:.72; pointer-events:none; z-index:0; filter:drop-shadow(0 9px 20px #027baa29); }
+.distant-monitor { left:1.5%; top:auto; bottom:100px; width:245px; opacity:.95; filter:brightness(1.13) saturate(1.16) drop-shadow(0 12px 13px #05679342); transform:rotate(-5deg); z-index:3; }
+.aero-greenery { position:absolute; right:-7%; top:28%; width:420px; height:auto; opacity:.83; transform:rotate(-21deg) scaleY(1.35); filter:saturate(1.2) drop-shadow(0 10px 18px #007a7b30); pointer-events:none; z-index:1; }
+.hero-copy { background:linear-gradient(140deg,#075e87da,#06446ee8); }
+@media(max-width:760px) { .pouring-globe { width:185px; top:8%; left:-8%; opacity:.6; }.distant-monitor { width:135px; top:365px; bottom:auto; left:0; opacity:.92; }.aero-greenery { width:230px; top:52%; right:-22%; opacity:.62; transform:rotate(-18deg); } }
+/* Sunlit surface atmosphere, with the living reef still submerged below it. */
+.aero-sun { position:absolute; left:42%; top:-38px; width:230px; height:230px; border-radius:50%; pointer-events:none; z-index:0; background:radial-gradient(circle,#ffffff 0%,#fffff1f5 10%,#f0ffe7a1 23%,#ddffff48 43%,transparent 70%); }
+.aero-sun::before,.aero-sun::after { content:''; position:absolute; left:50%; top:50%; width:310px; height:3px; transform:translate(-50%,-50%) rotate(-32deg); background:linear-gradient(90deg,transparent,#ffffffa6,white,#ffffffa6,transparent); }
+.aero-sun::after { transform:translate(-50%,-50%) rotate(44deg); width:260px; }
+.aero-clouds { position:absolute; top:0; right:0; width:56%; height:155px; background:url('/aero-ocean.jpg') right 18% / 190% auto no-repeat; opacity:.37; pointer-events:none; z-index:0; mask-image:linear-gradient(180deg,#000,transparent),linear-gradient(90deg,transparent,#000 20%); mask-composite:intersect; }
+.greenery-extra { right:-4%; top:auto; bottom:75px; width:260px; opacity:.72; transform:rotate(21deg) scaleX(-1); z-index:1; }
+@media(max-width:760px) { .aero-sun { left:38%; top:4px; width:145px; height:145px; }.aero-sun::before { width:200px; }.aero-sun::after { width:170px; }.aero-clouds { width:75%; height:125px; opacity:.28; }.greenery-extra { width:170px; bottom:120px; right:-18%; opacity:.54; } }
+
+/* The participant dashboard: sunny Aero glass with the itinerary in charge. */
+[hidden] { display:none !important; }
+body[data-view="dashboard"] { color:#133e50; background:radial-gradient(ellipse at 82% 0%,#fbffe6,transparent 42%),linear-gradient(145deg,#a1edf4 0%,#d4f5ef 40%,#e9f6e4 100%); }
+body[data-view="dashboard"]::after { display:none; }
+body[data-view="dashboard"] .sky-bubbles { position:fixed; height:100vh; opacity:.35; }
+body[data-view="dashboard"] main { width:min(1280px,calc(100% - 64px)); max-width:1280px; margin:0 auto 40px; padding:0; border:0; border-radius:0; background:none; box-shadow:none; backdrop-filter:none; }
+body[data-view="dashboard"] .hero,body[data-view="dashboard"] .feature-dock,body[data-view="dashboard"] .nature-window,body[data-view="dashboard"] .plan-filters,body[data-view="dashboard"] #trip,body[data-view="dashboard"] #status { display:none; }
+body[data-view="dashboard"] #fund { margin:26px 0 0; padding:0; border:0; border-radius:0; background:none; box-shadow:none; }
+body[data-view="dashboard"] h1,body[data-view="dashboard"] h2,body[data-view="dashboard"] h3,body[data-view="dashboard"] h4 { text-shadow:none; letter-spacing:-.025em; }
+body[data-view="dashboard"] button,body[data-view="dashboard"] a { -webkit-tap-highlight-color:transparent; }
+body[data-view="dashboard"] a:focus-visible,body[data-view="dashboard"] button:focus-visible,body[data-view="dashboard"] summary:focus-visible { outline:3px solid #126da5; outline-offset:4px; }
+body[data-view="dashboard"] svg { width:22px; height:22px; flex-shrink:0; }
+.dashboard-nav { min-height:96px; display:flex; align-items:center; justify-content:space-between; gap:28px; }
+.dashboard-brand { text-decoration:none; color:#11516a; font-family:'Varela Round','Segoe UI',sans-serif; font-size:1.3rem; font-weight:400; letter-spacing:-.025em; }
+.dashboard-brand span { display:block; color:#38636b; font:500 .72rem 'Segoe UI',sans-serif; letter-spacing:.035em; margin-top:5px; }
+.dashboard-nav nav { display:flex; align-items:center; gap:8px; }
+.dashboard-nav nav a { padding:12px 16px; border-radius:9px; text-decoration:none; color:#214e5d; font-size:.86rem; font-weight:600; }
+.dashboard-nav nav a:hover { background:#ffffff85; }
+.dashboard-nav nav a:last-child { background:linear-gradient(#f4fffb,#c1eee5); box-shadow:inset 0 1px white,0 3px 8px #146c7014; }
+.dashboard-welcome { display:flex; justify-content:space-between; align-items:center; gap:24px; margin:14px 0 24px; }
+.dashboard-welcome h1 { font-size:clamp(1.9rem,3.3vw,2.75rem); line-height:1.15; margin:0 0 10px; color:#153e50; text-wrap:balance; }
+.dashboard-welcome p { margin:0; color:#3c626d; font-size:.93rem; line-height:1.6; }
+.dashboard-sync { display:inline-flex; align-items:center; white-space:nowrap; color:#285e52; font-size:.8rem; gap:8px; }
+.dashboard-sync::before { content:''; width:8px; height:8px; border-radius:50%; background:#207e5d; box-shadow:0 0 0 4px #51bb8230; }
+.dashboard-sync.offline { color:#855222; }.dashboard-sync.offline::before { background:#ad6c29; box-shadow:none; }
+.dashboard-cover { min-height:250px; padding:32px 40px; position:relative; overflow:hidden; border-radius:16px; background:linear-gradient(90deg,#093e42ee,#0b504879 50%,#1575560f),url('/aero-meadow.webp') center 58% / cover; box-shadow:0 10px 24px #2c8a8623; }
+.dashboard-cover::after { content:''; position:absolute; pointer-events:none; top:-60px; right:10%; width:170px; height:170px; border-radius:50%; background:radial-gradient(circle at 28% 24%,#ffffff8c,#d9ffff0d 35%,#d5ffff21 65%,#ffffff83 98%); box-shadow:inset 4px 7px 10px #ffffff7d; }
+body[data-motion="on"] .dashboard-cover::after { animation:dashboard-drift 14s ease-in-out infinite alternate; }
+@keyframes dashboard-drift { to { transform:translate(-38px,28px); } }
+.dashboard-cover-copy { position:relative; z-index:1; max-width:520px; }
+.dashboard-cover h2 { font-family:'Varela Round','Segoe UI',sans-serif; color:#fff; font-size:clamp(1.5rem,2.4vw,2.05rem); line-height:1.25; margin:14px 0 12px; max-width:430px; }
+.dashboard-cover p { color:#edfffc; max-width:435px; font-size:.9rem; line-height:1.65; margin:0; }
+.dashboard-badge { display:inline-block; font-size:.75rem; padding:6px 10px; border-radius:8px; color:#eafffc; background:#ffffff1c; box-shadow:inset 0 1px #ffffff37; }
+.dashboard-badge.ready { color:#d8ffdf; }
+.dashboard-demo-label { margin-left:7px; background:#f5ecce; color:#655020; }
+.dashboard-primary { min-height:44px; display:inline-flex; align-items:center; gap:24px; margin-top:20px; padding:10px 15px; border-radius:9px; background:linear-gradient(#f5fff3,#b9edd7 48%,#a2dfca 51%,#c5f4e1); box-shadow:inset 0 1px white,0 4px 12px #002f4040; color:#124e43; font-size:.85rem; font-weight:700; text-decoration:none; }
+.dashboard-primary:hover { filter:brightness(1.05); }.dashboard-primary svg { width:18px; height:18px; }
+.dashboard-image-note { position:absolute; right:16px; bottom:12px; font-size:.65rem; color:#fff; background:#073e48cb; padding:5px 8px; border-radius:5px; }
+.dashboard-facts { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:0; margin:22px 0 28px; padding:22px 12px; background:#ffffffa8; border-radius:14px; box-shadow:inset 0 1px #fff; }
+.dashboard-fact { padding:0 20px; }.dashboard-fact+.dashboard-fact { border-left:1px solid #a9d9d4; }
+.dashboard-fact dt { display:flex; align-items:center; gap:8px; color:#456674; font-size:.8rem; }.dashboard-fact dt svg { width:18px; height:18px; color:#247f7b; }
+.dashboard-fact dd { margin:10px 0 0; font-size:clamp(1rem,1.65vw,1.3rem); font-weight:700; font-variant-numeric:tabular-nums; color:#143f4e; line-height:1.4; }
+.dashboard-fact p { margin:6px 0 0; font-size:.74rem; color:#416471; line-height:1.5; }
+.dashboard-layout { display:grid; grid-template-columns:minmax(0,1fr) 315px; gap:24px; align-items:start; }
+.dashboard-main-column,.dashboard-side-column { display:grid; gap:24px; min-width:0; }
+.dashboard-panel { background:#fafffff0; border-radius:14px; padding:26px 28px; box-shadow:0 8px 22px #1f737715; scroll-margin-top:24px; }
+.dashboard-panel h2 { margin:0 0 8px; font-size:1.3rem; line-height:1.3; color:#153e50; }
+.dashboard-panel p { font-size:.9rem; color:#385e6b; line-height:1.65; }
+.dashboard-panel .dashboard-subtitle { font-size:.8rem; margin:0 0 20px; color:#476c76; }
+.dashboard-options { display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:0 0 24px; }
+.dashboard-options>span { font-size:.84rem; font-weight:650; margin-right:8px; }
+.dashboard-options button,.dashboard-day-tabs button { min-height:44px; cursor:pointer; color:#235662; border:1px solid #9dcac5; border-radius:9px; background:#f5fffb; padding:9px 14px; font:600 .82rem 'Segoe UI',sans-serif; transition:background 150ms ease; }
+.dashboard-options button:hover,.dashboard-day-tabs button:hover { background:#d6f9ef; }
+.dashboard-options button[aria-pressed="true"],.dashboard-day-tabs button[aria-pressed="true"] { background:linear-gradient(#087b8b,#096472); color:white; border-color:#096472; box-shadow:inset 0 1px #85d5dcb3; }
+.dashboard-options button small { display:block; font-size:.65rem; font-weight:400; margin-top:3px; }
+.dashboard-options>p { flex-basis:100%; margin:0; font-size:.76rem; color:#3a6470; }
+.dashboard-day-tabs { display:flex; flex-wrap:wrap; gap:8px; padding-bottom:14px; }
+.dashboard-time-note { font-size:.73rem !important; margin:0 0 24px; color:#426570; }
+.dashboard-day+.dashboard-day { margin-top:30px; }.dashboard-day h3 { font-size:1rem; margin:0 0 20px; color:#176b6b; }
+.dashboard-route { list-style:none; padding:0; margin:0; }
+.dashboard-stop { position:relative; display:grid; grid-template-columns:85px minmax(0,1fr); gap:24px; padding-bottom:24px; }
+.dashboard-stop:last-child { padding-bottom:0; }
+.dashboard-stop::before { content:''; position:absolute; left:96px; top:14px; bottom:-5px; width:1px; background:#a8d6d2; }
+.dashboard-stop:last-child::before { display:none; }
+.dashboard-stop::after { content:''; position:absolute; left:90px; top:6px; height:13px; width:13px; border-radius:50%; background:linear-gradient(#79ddc7,#159c92); box-shadow:inset 0 1px #cafff0,0 2px 5px #1a746b30; }
+.dashboard-stop-time { font-size:.77rem; color:#426d75; font-variant-numeric:tabular-nums; padding-top:5px; }
+.dashboard-stop-copy { padding-left:8px; min-width:0; }.dashboard-stop h4 { font-size:1.05rem; margin:0 0 7px; color:#174e5b; line-height:1.4; }
+.dashboard-stop p { margin:0 0 10px; font-size:.85rem; line-height:1.65; }.dashboard-stop .dashboard-stop-location { font-size:.77rem; color:#426d75; }
+.dashboard-stop-meta { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.dashboard-tag { font-size:.7rem; color:#196144; background:#ddf6e4; padding:4px 8px; border-radius:5px; display:inline-flex; align-items:center; gap:4px; }.dashboard-tag svg { width:13px; height:13px; }
+.dashboard-travel { font-size:.73rem; color:#466976; }.dashboard-map { color:#06697e; font-size:.76rem; display:inline-flex; gap:3px; align-items:center; min-height:34px; text-underline-offset:3px; }.dashboard-map svg { width:14px; height:14px; }
+.dashboard-acceptance { display:block; width:100%; height:7px; appearance:none; border:0; border-radius:8px; margin:0 0 20px; overflow:hidden; background:#dcefe8; }
+.dashboard-acceptance::-webkit-progress-bar { background:#dcefe8; }.dashboard-acceptance::-webkit-progress-value { background:linear-gradient(90deg,#18a5b0,#49b981); border-radius:8px; }.dashboard-acceptance::-moz-progress-bar { background:#2ba58d; }
+.dashboard-member { display:flex; align-items:center; gap:11px; padding:12px 0; }.dashboard-member+.dashboard-member { border-top:1px solid #e0edeb; }
+.dashboard-avatar { width:37px; height:37px; flex-shrink:0; display:grid; place-items:center; font-size:.77rem; font-weight:700; border-radius:50%; color:#116c72; background:linear-gradient(#c3f6f4,#91daca); box-shadow:inset 0 2px #ffffffc9; }
+.dashboard-member:nth-of-type(2n) .dashboard-avatar { background:linear-gradient(#eff5cb,#cde5b2); color:#46602e; }
+.dashboard-member strong { display:block; font-size:.87rem; }.dashboard-member small { display:block; color:#426d75; font-size:.74rem; margin-top:4px; }.dashboard-member>svg { margin-left:auto; width:17px; color:#218455; }
+.dashboard-footnote { display:block; font-size:.73rem !important; color:#476b73; line-height:1.6; margin:15px 0 0; }
+#dashboard-next { background:linear-gradient(145deg,#e4faf7,#c1efe6); } #dashboard-next>svg { color:#1a7b79; margin-top:10px; } #dashboard-next p { margin-bottom:0; }
+.dashboard-outdoors { background:linear-gradient(135deg,#f7ffed,#dcf0da); }.dashboard-outdoors>svg { color:#377b49; margin-top:8px; }.dashboard-outdoors p { margin:16px 0 3px; font-weight:600; }.dashboard-outdoors small { font-size:.73rem; color:#486b54; line-height:1.6; display:block; }.dashboard-outdoors .dashboard-driving { font-weight:400; font-size:.8rem; }
+.dashboard-cost-total { margin:18px 0 14px; }.dashboard-cost-total strong { font-size:1.7rem; color:#164754; font-variant-numeric:tabular-nums; }.dashboard-cost-total span { font-size:.8rem; }
+.dashboard-cost-bar { display:flex; height:21px; overflow:hidden; border-radius:7px; gap:3px; background:#e1eeea; }.dashboard-cost-bar span { min-width:2px; }
+.category-stay { background:#2699c1; }.category-travel { background:#46babb; }.category-food { background:#89c76b; }.category-activity { background:#b494d4; }.category-fees { background:#e8b866; }.category-other { background:#789ba9; }.category-contingency { background:#a4c9c4; }
+.dashboard-cost-legend { display:grid; grid-template-columns:1fr 1fr; gap:12px 28px; margin:20px 0; }.dashboard-cost-legend>div { display:flex; justify-content:space-between; gap:16px; font-size:.8rem; }.dashboard-cost-legend dt { display:flex; align-items:center; gap:8px; }.dashboard-cost-legend i { width:9px; height:9px; border-radius:3px; display:inline-block; flex-shrink:0; }.dashboard-cost-legend dd { margin:0; font-weight:650; font-variant-numeric:tabular-nums; }
+.dashboard-notice { color:#765020 !important; background:#fff4d8; padding:12px 15px; border-radius:8px; font-size:.82rem !important; }
+.dashboard-checklist { list-style:none; display:grid; gap:14px; margin:0; padding:0; }
+.dashboard-checklist li { display:grid; grid-template-columns:14px minmax(0,1fr); column-gap:11px; align-items:start; }
+.dashboard-checklist li::before { content:''; width:10px; height:10px; margin-top:5px; border:2px solid #4b9b84; border-radius:50%; }
+.dashboard-checklist li.is-blocking::before { border-color:#b4772d; background:#f3d79d; }
+.dashboard-check-copy { min-width:0; }
+.dashboard-checklist strong { display:block; color:#194d59; font-size:.86rem; line-height:1.4; }
+.dashboard-checklist span { display:block; margin-top:3px; color:#426570; font-size:.82rem; line-height:1.55; }
+.dashboard-tradeoffs { margin-top:22px; padding-top:16px; border-top:1px solid #d7e9e5; }
+.dashboard-tradeoffs h3 { margin:0 0 7px; color:#315d64; font-size:.84rem; }
+.dashboard-tradeoffs p { margin:0; font-size:.82rem; }
+.dashboard-context-note { margin:18px 0 0; padding-top:13px; border-top:1px solid #d7e9e5; color:#496b72 !important; font-size:.76rem !important; line-height:1.55 !important; }
+.dashboard-context-note + .dashboard-context-note { margin-top:0; border-top:0; padding-top:6px; }
+body[data-view="dashboard"] .plan-disclosure { border-top:1px solid #c5e0dc; }.dashboard-fund { padding:28px 32px; }
+.dashboard-fund-summary { display:flex; align-items:center; gap:24px; margin:24px 0; }.dashboard-fund-summary h3 { margin:0; font-size:1.3rem; }.dashboard-fund-summary p { margin:8px 0; }.dashboard-fund-summary small { color:#476a74; font-size:.8rem; }
+.dashboard-fund-progress { position:relative; width:110px; height:110px; flex-shrink:0; display:grid; place-items:center; }.dashboard-fund-progress svg { position:absolute; width:110px !important; height:110px !important; }.dashboard-fund-progress strong { font-size:1.5rem; font-variant-numeric:tabular-nums; color:#126f76; }.fund-ring-track { stroke:#deeee8; }.fund-ring-value { stroke:#21a3a4; stroke-linecap:round; }
+.dashboard-fund-numbers { display:flex; margin:0 0 0 auto; gap:35px; }.dashboard-fund-numbers dt { font-size:.78rem; color:#466b74; margin-bottom:8px; }.dashboard-fund-numbers dd { margin:0; font-size:1.5rem; font-weight:700; font-variant-numeric:tabular-nums; }
+.dashboard-spend-heading { margin-top:28px; font-size:1rem; }.dashboard-spend-row { display:grid; grid-template-columns:minmax(180px,1fr) minmax(100px,1fr) 95px; align-items:center; gap:20px; padding:12px 0; }.dashboard-spend-row strong { display:block; font-size:.85rem; }.dashboard-spend-row span { display:block; font-size:.74rem; color:#446b74; margin-top:5px; }.dashboard-spend-row meter { width:100%; height:10px; appearance:none; border-radius:8px; background:#e5efeb; }.dashboard-spend-row meter::-webkit-meter-bar { background:#e5efeb; border:0; height:9px; }.dashboard-spend-row meter::-webkit-meter-optimum-value { background:#269ba0; border-radius:8px; }.dashboard-spend-row small { font-size:.7rem; color:#38695d; text-align:right; }.dashboard-spend-row .dashboard-over { color:#a25c28; }
+.dashboard-loading,.dashboard-empty { min-height:240px; display:flex; align-items:center; justify-content:center; gap:20px; padding:30px; border-radius:14px; background:#ffffffbf; line-height:1.7; }
+.loading-orbit { width:24px; height:24px; border:3px solid #b1e1d7; border-top-color:#16858d; border-radius:50%; }
+body[data-motion="on"] .loading-orbit { animation:dashboard-spin 1s linear infinite; } @keyframes dashboard-spin { to { transform:rotate(360deg); } }
+@media(max-width:1050px) { .dashboard-layout { grid-template-columns:minmax(0,1fr) 285px; gap:18px; }.dashboard-panel { padding:22px; }.dashboard-facts { padding:18px 4px; }.dashboard-fact { padding:0 13px; }.dashboard-fact dt { font-size:.73rem; }.dashboard-fund-summary { flex-wrap:wrap; }.dashboard-fund-numbers { flex-basis:100%; margin:8px 0 0; justify-content:space-between; }.dashboard-nav nav { gap:0; }.dashboard-nav nav a { padding:12px 10px; font-size:.78rem; } }
+@media(max-width:760px) {
+  body[data-view="dashboard"] main { width:calc(100% - 28px); margin:0 auto 28px; }
+  .dashboard-nav { min-height:110px; flex-wrap:wrap; gap:15px; padding:22px 2px 16px; }.dashboard-brand { font-size:1.15rem; }.dashboard-nav nav { width:100%; justify-content:space-between; }.dashboard-nav nav a { padding:10px 8px; font-size:.75rem; }
+  .dashboard-welcome { align-items:start; flex-direction:column; gap:12px; margin:14px 3px 20px; }.dashboard-welcome h1 { font-size:1.9rem; }.dashboard-welcome p { font-size:.82rem; }.dashboard-sync { font-size:.74rem; }
+  .dashboard-cover { min-height:275px; padding:25px; background-position:62% 58%; background-image:linear-gradient(90deg,#093e42f0,#0b5048b0),url('/aero-meadow.webp'); }.dashboard-cover h2 { font-size:1.65rem; }.dashboard-cover p { font-size:.83rem; }.dashboard-image-note { font-size:.55rem; bottom:7px; right:8px; }
+  .dashboard-facts { grid-template-columns:1fr 1fr; row-gap:22px; padding:22px 8px; margin:18px 0 22px; }.dashboard-fact { padding:0 13px; }.dashboard-fact:nth-child(3) { border-left:0; }.dashboard-fact dt { font-size:.73rem; }.dashboard-fact dd { font-size:1rem; }.dashboard-fact p { font-size:.67rem; }
+  .dashboard-layout { grid-template-columns:1fr; gap:20px; }.dashboard-panel { padding:23px 20px; }.dashboard-panel h2 { font-size:1.2rem; }.dashboard-main-column,.dashboard-side-column { gap:20px; }
+  .dashboard-stop { grid-template-columns:65px minmax(0,1fr); gap:17px; }.dashboard-stop::before { left:73px; }.dashboard-stop::after { left:67px; }.dashboard-stop-time { font-size:.66rem; }.dashboard-stop-copy { padding-left:7px; }.dashboard-stop h4 { font-size:.94rem; }.dashboard-stop p { font-size:.8rem; }.dashboard-stop-meta { gap:5px 8px; }
+  .dashboard-day-tabs button { padding:9px 11px; font-size:.74rem; }.dashboard-options button { font-size:.75rem; }.dashboard-cost-legend { grid-template-columns:1fr; gap:12px; }.dashboard-cost-total strong { font-size:1.5rem; }.dashboard-cost-total span { display:block; margin-top:4px; }
+  .dashboard-fund-summary { gap:18px; }.dashboard-fund-progress { width:82px; height:82px; }.dashboard-fund-progress svg { width:82px !important; height:82px !important; }.dashboard-fund-progress strong { font-size:1.2rem; }.dashboard-fund-summary>div:nth-child(2) { flex:1; }.dashboard-fund-summary h3 { font-size:1rem; }.dashboard-fund-summary p { font-size:.8rem; }.dashboard-fund-summary small { font-size:.73rem; }.dashboard-fund-numbers { gap:15px; }.dashboard-fund-numbers dd { font-size:1.2rem; }
+  .dashboard-spend-row { grid-template-columns:1fr 75px; gap:9px; }.dashboard-spend-row meter { grid-row:2; grid-column:1 / -1; }.dashboard-spend-row small { grid-column:2; grid-row:1; }
+}
+@media(prefers-reduced-motion:reduce) { .dashboard-cover::after,.loading-orbit { animation:none !important; }.dashboard-options button,.dashboard-day-tabs button { transition:none; } }

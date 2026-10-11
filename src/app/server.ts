@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { readFile } from 'node:fs/promises';
-import { basename, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import type { Repository } from '../contracts/index.js';
 import type { LiveResearchDisplay } from './live-research.js';
 import type { FundService } from '../funding/service.js';
@@ -72,9 +72,9 @@ async function route(request: IncomingMessage, response: ServerResponse, options
     await sendFile(response, resolve(webRoot, 'index.html'), 'text/html; charset=utf-8');
     return;
   }
-  if (request.method === 'GET' && ['/app.js', '/reef.js', '/styles.css', '/aero-ocean.jpg', '/aero-meadow.webp'].includes(url.pathname)) {
-    const name = basename(url.pathname);
-    await sendFile(response, resolve(webRoot, name), name.endsWith('.jpg') ? 'image/jpeg' : name.endsWith('.webp') ? 'image/webp' : name.endsWith('.js') ? 'text/javascript; charset=utf-8' : 'text/css; charset=utf-8');
+  if (request.method === 'GET' && ['/app.js', '/reef.js', '/styles.css', '/aero-ocean.jpg', '/aero-meadow.webp', '/aero-globe.png', '/aero-leaves.png', '/aero-bubble.png', '/aero-monitor.png', '/aero-display.ttf', '/reef-3d.js', '/vendor/three.module.js', '/vendor/three.core.min.js', '/vendor/GLTFLoader.js', '/vendor/BufferGeometryUtils.js', '/models/fish.glb', '/models/clownfish.glb', '/models/blue-tang.glb', '/models/yellow-tang.glb', '/models/dolphin.glb', '/vendor/SkeletonUtils.js'].includes(url.pathname)) {
+    const name = url.pathname.slice(1);
+    await sendFile(response, resolve(webRoot, name), name.endsWith('.png') ? 'image/png' : name.endsWith('.glb') ? 'model/gltf-binary' : name.endsWith('.ttf') ? 'font/ttf' : name.endsWith('.jpg') ? 'image/jpeg' : name.endsWith('.webp') ? 'image/webp' : name.endsWith('.js') ? 'text/javascript; charset=utf-8' : 'text/css; charset=utf-8');
     return;
   }
   const fundMatch = /^\/api\/trips\/([^/]+)\/fund$/.exec(url.pathname);
@@ -124,7 +124,7 @@ function sendJson(response: ServerResponse, status: number, value: unknown): voi
 const securityHeaders = {
   'x-content-type-options': 'nosniff',
   'referrer-policy': 'no-referrer',
-  'content-security-policy': "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'",
+  'content-security-policy': "default-src 'self'; connect-src 'self' blob:; img-src 'self' data: blob:; style-src 'self'; script-src 'self'",
 };
 
 function closeServer(server: Server): Promise<void> {

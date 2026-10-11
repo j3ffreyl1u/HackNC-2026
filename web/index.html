@@ -9,31 +9,132 @@
   </head>
   <body>
     <div class="sky-bubbles" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
-    <header class="topbar">
-      <a class="brand" href="/" aria-label="Weekend, together home"><span class="brand-mark">✦</span> weekend, together</a>
-      <span class="live-pill"><span class="pulse"></span> Group plan</span>
-    </header>
+
     <main>
-      <nav class="explorer-bar" aria-label="Plan sections"><span class="explorer-icon" aria-hidden="true">◈</span><span>weekend / group explorer</span><a href="#trip">Saved plans</a><a href="#about">About this view</a></nav>
+
+      <section id="dashboard" hidden aria-label="Your trip dashboard">
+        <header class="dashboard-nav">
+          <a class="dashboard-brand" data-home-link href="/">weekend, together<span>Your group’s trip, at a glance</span></a>
+          <nav aria-label="Trip dashboard"><a href="#dashboard-itinerary">Itinerary</a><a href="#dashboard-group">The group</a><a href="#fund">Trip fund</a><a data-home-link href="/">Visit the reef</a></nav>
+        </header>
+        <div id="dashboard-content"><div class="dashboard-loading" role="status"><span class="loading-orbit" aria-hidden="true"></span>Opening your group’s trip…</div></div>
+      </section>
+
       <section class="hero">
-        <canvas id="anemone" role="img" aria-label="An underwater clownfish family beside their sea anemone home. Move over the tentacles to make them bend."></canvas>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Weekend, together home"><span class="brand-mark"><svg aria-hidden="true" focusable="false"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M6.5 12c.94-3.46 4.94-6 8.5-6 3.56 0 6.06 2.54 7 6-.94 3.47-3.44 6-7 6s-7.56-2.53-8.5-6Z" />
+  <path d="M18 12v.5" />
+  <path d="M16 17.93a9.77 9.77 0 0 1 0-11.86" />
+  <path d="M7 10.67C7 8 5.58 5.97 2.73 5.5c-1 1.5-1 5 .23 6.5-1.24 1.5-1.24 5-.23 6.5C5.58 18.03 7 16 7 13.33" />
+  <path d="M10.46 7.26C10.2 5.88 9.17 4.24 8 3h5.8a2 2 0 0 1 1.98 1.67l.23 1.4" />
+  <path d="m16.01 17.93-.23 1.4A2 2 0 0 1 13.8 21H9.5a5.96 5.96 0 0 0 1.49-3.98" />
+</svg>
+</span> weekend, together</a>
+      <span class="live-pill"><span class="pulse"></span> Group plan</span>
+      <nav class="explorer-bar" aria-label="Plan sections"><span class="explorer-icon" aria-hidden="true"><svg aria-hidden="true" focusable="false"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <circle cx="12" cy="12" r="10" />
+  <path d="m16.24 7.76-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z" />
+</svg>
+</span><span>weekend / group explorer</span><a href="#trip">Saved plans</a><a href="#about">About this view</a></nav>
+    </header>
+        <div class="aero-sun" aria-hidden="true"></div><div class="aero-clouds" aria-hidden="true"></div><img class="aero-greenery greenery-extra" src="/aero-leaves.png" alt="" aria-hidden="true" /><img class="pouring-globe" src="/aero-globe.png" alt="" aria-hidden="true" /><img class="aero-greenery" src="/aero-leaves.png" alt="" aria-hidden="true" /><div class="distant-city" aria-hidden="true"></div><img class="distant-monitor" src="/aero-monitor.png" alt="" aria-hidden="true" /><div class="aero-lens lens-one" aria-hidden="true"></div><div class="aero-lens lens-two" aria-hidden="true"></div><canvas id="anemone" role="img" aria-label="An underwater clownfish family beside their sea anemone home. Move over the tentacles to make them bend."></canvas>
         <div class="hero-copy">
-          <h1>Just keep<br /><span>exploring.</span></h1>
-          <p class="lede">Your next weekend starts in the chat. Find your shared plan, clear costs, and a little room to explore right here.</p>
-          <a class="aero-button" href="#trip">Explore your group’s plan <span aria-hidden="true">↗</span></a>
+          <h1>Group trips.<br /><span>Made together.</span></h1>
+          <p class="lede">Plan together in your chat. Compare destinations, dates, and shared costs here, then accept your plan back in the conversation.</p>
+          <a class="aero-button" data-dashboard-link href="/?view=dashboard">Open your trip dashboard <span aria-hidden="true">↗</span></a>
         </div>
-        <div class="view-controls"><button id="reef-wave" type="button">Make the anemone wave</button><button id="scene-toggle" type="button" aria-pressed="false">Enjoy the scenery</button><button id="motion-toggle" type="button" aria-pressed="false">Reef motion</button></div>
+        <div class="view-controls"><details class="reef-settings"><summary>Reef settings</summary><div class="reef-settings-panel"><button id="reef-wave" type="button">Send a ripple</button><button id="scene-toggle" type="button" aria-pressed="false">Focus on the reef</button><button id="motion-toggle" type="button" aria-pressed="false">Animation</button></div></details></div>
       </section>
       <div class="feature-dock" aria-label="What you can find here">
-        <a href="#trip"><span class="dock-icon globe-icon" aria-hidden="true">◎</span><span><strong>A world of possibilities</strong><small>Explore your group’s options</small></span></a>
-        <a href="#trip"><span class="dock-icon leaf-icon" aria-hidden="true">❧</span><span><strong>Room to reconnect</strong><small>Your places, dates, and itinerary</small></span></a>
-        <a href="#trip"><span class="dock-icon chat-icon" aria-hidden="true">✦</span><span><strong>Planned in your chat</strong><small>Shared costs. One current revision.</small></span></a>
+        <a href="#trip"><span class="dock-icon globe-icon" aria-hidden="true"><svg aria-hidden="true" focusable="false"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M21.54 15H17a2 2 0 0 0-2 2v4.54" />
+  <path d="M7 3.34V5a3 3 0 0 0 3 3a2 2 0 0 1 2 2c0 1.1.9 2 2 2a2 2 0 0 0 2-2c0-1.1.9-2 2-2h3.17" />
+  <path d="M11 21.95V18a2 2 0 0 0-2-2a2 2 0 0 1-2-2v-1a2 2 0 0 0-2-2H2.05" />
+  <circle cx="12" cy="12" r="10" />
+</svg>
+</span><span><strong>Compare your options</strong><small>Explore your group’s options</small></span></a>
+        <a href="#trip"><span class="dock-icon leaf-icon" aria-hidden="true"><svg aria-hidden="true" focusable="false"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M11 20a10 10 0 0010-10 25.9 25.9 0 00-1.04-7.281 1 1 0 00-1.755-.325C15.833 5.5 13 5.5 9.8 6.1A7 7 0 0011 20" />
+  <path d="M2 21a5 5 0 012.911-4.544C7.613 15.212 8.351 15.24 11 13" />
+</svg>
+</span><span><strong>Find time outdoors</strong><small>Outdoor stops and driving times</small></span></a>
+        <a href="#trip"><span class="dock-icon chat-icon" aria-hidden="true"><svg aria-hidden="true" focusable="false"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M16 10a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 14.286V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+  <path d="M20 9a2 2 0 0 1 2 2v10.286a.71.71 0 0 1-1.212.502l-2.202-2.202A2 2 0 0 0 17.172 19H10a2 2 0 0 1-2-2v-1" />
+</svg>
+</span><span><strong>Planned in your chat</strong><small>Accept and update in the conversation.</small></span></a>
       </div>
       <p id="status" class="status" role="status" aria-live="polite">Loading the latest plan…</p>
+      <a class="nature-window" href="#trip"><span><strong>A little closer to the outdoors.</strong><span>Find outdoor stops and compare driving in your group’s saved options.</span></span></a>
       <div class="plan-filters" aria-label="Filter displayed plans"><span>Explore your options</span><button id="filter-all" type="button" aria-pressed="true">All plans</button><button id="filter-outdoors" type="button" aria-pressed="false">With outdoor stops</button></div>
       <section id="trip" aria-live="polite"></section>
       <section id="fund" aria-live="polite" aria-label="Shared trip fund"></section>
-      <footer id="about"><span class="footer-leaf" aria-hidden="true">❧</span> Made for weekends together.<br />Keep planning and accepting in your chat. This is your group’s saved view.<br />Estimates are planning aids, not bookings or guaranteed availability. Check current details with each source.</footer>
+      <footer id="about"><span class="footer-leaf" aria-hidden="true"><svg aria-hidden="true" focusable="false"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M11 20a10 10 0 0010-10 25.9 25.9 0 00-1.04-7.281 1 1 0 00-1.755-.325C15.833 5.5 13 5.5 9.8 6.1A7 7 0 0011 20" />
+  <path d="M2 21a5 5 0 012.911-4.544C7.613 15.212 8.351 15.24 11 13" />
+</svg>
+</span> Made for weekends together.<br />Keep planning and accepting in your chat. This is your group’s saved view.<br />Estimates are planning aids, not bookings or guaranteed availability. Check current details with each source.</footer>
     </main>
     <script type="module" src="/app.js"></script>
   </body>
