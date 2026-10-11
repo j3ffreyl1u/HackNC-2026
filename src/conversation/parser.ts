@@ -529,6 +529,10 @@ export function createParser(deps: ConversationDependencies) {
       if (ctx.approval) return ctx.approval.waitingNames.includes(nudge[1]!) || ctx.approval.waitingNames.some((n) => n.toLowerCase() === nudge[1]!.toLowerCase()) ? one(msg, ctx, { kind: 'relay', to: ctx.others!.find((o) => o.name.toLowerCase() === nudge[1]!.toLowerCase())!.name, mode: 'request', text: 'lock it in' }) : reply(msg, `${nudge[1]} is already in on ${ctx.approval.title}.`, 'approval-other', true);
       return one(msg, ctx, { kind: 'request_plans' });
     }
+    // Money talk that is not a question about the log: nothing is paid or recorded here.
+    if (talkativeChat && (/^(?:i|we)\s+(?:just\s+)?(?:covered|paid\s+for|bought|treated|got)\s+(?:everyone|everybody|us|all of us|the\s+(?:group|table|whole\s+\w+)|everyone'?s|everybodys)\b/i.test(lean) || /\b(?:venmo|zelle|paypal|cash\s*app|apple\s*pay)\b/i.test(lean) && /^(?:(?:can|could|should|let)\b.*|(?:venmo|zelle|paypal|cash\s*app)\b.*)$/i.test(lean))) return reply(msg, READ_ONLY_MONEY, 'read-only-money', true);
+    // "can we do a day earlier": the dates are theirs to restate.
+    if (talkativeChat && /^(?:(?:can|could|would)\s+we|let'?s|how about|what about)\s+(?:do\s+|go\s+|leave\s+|start\s+|make\s+it\s+)?(?:it\s+)?(?:a|one|1|two|2|a\s+couple\s+of)\s+days?\s+(?:earlier|later|before|after)$/i.test(lean)) return reply(msg, 'Tell me the exact dates you want and I\'ll update the plan, like "free Nov 13-15".', 'dates-shift', true);
     // Spending from the simulated fund: "I spent $60 on gas", "we paid 300 for the hotel", "bought food for $40", "log $20 for parking". The app asks for a yes first.
     const spendCategory = (thing: string): string | undefined => {
       const w = thing.toLowerCase();
@@ -698,6 +702,12 @@ export function createParser(deps: ConversationDependencies) {
       return resolveAnswer(msg, ctx, true);
     }
 
+    // "Can you actually do Nov 14-16?" was asked a moment ago and the answer is a yes: those are their dates.
+    if (YES.test(text) && ctx.actionable.length === 0 && !ctx.pendingConfirmation) {
+      const lastBot = [...(ctx.recent ?? [])].reverse().find((r) => r.from === 'bot');
+      const asked = lastBot ? /Can you actually do ([^?]{3,40})\?/.exec(lastBot.text) : null;
+      if (asked) return parseText({ ...msg, text: `free ${asked[1]}` }, ctx);
+    }
     const ex = explicit(msg, ctx, text);
     if (ex) return ex;
     const plain = text.replace(/[?!.\s]+$/, '');

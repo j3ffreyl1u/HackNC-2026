@@ -72,6 +72,19 @@ describe('asking and telling through the bot', () => {
     await t.stop();
   });
 
+  it('a maybe on the dates followed by yes saves the dates, and money talk gets the read-only answer', async () => {
+    const t = await live();
+    await t.say(JEFF, START);
+    await t.say(MASON, "I'm free Nov 14-17");
+    await t.say(JEFF, 'maybe Dec 5-7?');
+    expect((await t.say(JEFF, 'yes')).jeff.join(' ')).toMatch(/you're free Dec 5-7/);
+    for (const text of ['pay my share', 'i covered everyones dinner', 'venmo mason', 'i spent 60 on gas']) {
+      expect((await t.say(JEFF, text)).jeff.join(' '), text).toMatch(/I can't pay or log spending from here/);
+    }
+    expect((await t.say(JEFF, 'can we do a day earlier')).jeff.join(' ')).toMatch(/exact dates/);
+    await t.stop();
+  });
+
   it('"ask Mason if he has a car" puts the question to Mason and tells the asker, then passes the answer back', async () => {
     const t = await live();
     await t.say(JEFF, START);
