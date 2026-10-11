@@ -219,6 +219,7 @@ export function createParser(deps: ConversationDependencies) {
     let match = pool.find((a) => a.candidateId.toLowerCase() === lower);
     if (!match && /^\d{1,2}$/.test(token)) match = pool[Number(token) - 1];
     const verb = kind === 'accept' ? 'accept' : 'pick';
+    if (!match && kind === 'select' && pool.length === 0 && ctx.status === 'awaiting_acceptance') return alreadyPicked(msg, ctx);
     if (!match) {
       return reply(msg, `Hmm, I don't see "${token}" waiting on you to ${verb}. ${pool.length ? `Here's what's open: ${pool.map((a, i) => `${i + 1}. ${a.description}`).join('; ')}.` : "Nothing's waiting on you right now."}`, 'noplan');
     }
@@ -329,13 +330,18 @@ export function createParser(deps: ConversationDependencies) {
       if (ctx.status === 'researching') return reply(msg, "I'm still looking up options for everyone. Give me a minute and I'll send them over.", 'status-researching', true);
       if (ctx.status === 'proposed' || ctx.status === 'awaiting_acceptance') return reply(msg, ctx.actionable.length ? `The options are above. ${ctx.actionable.map((a, i) => `${i + 1}. ${a.description}`).join('; ')}. Reply "pick 1" or "pick 2" when you've decided.` : "The options are above. Take a look and tell me which one you like.", 'status-proposed', true);
       if (ctx.status === 'approved') return reply(msg, "The plan is approved, so you're all set!", 'status-approved', true);
-      return one(msg, ctx, { kind: 'request_plans' });
+      // Still gathering: say who is missing, privately. Asking where things stand must not message anyone else.
+      const waiting = (ctx.others ?? []).filter((o) => o.missing.length > 0).map((o) => `${o.name}'s ${list(o.missing)}`);
+      return reply(msg, waiting.length > 0
+        ? `Still waiting on ${list(waiting)}. Say "show us some options" and I'll nudge them and check what else is open.`
+        : `I have what I need from the others. Say "show us some options" when you're ready, and I'll check what's still open.`, 'status-gathering', true);
     }
     if (REQUEST_PLANS.test(plain)) return one(msg, ctx, { kind: 'request_plans' });
     if (REQUEST_FUNDING.test(plain)) return one(msg, ctx, { kind: 'request_funding' });
     if ((m = GUIDE.exec(text.trim()))) return one(msg, ctx, { kind: 'ask_guide', question: m[1]!.trim() });
     if ((m = ACCEPT.exec(plain))) return bindPlan(msg, ctx, 'accept', m[1]!, Number(m[2]));
     if ((m = SELECT.exec(plain)) && !(m[1]!.toLowerCase() in CHOICE_NUMBER)) return bindPlan(msg, ctx, 'select', m[1]!, m[2] ? Number(m[2]) : undefined);
+    if (actionable(ctx, 'select').length === 0 && ctx.status === 'awaiting_acceptance' && PICK_WORDS.exec(plain) && !(BARE_CHOICE.test(plain) && (ctx.pendingQuestion || ctx.pendingConfirmation))) return alreadyPicked(msg, ctx);
     if (actionable(ctx, 'select').length > 0 && (m = PICK_WORDS.exec(plain))) {
       // A bare "2" while we are waiting on an answer ("how many nights?") is that answer, not a pick.
       if (BARE_CHOICE.test(plain) && (ctx.pendingQuestion || ctx.pendingConfirmation)) return null;
@@ -343,6 +349,14 @@ export function createParser(deps: ConversationDependencies) {
       return bindPlan(msg, ctx, 'select', String(CHOICE_NUMBER[word] ?? Number(word)), undefined);
     }
     return null;
+  }
+
+  /** A pick after a plan is already chosen: say which one it is and what is needed, instead of "nothing to pick yet". */
+  function alreadyPicked(msg: InboundMessage, ctx: TripConversationContext): ParseResult {
+    const mine = actionable(ctx, 'accept')[0];
+    return reply(msg, mine
+      ? `${mine.description} is already the pick. Say "I'm in" to lock it in.`
+      : "A plan is already picked and you've said you're in. I'm waiting on the others.", 'already-picked', true);
   }
 
   /** Where a conversation stands, as the question to put back to someone who just said hi in the middle of it. */
@@ -398,7 +412,7 @@ export function createParser(deps: ConversationDependencies) {
       const numberedTarget = numbered ? picks[Number(numbered[1]) - 1] : undefined;
       // "Option 2: …" counts only when what follows is that option (or a cut-off start of it): a made-up title is not a reaction to our message.
       const rest = tap[2]!.trim().replace(/^option\s+\d{1,2}\s*:\s*/i, '').replace(/[….\s]+$/, '').toLowerCase();
-      const numberedFits = numberedTarget !== undefined && (rest === '' || numberedTarget.description.toLowerCase().startsWith(rest));
+      const numberedFits = numberedTarget !== undefined && (rest !== '' && numberedTarget.description.toLowerCase().startsWith(rest));
       const target = byName ?? (numberedFits ? numberedTarget : undefined);
       if (!target) return { kind: 'ignored', reason: 'reaction target is not a proposal' };
       return one(msg, ctx, target.kind === 'accept'
@@ -525,6 +539,7 @@ export function createParser(deps: ConversationDependencies) {
       case 'pick': {
         // The model only says which numbered option was meant; whether that is allowed is decided here.
         if (actionable(ctx, 'select').length === 0) {
+          if (ctx.status === 'awaiting_acceptance') return alreadyPicked(msg, ctx);
           return msg.visibility === 'private' || trip.mode === 'direct'
             ? reply(msg, `There's nothing to pick yet. Say "show us some options" when you're ready.`, 'nothing-to-pick')
             : { kind: 'ignored', reason: 'nothing to pick' };

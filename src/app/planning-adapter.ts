@@ -94,7 +94,9 @@ export function fromCandidate(c: B.TripCandidate): C.TripCandidate {
 
 function fromState(b: B.TripState, previous: C.TripState): C.TripState {
   const timeZone = previous.timeZone ?? 'America/New_York';
-  return { ...previous, ...b, memberConstraints: Object.values(b.memberConstraints).flat().map(r => fromUpdate(r, timeZone)),
+  // The planner clears the selection by deleting the key, and spreading `previous` first would bring the old plan back.
+  const { selectedCandidateId: _stale, ...rest } = previous;
+  return { ...rest, ...b, memberConstraints: Object.values(b.memberConstraints).flat().map(r => fromUpdate(r, timeZone)),
     groupConstraints: b.groupConstraints.map(r => fromUpdate(r, timeZone) as C.GroupConstraintRecord),
     candidates: b.candidates.map(fromCandidate),
     acceptances: b.acceptances.map(a => ({ actorId: a.memberId, candidateId: a.candidateId, revision: a.revision, acceptedAt: previous.acceptances.find(x => x.actorId === a.memberId && x.revision === a.revision)?.acceptedAt ?? new Date().toISOString() })),

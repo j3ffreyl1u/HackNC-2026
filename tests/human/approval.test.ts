@@ -98,7 +98,7 @@ describe('H. approval', () => {
 });
 
 describe('G5/O2. tapbacks and fake approvals', () => {
-  it.fails('G5 (known limit: the quote carries no revision) a Liked tapback quoting an OLD revision does not accept the new plan', async () => {
+  it.fails('G5 (accepted limit: the quote carries no revision) a Liked tapback quoting an OLD revision does not accept the new plan', async () => {
     const h = await humans(); await reachOptions(h);
     const oldText = h.everyOutbound().filter((m) => /Option 1/.test(m.text)).pop()!.text.split('\n')[2]!;
     await h.say('mason', 'pick 1');
@@ -114,14 +114,39 @@ describe('G5/O2. tapbacks and fake approvals', () => {
   });
 });
 
+describe('Jeffrey 02:55: picks after a pick, and a stale selection', () => {
+  it.each(['the first one', 'option 1', 'pick 1'])('"%s" after a plan is picked says which plan and asks for "I\'m in"', async (w) => {
+    const h = await humans(); await reachOptions(h); await h.say('mason', 'pick 1');
+    const r = await h.say('alex', w);
+    expect(r.alex.join(' '), w).toMatch(/Mountain cabin weekend|already|I'm in/i);
+    expect(r.alex.join(' '), w).not.toMatch(/nothing to pick/i); await h.stop();
+  });
+  it('after the pick is dropped by a cap change, no old plan stays selected', async () => {
+    const h = await humans(); await reachOptions(h); await h.say('mason', 'pick 1'); await h.say('alex', "I'm in");
+    await h.say('mason', 'my max is $150');
+    const s = await h.state();
+    expect(s.selectedCandidateId, `status ${s.status}`).toBeUndefined();
+    await h.say('mason', 'my max is $200');
+    expect((await h.state()).selectedCandidateId).toBeUndefined(); await h.stop();
+  });
+  it('a typed tapback whose option title is not a current option does nothing', async () => {
+    const h = await humans(); await reachOptions(h);
+    await h.say('alex', 'Liked "Option 1: Totally made up trip"'); expect(await status(h)).toBe('proposed');
+    await h.say('alex', 'Liked "Option 1:"'); expect(await status(h)).toBe('proposed');
+    await h.say('alex', 'Liked "Option 1: Mountain cabin wee…"'); expect(await status(h)).toBe('awaiting_acceptance'); await h.stop();
+  });
+});
+
 describe('I. when nothing fits', () => {
-  it.fails('I1 (policy conflict: docs/research.md says never, generate.ts:198 names them on purpose) the group message never says whose limit is in the way', async () => {
+  it('I1 the group message may name whose limit is in the way, but never an amount or a cap', async () => {
     const h = await humans();
     await h.say('mason', FULL_MASON.replace('$200', '$20'));
     await h.say('alex', "I'm free Nov 14-17, my max is $250, I like hiking"); await h.say('alex', 'yes that works');
     await h.say('jordan', "I'm free Nov 14-17, my max is $300, I like a town visit"); const r = await h.say('jordan', 'yes that works');
     const group = r.alex.join('\n');
-    expect(group).not.toMatch(/than Mason|Mason is comfortable|Mason's (?:limit|max|budget)/); await h.stop();
+    expect(group).toMatch(/Mason/);   // decided: say who it is
+    expect(group).not.toMatch(/\$\s?(?:20|250|300)\b|your max/i);
+    expect(r.jordan.join('\n')).not.toMatch(/\$\s?20\b/); await h.stop();
   });
   it('I2 after "nothing fits", adding a liking does not trigger another search and another nudge', async () => {
     const h = await humans();
@@ -135,10 +160,11 @@ describe('I. when nothing fits', () => {
 });
 
 describe('F. waiting and status', () => {
-  it.fails('F4 (design call: a status question also nudges) "how\'s it going" while gathering is a status, and does not nudge anyone', async () => {
+  it('F4 "how\'s it going" while gathering tells the asker who is missing and messages nobody else', async () => {
     const h = await humans(); await h.say('mason', FULL_MASON);
     const r = await h.say('mason', "how's it going");
-    expect(r.alex.concat(r.jordan), 'a status question must not message the others').toEqual([]); await h.stop();
+    expect(r.alex.concat(r.jordan), 'a status question must not message the others').toEqual([]);
+    expect(r.mason.join(' ')).toMatch(/Still waiting on/); await h.stop();
   });
   it('F5 status wording never says "you two" with three people', async () => {
     const h = await humans(); await reachOptions(h); await h.say('mason', "what's the status");

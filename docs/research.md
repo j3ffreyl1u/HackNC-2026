@@ -48,7 +48,7 @@ Types are provisional in `src/planning/types.ts` and `src/research/types.ts`. Fi
 - Unknown costs are never zero. An unknown essential price makes a candidate `feasible: false` with no violations (provisional), so it cannot be selected or approved.
 - A tentative statement does not count. Restating the same value is not a change. Preference changes re-rank but do not void a plan.
 - Selecting an option is not accepting it. Approval needs every consenting participant to accept the exact candidate at the current revision.
-- Public replies never contain a cap, an overage amount or who is over. Private amounts go only to that person.
+- Public replies never contain a cap or an overage amount. Private amounts go only to that person. Decision (2026-10-11, Jeffrey): when nothing fits, the group message may name whose own limit is in the way (`generate.ts`, `conflictReplies`), never with an amount, so the group knows who is being asked to flex. The web page snapshot still strips `memberId` and `overByCents` (item 6 above).
 - Research requests contain places, dates and interests only. No money, names or calendars.
 - Retrieved text is data. It is sanitized (control and invisible characters removed, length bounded) at the provider and again before display.
 

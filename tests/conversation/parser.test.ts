@@ -433,8 +433,14 @@ describe('answering "does anyone have a car?"', () => {
 
 describe('status questions are always answered', () => {
   const ask = (status: any, actionable: ActionableItem[] = []) => setup({ status, actionable } as never).service.parseInbound(msg({ text: "what's the status?", visibility: 'private' }));
-  it('while gathering it asks the planner for a recap', async () => {
-    expect(cmds(await ask('gathering'))[0]?.action.kind).toBe('request_plans');
+  it('while gathering it answers privately and never asks the planner to nudge anyone', async () => {
+    const r = await ask('gathering');
+    expect(cmds(r)).toEqual([]);
+    expect(text(r)).toMatch(/show us some options/);
+  });
+  it('while gathering it names who it is still waiting on', async () => {
+    const { service } = setup({ status: 'gathering', others: [{ memberId: 'alex', name: 'Alex', shared: [], missing: ['dates', 'budget'] }] } as never);
+    expect(text(await service.parseInbound(msg({ text: "how's it going", visibility: 'private' })))).toMatch(/Still waiting on Alex's dates and budget/);
   });
   it('while researching it says it is still looking', async () => {
     expect(text(await ask('researching'))).toMatch(/still looking up options/);
