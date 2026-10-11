@@ -87,7 +87,13 @@ Cost: a first unconstrained call ran 16 searches and about 173k prompt tokens (4
 
 ### Live price pass
 
-After finding options, the Gemini provider prices the first 3 with four narrow lookups each (`src/research/pricing.ts`), because one broad question returns mostly `unknown`. It runs only for plan requests that carry `nights` and `groupSize` (`planTrip` sets both) and can be switched off with `priceLookups: false`.
+After finding options, the Gemini provider prices the first 3 (`src/research/pricing.ts`), because one broad question returns mostly `unknown`. It runs only for plan requests that carry `nights` and `groupSize` (`planTrip` sets both) and can be switched off with `priceLookups: false`. Options that were found but not priced are not offered.
+
+**Speed (measured live 2026-10-11, one run, Chapel Hill to Boone, 2 nights, 2 people):** 10 requests in 24.9 seconds, against 60 to 100 seconds before. Three things changed: the options are priced at the same time (never more than 6 requests in flight), each price lookup gets its own 40 second limit instead of the search's 60, and the admissions lookup is off by default (`lookupAdmissions: true` turns it back on; it failed most often). The three lookups per option are lodging, fuel and food.
+
+**Typical costs (`typicalCosts`, on by default for live research).** A price that was not found is filled with a typical cost for a mid-range road trip, so an option is not left blank: lodging $80 to $200 a room a night (rooms = group/2, +15% on top), fuel from the option's drive time (0.7 to 1 mile a minute, 30 to 20 mpg, $3.00 to $4.50 a gallon, +25% on top; unknown if there is no drive time, because distance cannot be guessed), food $8 to $25 a meal for two meals a day (+25% on top), admissions $0 to $15 per stop worth visiting. These are never zero, carry no source, are labelled "(typical cost, not a found price)" on the cost itself, are listed in the option's tradeoffs, and the chat heads-up names them ("I couldn't find a price for lodging, fuel, so I used a typical cost there"). The upper figures are what the budget check uses, so they err toward "it might not fit". A found, cited price always wins over a typical one. Turn this off with `typicalCosts: false` to get the strict behaviour (a missing price stays unknown and blocks approval).
+
+**Named destination.** When the group named a destination, the prompt says every option must be in or right next to it.
 
 | Cost | Lookup | Computed in code |
 | --- | --- | --- |

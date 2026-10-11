@@ -181,11 +181,67 @@ export function priceMeals(interaction: unknown, nights: number, store: Evidence
   };
 }
 
+// ---- typical costs, when no price could be found ---------------------------------------------------------
+
+// Deliberately generous round numbers for a mid-range US road trip. They are used only when a lookup found nothing,
+// they are never zero, they carry no source, and every one is labelled as a typical cost so nobody mistakes it for a
+// price that was found. The upper figure is what budget checks use, so being high errs toward "it might not fit".
+const TYPICAL = {
+  roomNightLowCents: 8_000,
+  roomNightHighCents: 20_000,
+  milesPerMinuteLow: 0.7,
+  milesPerMinuteHigh: 1,
+  gasLowCentsPerGallon: 300,
+  gasHighCentsPerGallon: 450,
+  mealLowCents: 800,
+  mealHighCents: 2_500,
+  admissionHighCents: 1_500,
+};
+
+export const TYPICAL_LABEL = 'typical cost, not a found price';
+
+export function typicalLodging(nights: number, groupSize: number): Priced {
+  const rooms = Math.ceil(groupSize / DEFAULT_SLEEPS);
+  return {
+    lowCents: rooms * nights * TYPICAL.roomNightLowCents,
+    highCents: Math.ceil(rooms * nights * TYPICAL.roomNightHighCents * TAX_AND_FEES),
+    evidenceIds: [],
+  };
+}
+
+/** Needs a drive time: a distance cannot be guessed. */
+export function typicalFuel(driveMinutes: number | undefined): Priced | undefined {
+  if (driveMinutes === undefined || !Number.isFinite(driveMinutes) || driveMinutes <= 0) return undefined;
+  return {
+    lowCents: Math.round(((2 * driveMinutes * TYPICAL.milesPerMinuteLow) / MPG_HIGH) * TYPICAL.gasLowCentsPerGallon),
+    highCents: Math.ceil(((2 * driveMinutes * TYPICAL.milesPerMinuteHigh) / MPG_LOW) * LOCAL_DRIVING * TYPICAL.gasHighCentsPerGallon),
+    evidenceIds: [],
+  };
+}
+
+export function typicalMeals(nights: number): Priced {
+  const meals = (nights + 1) * MEALS_PER_DAY;
+  return { lowCents: meals * TYPICAL.mealLowCents, highCents: Math.ceil(meals * TYPICAL.mealHighCents * FOOD_EXTRAS), evidenceIds: [] };
+}
+
+/** Free at the low end; the high end allows a typical entry fee for each stop that is a place to visit (not the drive). */
+export function typicalAdmissions(option: ResearchOption): Priced {
+  const visits = option.stops.slice(0, 5).filter((s) => s.tags.length > 0).length;
+  return { lowCents: 0, highCents: visits * TYPICAL.admissionHighCents, evidenceIds: [] };
+}
+
+export interface PricingSettings {
+  /** Ask the admissions question too (default true). It fails most often, so live research turns it off. */
+  lookupAdmissions?: boolean;
+  /** Fill what could not be found with a labelled typical cost instead of leaving it unknown (default false). */
+  typicalCosts?: boolean;
+}
+
 // ---- putting it together --------------------------------------------------------------------------------
 
-function item(costId: string, category: CostItem['category'], label: string, priced: Priced | undefined): Omit<CostItem, 'allocation'> {
+function item(costId: string, category: CostItem['category'], label: string, priced: Priced | undefined, assumed = false): Omit<CostItem, 'allocation'> {
   return priced
-    ? { costId, category, label, lowCents: priced.lowCents, highCents: priced.highCents, evidenceIds: priced.evidenceIds, priceStatus: 'estimate' }
+    ? { costId, category, label: assumed ? `${label} (${TYPICAL_LABEL})` : label, lowCents: priced.lowCents, highCents: priced.highCents, evidenceIds: priced.evidenceIds, priceStatus: 'estimate' }
     : { costId, category, label, lowCents: 0, highCents: 0, evidenceIds: [], priceStatus: 'unknown' };
 }
 
@@ -199,11 +255,12 @@ export interface PricingOutcome {
  * Replace an option's costs with ones backed by cited lookups. Anything not found stays unknown (never zero),
  * and a lookup that fails is reported, not hidden. Needs the trip's length and the group size.
  */
-export async function priceOption(option: ResearchOption, request: ResearchRequest, ask: AskGrounded, store: EvidenceStore): Promise<PricingOutcome> {
+export async function priceOption(option: ResearchOption, request: ResearchRequest, ask: AskGrounded, store: EvidenceStore, settings: PricingSettings = {}): Promise<PricingOutcome> {
   const { nights, groupSize } = request;
   if (nights === undefined || groupSize === undefined) return { option, notes: [] };
+  const lookupAdmissions = settings.lookupAdmissions !== false;
 
-  const prompts = [lodgingPrompt(option), fuelPrompt(option, request), admissionPrompt(option), mealPrompt(option)];
+  const prompts = [lodgingPrompt(option), fuelPrompt(option, request), mealPrompt(option), ...(lookupAdmissions ? [admissionPrompt(option)] : [])];
   const answers = await Promise.allSettled(prompts.map(ask));
   const notes: string[] = [];
   const reading = (i: number, what: string): unknown => {
@@ -212,10 +269,25 @@ export async function priceOption(option: ResearchOption, request: ResearchReque
     notes.push(`The ${what} lookup for ${option.name} failed, so that price is unknown.`);
     return undefined;
   };
-  const lodging = priceLodging(reading(0, 'lodging'), nights, groupSize, store);
-  const fuel = priceFuel(reading(1, 'fuel'), store);
-  const admissions = priceAdmissions(reading(2, 'admission'), option.stops.slice(0, 5).map((s) => s.label), store);
-  const food = priceMeals(reading(3, 'food'), nights, store);
+  const foundLodging = priceLodging(reading(0, 'lodging'), nights, groupSize, store);
+  const foundFuel = priceFuel(reading(1, 'fuel'), store);
+  const foundFood = priceMeals(reading(2, 'food'), nights, store);
+  const foundAdmissions = lookupAdmissions ? priceAdmissions(reading(3, 'admission'), option.stops.slice(0, 5).map((s) => s.label), store) : undefined;
+
+  // What could not be found becomes a labelled typical cost, if asked for. It is never zero and never looks sourced.
+  const typical = settings.typicalCosts === true;
+  const assumedKinds: string[] = [];
+  const pick = (kind: string, found: Priced | undefined, fallback: () => Priced | undefined): { priced: Priced | undefined; assumed: boolean } => {
+    if (found || !typical) return { priced: found, assumed: false };
+    const guess = fallback();
+    if (guess) assumedKinds.push(kind);
+    return { priced: guess, assumed: guess !== undefined };
+  };
+  const lodgingPick = pick('lodging', foundLodging, () => typicalLodging(nights, groupSize));
+  const fuelPick = pick('fuel', foundFuel, () => typicalFuel(option.driveMinutesFromOrigin));
+  const admissionsPick = pick('admissions', foundAdmissions, () => typicalAdmissions(option));
+  const foodPick = pick('food', foundFood, () => typicalMeals(nights));
+  const [lodging, fuel, admissions, food] = [lodgingPick.priced, fuelPick.priced, admissionsPick.priced, foodPick.priced];
 
   const template = (c: Omit<CostItem, 'allocation'>): PerPersonCostTemplate => {
     const { memberId: _m, ...rest } = c;
@@ -228,6 +300,10 @@ export async function priceOption(option: ResearchOption, request: ResearchReque
   if (admissions) tradeoffs.push(ASSUMPTIONS.admissions);
   if (food) tradeoffs.push(ASSUMPTIONS.food);
   tradeoffs.push('Prices come from web search and are unverified estimates.');
+  if (assumedKinds.length > 0) {
+    tradeoffs.push(`${assumedKinds.join(', ')} ${assumedKinds.length === 1 ? 'is a typical cost' : 'are typical costs'} for a mid-range road trip, not a price I found. The upper figures are deliberately generous.`);
+    notes.push(`Used typical costs for ${assumedKinds.join(', ')} at ${option.name}; no sourced price was found.`);
+  }
   const missing = [!lodging && 'lodging', !fuel && 'fuel', !admissions && 'admissions', !food && 'food'].filter(Boolean);
   if (missing.length > 0) {
     notes.push(`No sourced price was found for ${missing.join(', ')} at ${option.name}.`);
@@ -237,10 +313,10 @@ export async function priceOption(option: ResearchOption, request: ResearchReque
     option: {
       ...option,
       costs: [
-        { ...item('lodging', 'accommodation', 'Lodging', lodging), allocation: 'equal_shared' },
-        { ...item('fuel', 'fuel_parking_tolls', 'Fuel (parking and tolls not included)', fuel), allocation: 'equal_shared' },
+        { ...item('lodging', 'accommodation', 'Lodging', lodging, lodgingPick.assumed), allocation: 'equal_shared' },
+        { ...item('fuel', 'fuel_parking_tolls', 'Fuel (parking and tolls not included)', fuel, fuelPick.assumed), allocation: 'equal_shared' },
       ],
-      perPersonCosts: [template(item('admissions', 'activities', 'Admissions', admissions)), template(item('food', 'food', 'Food', food))],
+      perPersonCosts: [template(item('admissions', 'activities', 'Admissions', admissions, admissionsPick.assumed)), template(item('food', 'food', 'Food', food, foodPick.assumed))],
       evidenceIds,
       tradeoffs,
     },

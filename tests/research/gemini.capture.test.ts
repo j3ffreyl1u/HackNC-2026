@@ -64,7 +64,7 @@ describe('a live result in the planner', () => {
   const live = () =>
     createResearchProvider({
       mode: 'live',
-      live: createGeminiProvider({ apiKey: 'test', fetch: (async () => new Response(JSON.stringify(captured), { status: 200 })) as never, now: () => NOW }),
+      live: createGeminiProvider({ apiKey: 'test', fetch: (async () => new Response(JSON.stringify(captured), { status: 200 })) as never, now: () => NOW, typicalCosts: false }),
     });
 
   it('proposes nothing when no price at all was found, and says so instead of showing $0', async () => {
@@ -80,5 +80,30 @@ describe('a live result in the planner', () => {
   it('never yields a candidate that could be approved', async () => {
     const candidates = await generateCandidates(readyState(), live());
     expect(candidates.some((c) => c.feasibility.feasible)).toBe(false);
+  });
+});
+
+
+describe('the same captured answer with typical costs switched on (the live default)', () => {
+  const live = () =>
+    createResearchProvider({
+      mode: 'live',
+      live: createGeminiProvider({ apiKey: 'test', fetch: (async () => new Response(JSON.stringify(captured), { status: 200 })) as never, now: () => NOW }),
+    });
+
+  it('never shows a zero, never calls a typical cost a found price, and says which costs are typical', async () => {
+    const outcome = await planTrip(readyState({ mason: 90_000, alex: 90_000, jordan: 90_000 }), live());
+    const text = outcome.replies.map((r) => r.text).join('\n');
+    expect(text).not.toMatch(/\$0\.00/);
+    expect(text).toMatch(/typical cost/i);
+    const costs = outcome.candidates.flatMap((c) => c.costs);
+    expect(costs.length).toBeGreaterThan(0);
+    for (const c of costs) {
+      expect(c.priceStatus).not.toBe('verified');
+      if (/typical cost/i.test(c.label)) {
+        expect(c.evidenceIds).toEqual([]);
+        expect(c.highCents).toBeGreaterThan(0);
+      }
+    }
   });
 });

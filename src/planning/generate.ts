@@ -1,4 +1,5 @@
 import { privateOverage, reprice } from './budget.js';
+import { TYPICAL_LABEL } from '../research/pricing.js';
 import { checkReadiness } from './readiness.js';
 import { commonWindows, effectiveAvailability, hoursNeeded, resolveGroupField } from './constraints.js';
 import { formatUsd } from './money.js';
@@ -254,7 +255,10 @@ export async function planTrip(state: TripState, researchProvider: ResearchProvi
     });
   }
   if (shown.length > 0 || provisional.length > 0) {
-    replies.push({ audience: { kind: 'group' }, text: result.mode === 'fixture' ? 'Heads up: this is demo data, so the prices are made up.' : 'These prices are estimates from web searches, so double-check them before you book anything.' });
+    // Costs filled in from typical figures (no price was found) are named, so nobody takes them for found prices.
+    const typical = [...new Set([...shown, ...provisional].flatMap((c) => c.costs.filter((x) => x.label.includes(TYPICAL_LABEL)).map((x) => x.costId)))];
+    const typicalNote = typical.length > 0 ? ` I couldn't find a price for ${typical.join(', ')}, so I used a typical cost there. Treat that as rough.` : '';
+    replies.push({ audience: { kind: 'group' }, text: result.mode === 'fixture' ? 'Heads up: this is demo data, so the prices are made up.' : `These prices are estimates from web searches, so double-check them before you book anything.${typicalNote}` });
   }
 
   return { revision: state.revision, mode: result.mode, candidates: [...shown, ...provisional], excluded, replies, limitations: result.limitations };
