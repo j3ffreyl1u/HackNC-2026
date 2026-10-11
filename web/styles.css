@@ -155,3 +155,18 @@ body { background:radial-gradient(ellipse at 45% 0%,#87fff4a8,transparent 45%),l
 .feature-dock .dock-icon { box-shadow:inset 0 3px 5px white,inset 0 -4px 8px #01457480,0 6px 12px #055b7950; }
 @media(min-width:1472px) { main { margin-left:auto; margin-right:auto; } }
 @media(max-width:760px) { main { margin:0 10px 30px; }.hero { min-height:960px; padding:500px 16px 22px; }.hero-copy { max-width:none; margin:0 0 45px; background:linear-gradient(#f1ffffec,#d2f1f7e3); }.hero h1 { font-size:3.2rem; } }
+/* Reef polish: readable lettering, consistent glass elevation, and native chrome. */
+:root { --reef-ink:#075289; --reef-foam:#e4ffff; --reef-coral:#edb8cd; --reef-depth:#073773; }
+::selection { background:#90f1e1; color:#063565; } html { scrollbar-color:#4badc5 #0a3666; scrollbar-width:thin; }
+.hero h1 { letter-spacing:-.03em; text-wrap:balance; }.hero-copy { border-radius:14px; background:linear-gradient(145deg,#f1ffffee,#c9f0f4d9); box-shadow:inset 0 1px #fff,0 15px 35px #01204445; }
+.view-controls { padding:7px; border:1px solid #baf8ff88; border-radius:12px; background:linear-gradient(#0e608384,#063b668a); backdrop-filter:blur(10px); }
+.view-controls button,.plan-filters button { min-height:44px; font-size:.79rem; border-radius:8px; }.view-controls button:disabled { opacity:.75; }
+.cost-row strong,.fund-total,.revision { font-variant-numeric:tabular-nums; }
+@media(max-width:760px) { .view-controls { gap:5px; padding:5px; }.view-controls button { font-size:.65rem; padding:7px; min-height:44px; }.hero-copy { margin-bottom:76px; } }
+/* Corrections from the desktop/mobile inspection. */
+.explorer-bar { background:#d8f3fcdd; border-radius:9px 9px 0 0; }.explorer-bar a { background:linear-gradient(#fff,#c8eaf8); color:#12486a; }
+#trip { background:#ecf8ff; padding-top:1px; }.trip-heading h2 { color:#104b77; text-shadow:none; }.revision { color:#315a70; }
+.plan-filters { background:#ecf8ff; padding-bottom:8px; }.plan-filters button[aria-pressed="true"] { background:linear-gradient(#e5fff7,#a5e3d2); color:#0b4a42; text-shadow:none; border-color:#348879; box-shadow:inset 0 2px 4px #13666b22; }
+.hero .aero-button { background:linear-gradient(#0d6597,#0e6e9e 46%,#05537e 50%,#07628e); color:white; }
+.candidate::before { display:none; }
+@media(max-width:760px) { .view-controls button { font-size:.75rem; }.hero-copy { margin-bottom:130px; }.view-controls { padding:8px; }.hero { min-height:1020px; } }

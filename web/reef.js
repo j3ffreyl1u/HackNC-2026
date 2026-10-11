@@ -14,12 +14,17 @@ const moving = () => document.body.dataset.motion === 'on' && !reduced.matches;
 
 function fish(x, y, size, time, facing = 1, kind = 'clown') {
   ctx.save(); ctx.translate(x, y); ctx.scale(size * facing, size);
-  ctx.rotate(Math.sin(time * .7) * .025);
-  const orange = ctx.createLinearGradient(0, -1, 0, 1);
+  ctx.rotate(Math.sin(time * .7 + x * .01) * .035);
+  const orange = ctx.createRadialGradient(.05, -.28, .08, -.1, .04, 1.2);
   const colors = kind === 'blue' ? ['#94f4ff', '#269bdd', '#2047b5', '#132258'] : kind === 'yellow' ? ['#fffbb3', '#ffe941', '#e4a619', '#b97911'] : ['#ffe591', '#ffb82f', '#ff6814', '#ba3816'];
   colors.forEach((color, i) => orange.addColorStop([0, .32, .7, 1][i], color));
-  ctx.fillStyle = orange; ctx.strokeStyle = '#502437'; ctx.lineWidth = .045;
-  ctx.beginPath(); ctx.moveTo(-.9, 0); ctx.lineTo(-1.55, -.6); ctx.quadraticCurveTo(-1.75, 0, -1.55, .6); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle = kind === 'blue' ? '#10326d' : '#793d2d'; ctx.lineWidth = .035;
+  const fin = kind === 'blue' ? '#ffdc50' : kind === 'yellow' ? '#ffdb69' : '#ff9b38';
+  ctx.fillStyle = fin;
+  const flutter = Math.sin(time * 3.5 + x * .03) * .12;
+  ctx.beginPath(); ctx.moveTo(-.72, -.2); ctx.quadraticCurveTo(-1.32, -.58, -1.6 + flutter, -.61); ctx.quadraticCurveTo(-1.87, 0, -1.6 + flutter, .61); ctx.quadraticCurveTo(-1.25, .48, -.72, .2); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-.64, -.35); ctx.quadraticCurveTo(-.46, -1.02, -.05, -.84); ctx.quadraticCurveTo(.4, -.7, .78, -.3); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-.55, .35); ctx.quadraticCurveTo(-.35, .86, .13, .77); ctx.lineTo(.55, .4); ctx.closePath(); ctx.fill(); ctx.stroke();
   ctx.fillStyle = orange;
   ctx.beginPath(); ctx.ellipse(0, 0, 1.12, .63, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
   ctx.save(); ctx.clip();
@@ -27,11 +32,19 @@ function fish(x, y, size, time, facing = 1, kind = 'clown') {
     ctx.strokeStyle = '#7a3324'; ctx.lineWidth = .28; ctx.beginPath(); ctx.moveTo(sx, -.8); ctx.quadraticCurveTo(sx - .22, 0, sx + .05, .8); ctx.stroke();
     ctx.strokeStyle = '#fffbe5'; ctx.lineWidth = .19; ctx.stroke();
   }
-  ctx.fillStyle = '#ffffff40'; ctx.beginPath(); ctx.ellipse(-.08, -.32, .65, .12, -.08, 0, Math.PI * 2); ctx.fill();
+  if (kind === 'blue') {
+    ctx.strokeStyle = '#103175'; ctx.lineWidth = .18; ctx.beginPath(); ctx.moveTo(-.9, -.12); ctx.bezierCurveTo(-.15, -.6, .28, -.42, .52, -.12); ctx.bezierCurveTo(.1, .48, -.25, .3, -.6, .18); ctx.stroke();
+  }
+  const sheen = ctx.createLinearGradient(0, -.6, 0, 0);
+  sheen.addColorStop(0, '#ffffff90'); sheen.addColorStop(1, '#ffffff00');
+  ctx.fillStyle = sheen; ctx.beginPath(); ctx.ellipse(-.14, -.3, .73, .25, -.08, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
-  ctx.fillStyle = kind === 'blue' ? '#ffe150' : kind === 'yellow' ? '#ffe879' : '#f98022'; ctx.beginPath(); ctx.moveTo(-.18, .03); ctx.quadraticCurveTo(-.7, .65, -.53, .76); ctx.quadraticCurveTo(.03, .55, .08, .15); ctx.fill();
+  ctx.fillStyle = fin; ctx.beginPath(); ctx.moveTo(-.18, .03); ctx.quadraticCurveTo(-.7, .65 + flutter, -.53, .76); ctx.quadraticCurveTo(.03, .55, .08, .15); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle = '#ffeec366'; ctx.lineWidth = .018;
+  for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(-.12, .1); ctx.lineTo(-.5 + i * .09, .6 - i * .03); ctx.stroke(); }
   ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.ellipse(.72, -.19, .23, .27, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#351f36'; ctx.beginPath(); ctx.ellipse(.79, -.16, .12, .17, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#a76532'; ctx.beginPath(); ctx.ellipse(.78, -.16, .15, .19, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#172741'; ctx.beginPath(); ctx.ellipse(.81, -.15, .1, .15, 0, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(.83, -.22, .045, 0, Math.PI * 2); ctx.fill();
   ctx.strokeStyle = '#7d2c26'; ctx.lineWidth = .025; ctx.beginPath(); ctx.arc(.98, .1, .1, .2, 1.8); ctx.stroke();
   ctx.restore();
@@ -40,11 +53,20 @@ function fish(x, y, size, time, facing = 1, kind = 'clown') {
 function strand(s, time, dt, animate, scale, baseY) {
   const tipX = s.x * width;
   const tipY = baseY - (.83 - s.y) * scale;
+  const rootX = width * .39 + (s.x - .39) * width * .35;
   let force = 0;
   if (animate && pointer) {
     const dx = tipX + s.offset - pointer.x, dy = tipY - pointer.y;
-    const distance = Math.hypot(dx, dy);
-    if (distance < scale * .2) force = (dx >= 0 ? 1 : -1) * (1 - distance / (scale * .2)) * scale * .14;
+    let distance = Math.hypot(dx, dy);
+    // Brush the whole tentacle, including the stem, rather than only its tip.
+    for (let j = 1; j < 8; j++) {
+      const t = j / 8, u = 1 - t;
+      const bx = u ** 3 * rootX + 3 * u ** 2 * t * (rootX - 15) + 3 * u * t ** 2 * (tipX + s.offset * .4 - 15) + t ** 3 * (tipX + s.offset);
+      const by = u ** 3 * baseY + 3 * u ** 2 * t * (baseY - scale * .17) + 3 * u * t ** 2 * (tipY + scale * .14) + t ** 3 * tipY;
+      distance = Math.min(distance, Math.hypot(bx - pointer.x, by - pointer.y));
+    }
+    const radius = Math.min(140, scale * .13);
+    if (distance < radius) force = (dx >= 0 ? 1 : -1) * (1 - distance / radius) ** 2 * scale * .105;
   }
   if (animate && performance.now() < rippleUntil) force += Math.sin(time * 5 + s.x * 12) * scale * .065;
   if (animate) {
@@ -53,7 +75,6 @@ function strand(s, time, dt, animate, scale, baseY) {
   } else { s.offset = 0; s.velocity = 0; }
   const sway = animate ? Math.sin(time * .75 + s.random * 6) * scale * .009 : 0;
   const endX = tipX + s.offset + sway;
-  const rootX = width * .39 + (s.x - .39) * width * .35;
   const gradient = ctx.createLinearGradient(rootX, baseY, endX, tipY);
   gradient.addColorStop(0, '#832953'); gradient.addColorStop(.38, s.front ? '#ca6f9e' : '#9275b9'); gradient.addColorStop(.8, s.front ? '#ffd3b6' : '#dbbcf0'); gradient.addColorStop(1, '#fff0dd');
   ctx.strokeStyle = gradient; ctx.lineWidth = scale * (.008 + s.random * .008); ctx.lineCap = 'round';
