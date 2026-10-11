@@ -198,7 +198,7 @@ function evaluate(state: TripState): Evaluation {
         'conflict:dates',
         flexer !== undefined && other !== undefined
           ? `${freeWhen.join(' and ')}, so there's no ${nights}-night stretch that works for you both. ${displayName(state, flexer)}, since you've got more room, any chance you could do ${formatWindows(effectiveAvailability(state, other) ?? [])}?`
-          : `${freeWhen.join(' and ')}, so there's no ${nights}-night stretch that works for everyone. Could either of you open up other dates?`,
+          : `${freeWhen.join(' and ')}, so there's no ${nights}-night stretch that works for everyone. Could someone open up other dates?`,
       );
     }
   }

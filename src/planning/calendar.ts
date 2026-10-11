@@ -28,7 +28,7 @@ function utc(iso: string): string | undefined {
 
 /** RFC 5545 TEXT escaping: backslash first, then separators and line breaks. */
 const escapeText = (text: string) =>
-  text.replace(/\\/g, '\\\\').replace(/;/g, '\;').replace(/,/g, '\\,').replace(/\r\n|\r|\n/g, '\\n');
+  text.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r\n|\r|\n/g, '\\n');
 
 /** Lines are limited to 75 bytes; a longer one continues on the next line after a single space, never mid-character. */
 function fold(line: string): string[] {
@@ -50,6 +50,8 @@ function fold(line: string): string[] {
   return out;
 }
 
+/** A re-priced revision keeps the same events, so the id leaves out the revision ("trip-r3-option" -> "trip-option"): calendars update the event instead of adding a copy. */
+const stableId = (text: string) => uidPart(text.replace(/-r\d+-/, '-'));
 const uidPart = (text: string) => text.replace(/[^A-Za-z0-9._-]/g, '-');
 
 /**
@@ -65,7 +67,7 @@ export function planToIcs(plan: IcsPlan, options: { now?: string } = {}): string
     if (!start || !end || Date.parse(stop.endAt) <= Date.parse(stop.startAt)) continue;
     events.push([
       'BEGIN:VEVENT',
-      `UID:${uidPart(plan.candidateId)}-${uidPart(stop.itemId)}@splitbot`,
+      `UID:${stableId(plan.candidateId)}-${stableId(stop.itemId)}@splitbot`,
       `DTSTAMP:${stamp}`,
       `DTSTART:${start}`,
       `DTEND:${end}`,
