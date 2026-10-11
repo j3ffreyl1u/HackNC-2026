@@ -1,6 +1,6 @@
 import { allocateCosts } from './budget.js';
 import { effectiveBudget, resolveGroupField } from './constraints.js';
-import { formatUsd } from './money.js';
+import { formatUsd, sumCents } from './money.js';
 import { groupPreferences } from './rank.js';
 import { participantIds } from './state.js';
 import type { ConstraintValues, CostItem, SourceEvidence, TripCandidate, TripState } from './types.js';
@@ -18,6 +18,8 @@ export interface GuideAnswer {
 export interface GuideOptions {
   /** The current time, used to find the next stop in the plan. */
   now?: string;
+  /** What is left in the shared trip fund, read from the bank. Only changes what the answer says, never what it finds. */
+  fund?: { remainingDollars: number };
 }
 
 const MAX_QUESTION = 300;
@@ -54,6 +56,8 @@ interface Effect {
   unknown: string[];
   /** True when adding it on top of the plan keeps every person within their own cap. Undefined: can't tell. */
   fits: boolean | undefined;
+  /** The most of the option's shared cost that would come out of a shared fund. Personal costs never do. */
+  sharedHighCents: number;
 }
 
 /** What adding this option costs each person, checked against that person's remaining room under their cap. */
@@ -84,10 +88,11 @@ function effectOf(state: TripState, candidate: TripCandidate | undefined, option
     highCents: Math.max(...extra.perPersonTotals.map((t) => t.highCents)),
     unknown: [...extra.unknownEssentials, ...unpriced],
     fits,
+    sharedHighCents: sumCents(costs.filter((c) => c.allocation === 'equal_shared' && c.priceStatus !== 'unknown').map((c) => c.highCents)),
   };
 }
 
-function describeAlternative(effect: Effect, evidence: ReadonlyMap<string, SourceEvidence>): string {
+function describeAlternative(effect: Effect, evidence: ReadonlyMap<string, SourceEvidence>, fund?: GuideOptions['fund']): string {
   const { option } = effect;
   const places = [...new Set(option.stops.map((s) => s.location))].join(', ');
   const lines = [`• ${option.name}${places ? ` (${places})` : ''}`];
@@ -95,6 +100,14 @@ function describeAlternative(effect: Effect, evidence: ReadonlyMap<string, Sourc
     lines.push('  Price not found, so I can\'t say whether it fits your limits.');
   } else {
     lines.push(`  Adds about ${formatUsd(effect.lowCents)} to ${formatUsd(effect.highCents)} each (estimate, on top of the plan). ${effect.fits === undefined ? "I can't confirm it fits everyone's limits." : "Fits within everyone's limits."}`);
+  }
+  if (fund !== undefined && Number.isFinite(fund.remainingDollars) && effect.unknown.length === 0 && effect.sharedHighCents > 0) {
+    const left = Math.max(0, Math.floor(fund.remainingDollars));
+    lines.push(
+      effect.sharedHighCents <= left * 100
+        ? `  Uses about ${formatUsd(effect.sharedHighCents)} of the shared costs, covered by the fund ($${left} left in the trip fund).`
+        : `  That is more than the $${left} left in the trip fund, so the group would need to add to it.`,
+    );
   }
   for (const t of option.tradeoffs) lines.push(`  ${t}`);
   const cited = [...new Set([...option.evidenceIds, ...option.stops.flatMap((s) => s.evidenceIds)])].map((id) => evidence.get(id)).filter((e): e is SourceEvidence => e !== undefined);
@@ -162,7 +175,7 @@ export async function answerGuideQuestion(
       ? `your approved plan, ${candidate.title}`
       : `the plan up for approval, ${candidate.title}`;
   const where = next ? ` Your next stop is "${next.label}" in ${next.location}.` : '';
-  const lines = [`Based on ${planWords}, here is what I found for "${asked}".${where}`, ...shown.map((e) => describeAlternative(e, byId))];
+  const lines = [`Based on ${planWords}, here is what I found for "${asked}".${where}`, ...shown.map((e) => describeAlternative(e, byId, options.fund))];
   if (overCap > 0) lines.push(`${overCap === 1 ? 'One other option' : `${overCap} other options`} would put at least one person over their limit, so I left ${overCap === 1 ? 'it' : 'them'} out.`);
   lines.push(
     candidate

@@ -22,6 +22,43 @@ async function approvedState(caps?: Record<string, number>): Promise<TripState> 
   return state;
 }
 
+describe('answerGuideQuestion: the trip fund', () => {
+  it('says nothing about a fund when none is given', async () => {
+    const { text } = await answerGuideQuestion(await approvedState(), RAIN, provider);
+    expect(text).not.toMatch(/fund/i);
+  });
+
+  it('says whether the shared cost fits in what is left of the fund', async () => {
+    const roomy = await answerGuideQuestion(await approvedState(), RAIN, provider, { fund: { remainingDollars: 100 } });
+    // The museum's shared cost is 1,800 to 3,000 cents, so at most $30.00 from the fund.
+    expect(roomy.text).toMatch(/about \$30\.00 of the shared costs.*\$100 left in the trip fund/s);
+    expect(roomy.text).toMatch(/covered by the fund/i);
+  });
+
+  it('warns when the fund would not cover it, without dropping the option', async () => {
+    const tight = await answerGuideQuestion(await approvedState(), RAIN, provider, { fund: { remainingDollars: 20 } });
+    expect(tight.text).toMatch(/more than the \$20 left in the trip fund/i);
+    expect(tight.text).toContain('Rainy-day indoor stops');
+  });
+
+  it('does not claim the fund covers a cost whose price is unknown', async () => {
+    const noPrice: ResearchProvider = {
+      mode: 'fixture',
+      async search(request) {
+        const result = await provider.search(request);
+        return { ...result, options: result.options.map((o) => ({ ...o, costs: [], perPersonCosts: [] })) };
+      },
+    } as ResearchProvider;
+    const { text } = await answerGuideQuestion(await approvedState(), RAIN, noPrice, { fund: { remainingDollars: 500 } });
+    expect(text).not.toMatch(/covered by the fund/i);
+  });
+
+  it('never shows an individual\'s share or limit while talking about the fund', async () => {
+    const { text } = await answerGuideQuestion(await approvedState(), RAIN, provider, { fund: { remainingDollars: 20 } });
+    expect(text).not.toMatch(/20,?000|25,?000|30,?000|cap/i);
+  });
+});
+
 describe('answerGuideQuestion: the rainy-day question', () => {
   it('answers relative to the approved plan and its next stop', async () => {
     const state = await approvedState();
