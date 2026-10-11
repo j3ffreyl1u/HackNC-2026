@@ -18,6 +18,8 @@ import type { ConversationDependencies } from './types.js';
 const APPROVE_REACTIONS = new Set(['👍', '👍🏻', '👍🏼', '👍🏽', '👍🏾', '👍🏿', '❤️', '❤', '✅', '✔️', 'like', 'love', 'thumbsup', '+1']);
 const YES = /^(?:(?:yes|yep|yeah|yup|sure)(?:[ ,]+(?:it is|that is|that'?s right|that'?s it|correct|exactly|please|firm))?|ok|okay|accept|accepted|i accept|i'?m in|count me in|sounds good|works for me|let'?s do it|do it|confirm|confirmed|correct|that'?s right|exactly)[.!]*$/i;
 const NO = /^(no|nope|nah|decline|i decline|not for me|not now|no thanks|pass)[.!]*$/i;
+/** Explicitly says what we just recorded is wrong (as opposed to a bare "no", which is ambiguous after "tell me if I got anything wrong"). */
+const WRONG = /^(?:(?:no|nope|nah)[ ,]+)?(?:that'?s|that is|it'?s|it is|this is)?\s*(?:not right|not correct|wrong|incorrect|not what i (?:said|meant))[.!]*$/i;
 const ID = '([A-Za-z0-9][\\w:.\\-]*)';
 const REQUEST_PLANS = /^(?:(?:please|pls|ok|okay|alright|so)[,\s]+)?(?:(?:can|could) you\s+)?(?:(?:show|give|get|send)\s+(?:me\s+|us\s+)?(?:the\s+|some\s+|a few\s+|a couple of\s+|a couple\s+)?(?:trip\s+)?(?:options|plans|proposals|itineraries|ideas)|(?:pull|put) together\s+(?:a\s+|some\s+)?(?:(?:few|couple of|couple)\s+)?(?:trip\s+)?(?:options|plans|ideas)(?:\s+for us)?|(?:plan|research)\s+(?:it|this|the trip|our trip)|find\s+(?:us\s+)?(?:trip\s+)?options|what are (?:our|the) options|(?:(?:let'?s|lets|can we|could we|we should|i want to|we want to|i'?d like to)\s+)?(?:start|begin|get started)(?:\s+(?:on\s+)?(?:planning|plan))?(?:\s+(?:a|the|our|this))?(?:\s+(?:road\s+)?trip)?|(?:let'?s|lets|can we|could we|we should|i want to|we want to|i'?d like to)\s+plan(?:\s+(?:a|the|our|this))?(?:\s+(?:road\s+)?trip)?(?:\s+together)?)$/i;
 const GREETING = /^(?:hi|hey|hello|yo|hiya|good (?:morning|afternoon|evening))\b[,!.\s]*/i;
@@ -180,7 +182,14 @@ export function createParser(deps: ConversationDependencies) {
       return { kind: 'commands', commands: [locked], clarification: replyMessage(msg, `Locked in, your max is ${money(pending.valueCents)}. Thanks, and that stays between us.`, 'locked', true) };
     }
     const list = ctx.actionable;
-    if (list.length === 0) return { kind: 'ignored', reason: 'nothing to answer' };
+    if (list.length === 0) {
+      // Nothing is waiting on an answer, so this is probably a reply to our "Got it ... tell me if I got anything wrong".
+      // In a one-on-one chat never go silent; in a group, stay out of it.
+      if (msg.visibility !== 'private' && trip.mode !== 'direct') return { kind: 'ignored', reason: 'nothing to answer' };
+      return yes
+        ? reply(msg, `Great! Anything else to add? When you're ready, say "show us some options".`, 'thanks')
+        : reply(msg, `No worries! If anything's off, just tell me the right detail, like "my max is $300" or "free Nov 21-23". Otherwise say "show us some options" when you're ready.`, 'neutral-no');
+    }
     if (!yes) {
       return reply(msg, "No worries, I haven't recorded an acceptance. What would you want to change: the dates, the budget, or the activities?", 'no');
     }
@@ -230,6 +239,12 @@ export function createParser(deps: ConversationDependencies) {
     const ex = explicit(msg, ctx, text);
     if (ex) return ex;
     const plain = text.replace(/[?!.\s]+$/, '');
+    if (WRONG.test(plain)) {
+      if (ctx.actionable.length || ctx.pendingConfirmation) return resolveAnswer(msg, ctx, false);
+      return msg.visibility === 'private' || trip.mode === 'direct'
+        ? reply(msg, `Sorry about that! What should I fix? Tell me the right detail, like "my max is $300", "free Nov 21-23" or "leaving from Raleigh".`, 'sorry')
+        : { kind: 'ignored', reason: 'nothing to correct' };
+    }
     if (YES.test(text) || YES.test(plain)) return resolveAnswer(msg, ctx, true);
     if (NO.test(text) || NO.test(plain)) return resolveAnswer(msg, ctx, false);
 

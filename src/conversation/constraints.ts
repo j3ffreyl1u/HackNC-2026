@@ -74,6 +74,10 @@ function extractSentence(s: string, reference: string, pending: ConstraintField 
   }
   if ((m = /\bwithin\s+(?:about\s+|around\s+)?(\d{1,2}(?:\.\d)?)\s*(?:hours?|hrs?|h)\b/i.exec(s)) ?? (m = /\b(\d{1,2}(?:\.\d)?)\s*[- ]?(?:hours?|hrs?)\s+(?:drive|away|radius)\b/i.exec(s))) {
     push({ field: 'region', value: `within ${m![1]} hours by car`, maxTravelMinutes: Math.round(Number(m![1]) * 60) });
+  } else if ((m = /\b(?:[Gg]o|[Tt]ravel|[Dd]rive|[Hh]ead|going|headed|heading|trip)\s+to\s+((?:[A-Z][A-Za-z.'-]*)(?:\s+[A-Z][A-Za-z.'-]*){0,3})/.exec(s))) {
+    push({ field: 'region', value: clean(m[1]!) });
+  } else if (/\b(?:any|whatever)\s+distance\b|\bdrive\s+(?:anywhere|as far as)\b|\bdon'?t\s+mind\s+(?:driving|how far)\b/i.test(s)) {
+    push({ field: 'region', value: 'any distance by car', maxTravelMinutes: 1440 });
   } else if ((m = /\b(?:destination|region|area)\s*(?:is|:)\s*([A-Za-z][A-Za-z ,.'-]{1,40})/i.exec(s))) {
     const value = clean(m[1]!);
     const maxTravelMinutes = parseMaxTravelMinutes(value);
@@ -85,7 +89,7 @@ function extractSentence(s: string, reference: string, pending: ConstraintField 
 
   if (/\b(?:no (?:real )?preferences?|don'?t (?:really )?care|i'?m (?:easy|flexible|open to anything))\b/i.test(s)) {
     push({ field: 'preferences', value: ['no preference'] });
-  } else if ((m = /\b(?:i|we)(?:\s+really)?(?:\s+|(?='d\s))(?:prefer|like|love|enjoy|(?:am|'m)\s+into|(?:want|'d like|would like) to (?:be able to )?(?:do|go to|go|try|see|visit|explore|check out))\s+(.+)$/i.exec(s))) {
+  } else if ((m = /\b(?:i|we)(?:\s+really)?(?:\s+|(?='d\s))(?:prefer|like|love|enjoy|(?:am|'m)\s+into|(?:want|'d like|would like) to (?:be able to )?(?:do|try|see|visit|explore|check out))\s+(.+)$/i.exec(s))) {
     const items = splitItems(m[1]!.split(/\b(?:but|so|because)\b/i)[0]!);
     if (items.length) push({ field: 'preferences', value: items });
   }
@@ -140,6 +144,13 @@ export function extractConstraints(text: string, reference: string, pending?: Co
   if (out.length === 0 && pending) {
     const a = pendingAnswer(text, reference, pending);
     if (a) out.push(a);
+  }
+  // A destination and a drive limit in separate sentences describe the same region: keep both.
+  const regions = out.filter((e) => e.value.field === 'region');
+  if (regions.length > 1) {
+    const [first, ...rest] = regions as Array<Extracted & { value: { field: 'region'; value: string; maxTravelMinutes?: number } }>;
+    const limit = rest.map((r) => r.value.maxTravelMinutes).find((n) => n !== undefined);
+    if (first!.value.maxTravelMinutes === undefined && limit !== undefined) first!.value.maxTravelMinutes = limit;
   }
   // One value per field per message: keep the first.
   const seen = new Set<string>();

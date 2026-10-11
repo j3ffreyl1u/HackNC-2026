@@ -291,6 +291,39 @@ describe('friendly, customer-service style replies', () => {
   });
 });
 
+describe('replying to "tell me if I got anything wrong" (nothing pending)', () => {
+  const dm = (text: string) => msg({ visibility: 'private', spaceId: 'dm-mason', text, eventId: `e-${text}` });
+  it('a bare nope/no is read as "nothing wrong" and gets a friendly nudge, never silence', async () => {
+    const { service } = setup();
+    for (const t of ['Nope', 'No', 'nah']) {
+      const r = await service.parseInbound(dm(t));
+      expect(r.kind, t).toBe('reply');
+      expect(text(r), t).toMatch(/No worries.*show us some options/s);
+    }
+  });
+  it('"yes that\'s right" gets a thank-you and a next step', async () => {
+    const { service } = setup();
+    for (const t of ["Yes that's right", 'Yes that\u2019s right', 'yes', 'correct']) expect(text(await service.parseInbound(dm(t))), t).toMatch(/^Great!.*show us some options/s);
+  });
+  it('"No, that\'s not right" asks what to fix', async () => {
+    const { service } = setup();
+    for (const t of ["No, that's not right", 'Nope that is wrong', "that's not right", 'wrong']) {
+      const r = await service.parseInbound(dm(t));
+      expect(cmds(r), t).toEqual([]);
+      expect(text(r), t).toMatch(/Sorry about that! What should I fix\?/);
+    }
+  });
+  it('groups stay quiet for the same words', async () => {
+    const { service } = setup();
+    for (const t of ['Nope', 'yes', "that's not right"]) expect((await service.parseInbound(msg({ text: t, eventId: `g-${t}` }))).kind, t).toBe('ignored');
+  });
+  it('a real answer still wins: with a plan waiting, "no" is still a decline and "wrong" still declines', async () => {
+    const { service } = setup({ actionable: [accept] });
+    expect(text(await service.parseInbound(dm('no')))).toMatch(/haven't recorded an acceptance/);
+    expect(text(await service.parseInbound(dm("that's not right")))).toMatch(/haven't recorded an acceptance/);
+  });
+});
+
 describe('gating', () => {
   it('ignores unknown senders and unrelated groups', async () => {
     const { service } = setup();

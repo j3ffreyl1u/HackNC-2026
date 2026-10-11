@@ -97,6 +97,23 @@ describe('other fields', () => {
   });
 });
 
+describe('destinations and drive limits (from the first two-phone live test)', () => {
+  it('"I want to go to Washington DC from North Carolina." is a destination, never a preference', () => {
+    const r = ex('I want to go to Washington DC from North Carolina.');
+    expect(r.find((e) => e.value.field === 'region')?.value).toEqual({ field: 'region', value: 'Washington DC' });
+    expect(r.find((e) => e.value.field === 'preferences')).toBeUndefined();
+  });
+  it('"I want to go to Washington. I can drive any distance" is one region with no drive limit, plus a car', () => {
+    const r = ex('I want to go to Washington. I can drive any distance');
+    expect(r.find((e) => e.value.field === 'region')?.value).toEqual({ field: 'region', value: 'Washington', maxTravelMinutes: 1440 });
+    expect(r.find((e) => e.value.field === 'transport')?.value).toMatchObject({ vehicleAvailable: true });
+    expect(r.find((e) => e.value.field === 'preferences')).toBeUndefined();
+  });
+  it('still reads real preferences', () => {
+    expect(one('I want to visit a bunch of historical places', 'preferences')?.value).toMatchObject({ value: ['historical places'] });
+  });
+});
+
 describe('parseMaxTravelMinutes', () => {
   it('reads hours and minutes, rejects implausible values', () => {
     expect(parseMaxTravelMinutes('within 3 hours')).toBe(180);

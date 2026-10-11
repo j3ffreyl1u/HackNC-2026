@@ -130,6 +130,22 @@ describe('first live DM scenario, end to end (A parser + C runtime + B planner, 
     await t.stop();
   });
 
+  it('the exact messages from the first two-phone live run are understood and every one gets a reply', async () => {
+    const t = await live();
+    await t.say(JEFF, "Hi, let's plan a trip");
+    await t.say(JEFF, "I'm leaving from Chapel Hill, 2 nights, I have a car, I'm free Nov 14-16, my max is $250, I like hiking and a town visit");
+    const dest = await t.say(JEFF, 'I want to go to Washington DC from North Carolina.');
+    expect(dest.jeff.join(' ')).not.toMatch(/you're into Washington/);          // it is a destination, not a preference
+    expect((await t.state()).groupConstraints.some((c) => c.field === 'region')).toBe(true);
+    for (const text of ['Nope', "No, that's not right", "Yes that's right"]) {
+      const r = await t.say(JEFF, text);
+      expect(r.jeff.length, text).toBeGreaterThan(0);                            // never silence
+    }
+    const mason = await t.say(MASON, 'I want to go to Washington. I can drive any distance');
+    expect(mason.mason.join(' ')).not.toMatch(/you're into/);
+    await t.stop();
+  });
+
   it('later preferences add to earlier ones, and "no preference" resets them', async () => {
     const t = await live();
     await t.say(JEFF, "Hi, let's plan a trip");
