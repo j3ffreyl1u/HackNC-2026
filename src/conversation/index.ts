@@ -7,6 +7,7 @@ export type { ConversationDependencies, IntentModel, Messenger, RawProviderEvent
 export type * from './contracts-local.js';
 export { MockIntentModel, MockMessenger } from './mock.js';
 export { normalizeEvent } from './normalize.js';
+export { parseJoinCode } from './join.js';
 
 export function createConversationService(deps: ConversationDependencies): ConversationService {
   const parser = createParser(deps);
@@ -53,7 +54,7 @@ export function createConversationService(deps: ConversationDependencies): Conve
     sendMessage,
     async start(onMessage) {
       await messenger.subscribe(async (raw) => {
-        const normalized = normalizeEvent(raw, trip);
+        const normalized = normalizeEvent(raw, trip, { joinCodes: deps.joinCodes === true });
         if (normalized) await onMessage(normalized);
       });
     },

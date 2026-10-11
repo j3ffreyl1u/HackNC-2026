@@ -35,6 +35,13 @@ Pivoting is a config change (`mode: 'direct'`). In `direct`, `groupSpaceId` is o
 - Explicit forms (no AI): `show options`, `plan the trip`, `guide: <question>`, `request contributions`.
 - Gemini sees: message text, date, channel, timezone, member names, pending field. Never budgets or other members' private history. Output is validated (`intent.ts`); invalid items are dropped. Certainty and hedging are decided by code, not the model. Gemini errors degrade to a clarification (shown only in DMs).
 
+## Join codes (my half, off by default)
+A friend can text the assistant `join 4F7K` (also `JOIN-4F7K`, `join code 4F7K`, `use code 4F7K to join`) to ask to be added. A code must contain a digit, so "join us" or "join now" are never codes.
+- `createConversationService({ ..., joinCodes: true })` lets a DM from a number that is **not enrolled** through, and only if the text is exactly a join request. It arrives as `senderId: 'guest:<number>'`; everything else from strangers is still dropped, and a guest can never do anything but join.
+- The parser then emits a command with action `{ kind: 'join_trip', code, providerUserId }`. **This action is not in the shared contracts yet**, so it is typed loosely and stays off until C adds it.
+- An enrolled member who sends a code gets a friendly "you're already on this trip".
+- **C still has to:** add `join_trip` to the contracts; check the code is valid and unused; record consent (`consentedAt`) before enrolling; send the guest a reply (the outbound audience currently needs a `memberId`, so it needs a provider-number audience for guests); then set `joinCodes: true`.
+
 ## Verification status (2026-10-10)
 | Area | Status |
 | --- | --- |

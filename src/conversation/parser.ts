@@ -10,6 +10,7 @@ import type {
 } from './contracts-local.js';
 import { extractConstraints, HEDGE, type Extracted } from './constraints.js';
 import { assertTimeZone, formatWindow, toIntervalWindows } from './dates.js';
+import { guestProviderUserId, isGuest, parseJoinCode } from './join.js';
 import { validateIntent } from './intent.js';
 import { formatCents } from './money.js';
 import type { ConversationDependencies } from './types.js';
@@ -274,7 +275,29 @@ export function createParser(deps: ConversationDependencies) {
     }
   }
 
+  /**
+   * A join attempt. The shared contracts have no `join_trip` action yet, so this is emitted only when the app opts
+   * in with `joinCodes: true` (see docs/conversation.md); the app must validate the code and record consent.
+   */
+  function joinCommand(msg: InboundMessage, code: string, providerUserId: string): ParseResult {
+    const command = {
+      commandId: `${trip.tripId}:${msg.eventId}:join_trip`,
+      eventId: msg.eventId,
+      actorId: msg.senderId,
+      tripId: trip.tripId,
+      action: { kind: 'join_trip', code, providerUserId },
+    } as unknown as TripCommand;
+    return { kind: 'command', command };
+  }
+
   async function parse(msg: InboundMessage, context?: TripConversationContext): Promise<ParseResult> {
+    if (isGuest(msg.senderId)) {
+      const code = deps.joinCodes && msg.visibility === 'private' && !msg.reaction ? parseJoinCode(msg.text ?? '') : null;
+      return code ? joinCommand(msg, code, guestProviderUserId(msg.senderId)) : { kind: 'ignored', reason: 'sender is not enrolled' };
+    }
+    if (deps.joinCodes && msg.text && !msg.reaction && trip.members.some((m) => m.userId === msg.senderId) && parseJoinCode(msg.text)) {
+      return reply(msg, "You're already on this trip, so you're all set! Just tell me your budget, dates and what you're into.", 'already-joined', true);
+    }
     if (!trip.members.some((m) => m.userId === msg.senderId)) return { kind: 'ignored', reason: 'sender is not enrolled' };
     if (msg.visibility === 'group' && (trip.mode !== 'group' || msg.spaceId !== trip.groupSpaceId)) return { kind: 'ignored', reason: 'unrelated group' };
     if (msg.reaction) return parseReaction(msg, context);

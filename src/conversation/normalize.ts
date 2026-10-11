@@ -1,4 +1,5 @@
 import type { InboundMessage, TripConfig } from './contracts-local.js';
+import { guestId, parseJoinCode } from './join.js';
 import type { RawProviderEvent } from './types.js';
 
 /**
@@ -7,11 +8,17 @@ import type { RawProviderEvent } from './types.js';
  * DM from an enrolled member. Actor identity comes only from the enrolled providerUserId. Event ids derive
  * from provider ids so retries of the same event dedupe.
  */
-export function normalizeEvent(raw: RawProviderEvent, trip: TripConfig): InboundMessage | null {
+export function normalizeEvent(raw: RawProviderEvent, trip: TripConfig, options: { joinCodes?: boolean } = {}): InboundMessage | null {
   if (raw.fromSelf) return null;
   if (raw.reaction?.removed) return null;
   const member = trip.members.find((m) => m.providerUserId === raw.providerUserId);
-  if (!member) return null;
+  if (!member) {
+    // Strangers are dropped, except (when enabled) a one-on-one DM that is exactly a join-code request.
+    if (options.joinCodes && raw.isDirect && !raw.reaction && raw.text && parseJoinCode(raw.text)) {
+      return { eventId: raw.eventId ?? `message:${raw.messageId}`, messageId: raw.messageId, senderId: guestId(raw.providerUserId), spaceId: raw.spaceId, visibility: 'private', occurredAt: raw.occurredAt, text: raw.text };
+    }
+    return null;
+  }
   if (!raw.isDirect && !(trip.mode === 'group' && raw.spaceId === trip.groupSpaceId)) return null;
 
   const eventId =
