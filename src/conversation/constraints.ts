@@ -35,7 +35,7 @@ export function parseMaxTravelMinutes(text: string): number | undefined {
 const NOT_A_PLACE_ANSWER = /^(?:cancel|never ?mind|nvm|stop|quit|skip|idk|not sure|no idea|later|nothing|none|n\/a|ok(?:ay)?|sure|thanks|thank you|hello|hi|hey)$|\b(?:weekends?|weeks?|months?|days?|today|tomorrow|tonight|next|this|monday|tuesday|wednesday|thursday|friday|saturday|sunday|mostly|mainly|probably|maybe|just|only|really|kind of|whatever|anything|food|foods|nights?|monuments?|museums?|histor(?:y|ical)|hiking|nightlife|sightseeing|restaurants?|breweries|brewery|shopping|nature|outdoors?|relax(?:ing)?|looks?|sounds?|seems?|good|fine|perfect|awesome|lol|lmao|haha|ok(?:ay)?|yes|yeah|yep|thanks|everything|how|what|why|does|this|that)\b/i;
 /** "I like the second one better" is about the options, not something the person likes doing. */
 const PICK_TALK = /\b(?:the\s+)?(?:first|second|third|1st|2nd|3rd|last|other)\s+(?:one|option|plan)\b|\b(?:option|plan)\s+\d\b|\bone\s+better\b/i;
-const NOT_A_PLACE = /\b(i|we|you|he|she|they|has|have|had|is|are|was|am|can|will|would|want|like|need|car|trip|my|our|it|not|but|with|for|please|thanks|yes|no)\b/i;
+const NOT_A_PLACE = /\b(i|we|you|he|she|they|has|have|had|is|are|was|am|can|will|would|want|like|need|car|trip|my|our|it|not|but|with|for|please|thanks|yes|no|help|huh|menu|options?|wait|sorry|skip|later|stop|cancel|idk|dunno|what|why|how|nothing|never ?mind)\b/i;
 const THIRD_PERSON_VEHICLE = /\b(?:[Ww]e|[Ss]omeone|[Ss]omebody|[Aa]nyone|[Ee]veryone|[A-Z][a-z]+)\s+(?:has|have|got)\s+(?:a\s+|an\s+|the\s+|two\s+|2\s+|both\s+)?(?:cars?|vehicles?|trucks?|suvs?)\b/;
 
 const NOT_ORIGIN = /^(?:there|here|home|it|that|this|them|where|somewhere|anywhere)$/i;
@@ -178,7 +178,7 @@ export function extractConstraints(text: string, reference: string, pending?: Co
 }
 
 /** Small talk that needs no interpretation (and therefore no model call). */
-export const TRIVIAL = /^(?:(?:hi|hey|hello|yo|thanks?|thank you|thx|ty|so much|very much|a lot|a ton|appreciate (?:it|that)|you(?:'re| are) (?:the best|awesome|great|amazing)|the best|ok(?:ay)?|cool|nice|great|awesome|perfect|sweet|lol|haha+|lmao|got it|sounds good|no worries|np|please|pls|sorry|oops)\b[\s,.!?:)-]*)+$/i;
+export const TRIVIAL = /^(?:(?:hi|hey|hello|hiya|howdy|hola|sup|wassup|what'?s up|whats up|what up|good (?:morning|afternoon|evening|night)|gm|there|everyone|everybody|all|guys|y'?all|team|hmm+|hm+|um+|uh+|test(?:ing)?|yo|thanks?|thank you|thx|ty|so much|very much|a lot|a ton|appreciate (?:it|that)|you(?:'re| are) (?:the best|awesome|great|amazing)|the best|ok(?:ay)?|cool|nice|great|awesome|perfect|sweet|lol|haha+|lmao|got it|sounds good|no worries|np|please|pls|sorry|oops)\b[\s,.!?:)-]*)+$/i;
 
 export interface Coverage {
   items: Extracted[];

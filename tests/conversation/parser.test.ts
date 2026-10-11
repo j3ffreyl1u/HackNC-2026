@@ -247,8 +247,8 @@ describe('requests, guide questions, and the model', () => {
   it('model asked about chatter says none; unclear group messages stay silent, unclear DMs get help', async () => {
     const { service, model } = setup({}, (i) => (i.text.includes('lol') ? { intent: 'none' } : { intent: 'clarify' }));
     expect((await service.parseInbound(msg({ text: 'lol nice' }))).kind).toBe('ignored');
-    expect((await service.parseInbound(msg({ text: 'hmm hm' }))).kind).toBe('ignored');
-    expect((await service.parseInbound(msg({ visibility: 'private', spaceId: 'dm-mason', text: 'hmm hm' }))).kind).toBe('reply');
+    expect((await service.parseInbound(msg({ text: 'meh whatever' }))).kind).toBe('ignored');
+    expect((await service.parseInbound(msg({ visibility: 'private', spaceId: 'dm-mason', text: 'meh whatever' }))).kind).toBe('reply');
     expect(model.calls[0]!).not.toHaveProperty('budget');
   });
   it('prompt-injection text is just data: no command results', async () => {

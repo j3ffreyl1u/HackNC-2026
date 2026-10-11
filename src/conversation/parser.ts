@@ -325,6 +325,39 @@ export function createParser(deps: ConversationDependencies) {
     return null;
   }
 
+  /** Where a conversation stands, as the question to put back to someone who just said hi in the middle of it. */
+  const REASK: Partial<Record<string, string>> = {
+    origin: 'Where are you all leaving from?',
+    region: 'Got a place in mind, or how far are you up for driving?',
+    duration: 'How many nights are you thinking?',
+    budget: "What's your maximum total for this trip, including food and travel?",
+    availability: 'Which dates could you do for the trip?',
+    preferences: 'What would you like out of this trip? "No preference" is a fine answer.',
+  };
+
+  /** Hellos, thanks and filler. Needs no model: warm in a one-on-one chat, silent in a group. Never a place, a date or a number. */
+  function smallTalk(msg: InboundMessage, ctx: TripConversationContext, text: string, talkative: boolean): ParseResult {
+    if (!talkative) return { kind: 'ignored', reason: 'small talk' };
+    if (/^(?:thanks?|thank you|thx|ty|appreciate)/i.test(text)) return reply(msg, 'Anytime! Tell me if you want to change anything, or say "show us some options" when you\'re ready.', 'welcome');
+    if (/^(?:hi|hey|hello|yo|hiya|howdy|hola|sup|wassup|what'?s up|whats up|what up|good |gm)/i.test(text)) {
+      // Partway through a question: put it back instead of inviting them to start over.
+      const open = ctx.pendingQuestion ? REASK[ctx.pendingQuestion.field] : undefined;
+      if (open) return reply(msg, `Hey! ${open}`, 'greeting-open');
+      // Someone has already started: don't tell this person to start another trip.
+      const starters = (ctx.others ?? []).filter((o) => o.shared.length > 0).map((o) => o.name);
+      if (starters.length > 0 || ctx.confirmBasics?.length) return reply(msg, `Hey! ${starters.length > 0 ? list(starters) : 'Someone'} already started planning a trip. Tell me your free dates and what you're into, or say "show us some options" when you're ready.`, 'greeting-joined');
+      return reply(msg, 'Hey! Want to plan a trip? Say "let\'s plan a trip" to get started.', 'greeting');
+    }
+    return reply(msg, "Sounds good. I'm here whenever you want to add something or see options.", 'smalltalk');
+  }
+
+  /** "Hi Alex", "hello everyone": a greeting aimed at someone by name is still only a greeting. */
+  const isNamedGreeting = (text: string): boolean => {
+    const rest = text.replace(GREETING, '').replace(/[?!.\s]+$/, '');
+    if (rest === text.replace(/[?!.\s]+$/, '') || rest === '') return false;
+    return trip.members.some((m) => m.displayName.toLowerCase() === rest.toLowerCase());
+  };
+
   async function parseText(msg: InboundMessage, override?: TripConversationContext): Promise<ParseResult> {
     // iMessage types curly apostrophes and quotes; our rules expect plain ones.
     const text = (msg.text ?? '').replace(/[\u2018\u2019\u02BC]/g, "'").replace(/[\u201C\u201D]/g, '"').trim();
@@ -373,6 +406,9 @@ export function createParser(deps: ConversationDependencies) {
     if (carYes) return resolveAnswer(msg, ctx, true);
     if (carNo) return resolveAnswer(msg, ctx, false);
 
+    // A hello, thanks or filler word is never an answer to "where are you leaving from?": it must not reach the place readers.
+    if (TRIVIAL.test(text) || isNamedGreeting(text)) return smallTalk(msg, ctx, text, msg.visibility === 'private' || trip.mode === 'direct');
+
     // Rules first (fast, exact). Anything the rules did not recognize is handed to the language model automatically,
     // and its (validated) answer is merged with what the rules found.
     let { items: extracted, unmatched } = extractWithCoverage(text, msg.occurredAt, ctx.pendingQuestion?.field);
@@ -389,18 +425,7 @@ export function createParser(deps: ConversationDependencies) {
       return reply(msg, `Is ${place} where you're leaving from, or where you want to go? You can say "leaving from ${place}" or "going to ${place}".`, 'place-which', true);
     }
     const talkative = msg.visibility === 'private' || trip.mode === 'direct';
-    if (!extracted.length && TRIVIAL.test(text)) {
-      // Small talk needs no model. In a one-on-one chat answer it warmly; in a group stay out of it.
-      if (!talkative) return { kind: 'ignored', reason: 'small talk' };
-      if (/^(?:thanks?|thank you|thx|ty|appreciate)/i.test(text)) return reply(msg, 'Anytime! Tell me if you want to change anything, or say "show us some options" when you\'re ready.', 'welcome');
-      if (/^(?:hi|hey|hello|yo|hiya|good )/i.test(text)) {
-        // Someone has already started: don't tell this person to start another trip.
-        const starters = (ctx.others ?? []).filter((o) => o.shared.length > 0).map((o) => o.name);
-        if (starters.length > 0 || ctx.confirmBasics?.length) return reply(msg, `Hey! ${starters.length > 0 ? list(starters) : 'Someone'} already started planning a trip. Tell me your free dates and what you're into, or say "show us some options" when you're ready.`, 'greeting-joined');
-        return reply(msg, 'Hey! Want to plan a trip? Say "let\'s plan a trip" to get started.', 'greeting');
-      }
-      return reply(msg, 'Sounds good. I\'m here whenever you want to add something or see options.', 'smalltalk');
-    }
+    if (!extracted.length && TRIVIAL.test(text)) return smallTalk(msg, ctx, text, talkative);
     // A request tucked into a longer message ("..., can you show us some options?") is understood by rule, not sent away.
     const requested: TripAction[] = [];
     for (let i = unmatched.length - 1; i >= 0; i--) {
