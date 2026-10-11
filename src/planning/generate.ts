@@ -116,7 +116,7 @@ export const PLAN_LINK = '{{PLAN_LINK}}';
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 /** "Nov 14-16": the trip's first and last day in local time. */
-function tripDates(c: TripCandidate, timeZone: string): string {
+export function tripDates(c: TripCandidate, timeZone: string): string {
   const day = (iso: string) => {
     const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone, month: 'numeric', day: 'numeric' }).formatToParts(Date.parse(iso)).map((x) => [x.type, x.value]));
     return { m: Number(p.month), d: Number(p.day) };

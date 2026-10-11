@@ -1,3 +1,5 @@
+import { appendFileSync, mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
 import type * as C from '../contracts/index.js';
 import type * as A from '../conversation/contracts-local.js';
 import { createConversationService, MockIntentModel, MockMessenger } from '../conversation/index.js';
@@ -38,7 +40,12 @@ export async function createChatAdapter(enrollment: C.TripEnrollment, timeZone: 
     const live = await loadSpectrumApp({ projectId: env.SPECTRUM_PROJECT_ID!, projectSecret: env.SPECTRUM_PROJECT_SECRET! });
     messenger = createSpectrumMessenger({ ...live, trip, onError: () => console.error('Spectrum transport failed; check the connection and retry.') });
   }
-  const service = createConversationService({ trip, messenger,
+  // Every message the bot could not understand is written down (when MISS_LOG_PATH is set, and by default for live chat) so it can be reviewed and fixed.
+  const missPath = env.MISS_LOG_PATH ?? (mode === 'photon' ? 'data/misses.jsonl' : undefined);
+  const onMiss = missPath ? (miss: { kind: string; text: string; senderId: string; status?: string }) => {
+    try { mkdirSync(dirname(missPath), { recursive: true }); appendFileSync(missPath, `${JSON.stringify({ at: new Date().toISOString(), ...miss })}\n`); } catch { /* logging must never break the chat */ }
+  } : undefined;
+  const service = createConversationService({ trip, messenger, ...(onMiss ? { onMiss } : {}),
     intentModel: mode === 'photon' || (env.INTENT_MODEL === 'gemini' && env.GEMINI_API_KEY) ? createGeminiIntentModel({ apiKey: env.GEMINI_API_KEY!, model: env.GEMINI_INTENT_MODEL || env.GEMINI_MODEL || 'gemini-3.8-flash' }) : new MockIntentModel(),
     getConversationContext: async () => ({ tripId: trip.tripId, revision: 0, actionable: [] }),
   });
@@ -64,6 +71,9 @@ export async function createChatAdapter(enrollment: C.TripEnrollment, timeZone: 
         ...(context.others ? { others: context.others } : {}),
         ...(context.relays?.length ? { relays: context.relays } : {}),
         ...(context.approval ? { approval: context.approval } : {}),
+        ...(context.own ? { own: context.own } : {}),
+        ...(context.recent?.length ? { recent: context.recent } : {}),
+        ...(context.optionFacts?.length ? { optionFacts: context.optionFacts } : {}),
         pendingConfirmation: context.pendingConfirmation,
         targetProposal: context.targetProposal?.kind ? { ...context.targetProposal, kind: context.targetProposal.kind } : undefined });
       if (parsed.kind === 'ignored') return parsed;

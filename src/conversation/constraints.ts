@@ -156,7 +156,7 @@ function extractSentence(s: string, reference: string, pending: ConstraintField 
 
   if (/\b(?:no (?:real )?preferences?|don'?t (?:really )?care(?!\s+(?:about|for)\b)|i'?m (?:easy|flexible|open to anything))\b/i.test(s)) {
     push({ field: 'preferences', value: ['no preference'] });
-  } else if (!PICK_TALK.test(s) && (m = /\b(?:i|we)(?:\s+really)?(?:\s+|(?='))(?:prefer|like|love|enjoy|(?:am|are|'m|'re)\s+into|(?:want|'d like|would like) to (?:be able to )?(?:do|try|see|visit|explore|check out))\s+(.+)$/i.exec(s))) {
+  } else if (!PICK_TALK.test(s) && !QUESTION_START.test(s) && (m = /\b(?:i|we)(?:\s+really)?(?:\s+|(?='))(?:prefer|like|love|enjoy|(?:am|are|'m|'re)\s+into|(?:want|'d like|would like) to (?:be able to )?(?:do|try|see|visit|explore|check out))\s+(.+)$/i.exec(s))) {
     // Stop at the next clause ("..., my max is $400", "... and I'm free Nov 14") so money and dates never end up as a liking.
     const liked = m[1]!.split(/\b(?:but|so|because)\b|[,;.]\s*(?:and\s+)?(?=(?:my|our|i|i'm|i'd|i'll|we|we're)\b)|\s+and\s+(?=(?:my|our|i|i'm|i'd|we|we're)\b)/i)[0]!;
     const items = splitItems(liked).filter((item) => !/\$|\d|\b(?:budget|max(?:imum)?)\b/i.test(item) && item.toLowerCase() !== visited?.toLowerCase());

@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 import type { PayableFundService } from '../funding/bound-service.js';
 import type { FundService } from '../funding/service.js';
 import { Q } from '../planning/wording.js';
+import { formatMinutes, outdoorSummary } from '../planning/nature.js';
+import { tripDates } from '../planning/generate.js';
 import { describeFund, describeSettlement, driftNotices, reminderFor, settleTrip } from '../planning/funding.js';
 import { toPlanningState } from './planning-adapter.js';
 import type {
@@ -84,6 +86,14 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
   const researchRevisions = new Set<number>();
   /** Who asked whom what through the bot, so the answer can be passed back. Kept in memory: lost if the app restarts mid-question. */
   const relayAsks = new Map<string, { askerId: string; field?: string }>();
+  /** The last few messages with each person, so follow-ups ("the second one", "how much was that?") can be understood. In memory only. */
+  const recentTurns = new Map<string, Array<{ from: 'you' | 'bot'; text: string }>>();
+  const memberIds = new Set<string>();
+  const remember = (memberId: string, from: 'you' | 'bot', text: string) => {
+    const list = recentTurns.get(memberId) ?? [];
+    list.push({ from, text: text.replace(/\s+/g, ' ').trim().slice(0, 300) });
+    recentTurns.set(memberId, list.slice(-8));
+  };
   /** A simulated payment waiting for a yes. In memory on purpose: it expires with the app, and any other message cancels it. */
   const payPending = new Map<string, { targetId: string; dollars: number; revision: number; category?: string }>();
   /** This person was asked something through the bot: tell whoever asked what they just said (never anything about money). */
@@ -105,6 +115,7 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
   const runtime: ApplicationRuntime = {
     async start() {
       stopped = false;
+      for (const p of (await repository.getEnrollment(tripId))?.participants ?? []) memberIds.add(p.memberId);
       await conversation.start((message) => runtime.handleInbound(message));
       await runtime.drainOutbox();
       retryTimer = setInterval(() => { void runtime.drainOutbox().catch(() => undefined); }, 5000);
@@ -146,6 +157,8 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
           try {
             const receipts = await conversation.sendMessage(message);
             await repository.recordDelivery(message.deliveryId, receipts.map(({ providerMessageId }) => providerMessageId));
+            if (message.audience.kind === 'private') remember(message.audience.memberId, 'bot', message.text);
+            else for (const id of memberIds) remember(id, 'bot', message.text);
           } catch {
             // Leave failed or uncertain sends in the durable outbox for operator inspection/retry.
             blocked.add(recipient);
@@ -229,7 +242,8 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
           return;
         }
       }
-      const context = await conversationContext(repository, state, message);
+      const context = await conversationContext(repository, state, message, recentTurns.get(member.memberId) ?? []);
+      if (message.text && !message.reaction) remember(member.memberId, 'you', message.text);
       // Someone was just asked a specific question through the bot: a bare "yes" or "no" from them answers it.
       const relayed = relayAsks.get(member.memberId);
       if (relayed?.field) context.pendingQuestion = { questionId: `relay:${relayed.field}`, field: relayed.field as never };
@@ -276,6 +290,14 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
           actorId: member.memberId,
           tripId,
         };
+        if (command.action.kind === 'request_plans' && (nextState.status === 'proposed' || nextState.status === 'awaiting_acceptance')) {
+          // The options are already out: recap them, rather than searching again (which costs a lookup and changes nothing).
+          const recap = describeOptions(nextState, false);
+          if (recap.length > 0) {
+            replies.push(makeMessage(tripId, `recap:${message.eventId}`, { audience: { kind: 'private', memberId: member.memberId }, text: `Here's where we are. ${recap.join('. ')}. Say "pick 1" or "pick 2", or tell me a new max or new dates if you'd like me to look again.` }));
+            continue;
+          }
+        }
         if (command.action.kind === 'request_funding') { fundRequested = true; fundTopic = command.action.topic ?? 'status'; continue; }
         if (command.action.kind === 'fund_spend') { spendRequest = { dollars: command.action.dollars, category: command.action.category }; continue; }
         if (command.action.kind === 'fund_pay') { payRequest = { ...(command.action.dollars !== undefined ? { dollars: command.action.dollars } : {}), ...(command.action.forName ? { forName: command.action.forName } : {}) }; continue; }
@@ -610,7 +632,7 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
   return runtime;
 }
 
-async function conversationContext(repository: Repository, state: TripState, message: InboundMessage): Promise<ConversationContext> {
+async function conversationContext(repository: Repository, state: TripState, message: InboundMessage, recent: Array<{ from: 'you' | 'bot'; text: string }> = []): Promise<ConversationContext> {
   const actorId = message.senderId;
   // What was asked of this person comes first (a private question is theirs alone), then the shared one that anyone may answer.
   const relevant = state.pendingQuestions
@@ -635,6 +657,16 @@ async function conversationContext(repository: Repository, state: TripState, mes
   const nameOf = (id: string) => (state.roster ?? []).find((m) => m.memberId === id)?.displayName ?? 'them';
   const relays = (state.relayLog ?? []).filter((e) => e.fromId === actorId || e.toId === actorId).slice(-12)
     .map((e) => ({ withName: nameOf(e.fromId === actorId ? e.toId : e.fromId), byMe: e.fromId === actorId, kind: e.kind, text: e.text }));
+  // The options on offer in plain words, for answering "how much is the second one?" (costs are the group's, never anyone's budget).
+  const optionFacts = (state.status === 'proposed' || state.status === 'awaiting_acceptance') ? describeOptions(state, true) : [];
+  // What this person has told the bot about themselves (their own budget is theirs to hear back).
+  const mineLatest = (field: string) => [...state.memberConstraints].reverse().find((c) => c.memberId === actorId && c.field === field && c.certainty === 'confirmed');
+  const ownBudget = mineLatest('budget'), ownDates = mineLatest('availability'), ownLikes = mineLatest('preferences');
+  const own = {
+    ...(ownBudget && ownBudget.field === 'budget' ? { budgetDollars: Math.round(ownBudget.value / 100) } : {}),
+    ...(ownDates && ownDates.field === 'availability' ? { dates: ownDates.value.map((w) => dayRange(w.startAt, w.endAt, w.timeZone)).join(' and ') } : {}),
+    ...(ownLikes && ownLikes.field === 'preferences' && !ownLikes.value.includes('no preference') ? { likes: ownLikes.value } : {}),
+  };
   // Who has said "I'm in" on the picked plan, so questions about it get exact answers.
   let approval: { title: string; inNames: string[]; waitingNames: string[]; youIn: boolean } | undefined;
   if ((state.status === 'awaiting_acceptance' || state.status === 'approved') && state.selectedCandidateId) {
@@ -656,6 +688,9 @@ async function conversationContext(repository: Repository, state: TripState, mes
     others: othersShared(state, actorId),
     ...(relays.length > 0 ? { relays } : {}),
     ...(approval ? { approval } : {}),
+    ...(recent.length > 0 ? { recent: recent.slice(-6) } : {}),
+    ...(optionFacts.length > 0 ? { optionFacts } : {}),
+    ...(Object.keys(own).length > 0 ? { own } : {}),
     pendingConfirmation: state.pendingConfirmations?.[actorId],
     ...(targetProposal ? { targetProposal } : {}),
     ...(pendingQuestion?.field ? { pendingQuestion: { questionId: pendingQuestion.questionId, field: pendingQuestion.field } } : {}),
@@ -678,6 +713,28 @@ function dayRange(startAt: string, endAt: string, timeZone: string): string {
 const fundService_disabled = (fund: unknown) => fund === undefined;
 
 const CATEGORY_WORDS: Record<string, string> = { accommodation: 'lodging', fuel_parking_tolls: 'gas, parking and tolls', food: 'food', activities: 'activities', taxes_fees: 'taxes and fees', other: 'other costs' };
+
+/** The options on offer in plain words: what is in each, rough cost each, and the drive. Group costs only, never a budget. */
+function describeOptions(state: TripState, detailed: boolean): string[] {
+  const zone = state.timeZone ?? 'America/New_York';
+  const planning = toPlanningState(state);
+  return state.candidates.filter((c) => c.revision === state.revision && c.feasibility.feasible).map((c, i) => {
+    const people = c.perPersonTotals.length || 1;
+    const first = c.perPersonTotals[0]?.memberId;
+    const mid = (x: { lowCents: number; highCents: number }) => (x.lowCents + x.highCents) / 2;
+    const known = c.costs.filter((x) => x.priceStatus !== 'unknown');
+    const per = (categories: string[]) => Math.round(known.filter((x) => categories.includes(x.category)).reduce((n, x) => n + (x.allocation === 'equal_shared' ? mid(x) / people : x.memberId === first ? mid(x) : 0), 0) / 100);
+    const planned = planning.candidates.find((p) => p.candidateId === c.candidateId);
+    const total = c.perPersonTotals[0];
+    const cost = total ? `about $${Math.round(mid(total) / 100)} each (up to $${Math.ceil(total.highCents / 100)})` : 'cost not known yet';
+    if (!detailed) return `${i + 1}. ${c.title}, ${cost}`;
+    const parts = ([['hotel', per(['accommodation'])], ['food', per(['food'])], ['gas and parking', per(['fuel_parking_tolls'])], ['tickets', per(['activities'])], ['other', per(['taxes_fees', 'other'])]] as Array<[string, number]>)
+      .filter(([, dollars]) => dollars > 0).map(([label, dollars]) => `${label} $${dollars}`).join(', ');
+    const places = [...new Set(c.itinerary.map((x) => x.label).filter((l): l is string => typeof l === 'string' && !/^drive\b/i.test(l)))].slice(0, 4).join(', ');
+    const drive = planned ? outdoorSummary(planned).drivingMinutes : 0;
+    return `Option ${i + 1} is ${c.title}${planned ? `, ${tripDates(planned, zone)}` : ''}: ${cost}${parts ? `, covering ${parts}` : ''}${places ? `; things to do: ${places}` : ''}${drive ? `; driving about ${formatMinutes(drive)} each way` : ''}`;
+  });
+}
 
 /** "remind Mason to lock it in" while a plan waits on them: ask for the "I'm in" instead of a vague nudge. */
 function approvalPrompt(state: TripState, askerId: string, targetId: string, text: string): string | undefined {
@@ -726,10 +783,11 @@ function othersShared(state: TripState, actorId: string): Array<{ memberId: stri
     // What they said about the shared basics counts too ("I'd rather do 3 nights"), so "what did Mason say?" is not empty after they weighed in.
     const said = <F extends GroupConstraintRecord['field']>(field: F) => [...state.groupConstraints].reverse().find((c): c is Extract<GroupConstraintRecord, { field: F }> => c.field === field && c.memberId === m.memberId);
     const nights = said('duration'), from = said('origin'), place = said('region'), car = said('transport');
-    if (nights) shared.push(`wants ${nights.value.nights} night${nights.value.nights === 1 ? '' : 's'}`);
-    if (from) shared.push(`is leaving from ${from.value.city}`);
-    if (place) shared.push(/^(?:within|any)\b/i.test(place.value.label) ? `is up for ${place.value.label}` : `wants to go to ${place.value.label}`);
-    if (car) shared.push(car.value.hasVehicle ? 'has a car' : "doesn't have a car");
+    // Once the plan is picked, the shared basics are settled for everyone and repeating them is just noise.
+    if (state.status === 'gathering' && nights) shared.push(`wants ${nights.value.nights} night${nights.value.nights === 1 ? '' : 's'}`);
+    if (state.status === 'gathering' && from) shared.push(`is leaving from ${from.value.city}`);
+    if (state.status === 'gathering' && place) shared.push(/^(?:within|any)\b/i.test(place.value.label) ? `is up for ${place.value.label}` : `wants to go to ${place.value.label}`);
+    if (state.status === 'gathering' && car) shared.push(car.value.hasVehicle ? 'has a car' : "doesn't have a car");
     if (!latest('budget')) missing.push('budget');
     return { memberId: m.memberId, name: m.displayName, shared, missing };
   });

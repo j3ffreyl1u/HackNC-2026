@@ -37,6 +37,8 @@ export interface IntentInput {
   hasActionable: boolean;
   /** Names of the options on offer to pick from, in order (public titles only). */
   options?: string[];
+  /** The last few messages with this person, oldest first, so "the second one", "how much was that?" and "him" can be understood. */
+  history?: Array<{ from: 'you' | 'bot'; text: string }>;
   /** Fields the rules already captured from this message. The model should report only OTHER things. */
   alreadyKnown?: ConstraintField[];
   /** Plain facts the model may use to answer a casual question (who has said what, what is still missing). Never a budget. */
@@ -53,6 +55,8 @@ export interface IntentModel {
 export interface ConversationDependencies {
   trip: TripConfig;
   intentModel: IntentModel;
+  /** Called with each message the bot could not understand, so they can be reviewed and fixed. Never throws into the chat. */
+  onMiss?: (miss: { kind: 'help' | 'unavailable' | 'unclear'; text: string; senderId: string; status?: string }) => void;
   messenger: Messenger;
   /**
    * Off by default. When true, a DM from a number that is NOT enrolled is let through only if it is a join-code

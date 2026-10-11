@@ -113,7 +113,11 @@ export function validateIntent(raw: unknown): ValidIntent {
  */
 export function safeChatAnswer(answer: string, allowedText: string): string | null {
   const text = answer.trim();
-  if (!text || text.length > 400 || /\$|\u2014|\u2013|[*_`#<>]/.test(text) || /shout if that'?s off/i.test(text)) return null;
+  if (!text || text.length > 400 || /\u2014|\u2013|[*_`#<>]/.test(text) || /shout if that'?s off/i.test(text)) return null;
+  // A dollar amount may only be one that is written in the facts or the message itself (an option's price), never an invented or private one.
+  const amounts = (t: string) => (t.match(/\$\s?\d[\d,]*(?:\.\d+)?/g) ?? []).map((a) => a.replace(/\s/g, ''));
+  const allowedAmounts = new Set(amounts(allowedText));
+  if (amounts(text).some((a) => !allowedAmounts.has(a))) return null;
   const digits = (t: string) => t.match(/\d+/g) ?? [];
   const allowed = new Set(digits(allowedText));
   if (digits(text).some((d) => !allowed.has(d))) return null;

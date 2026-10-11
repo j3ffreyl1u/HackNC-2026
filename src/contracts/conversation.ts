@@ -146,6 +146,12 @@ export interface TripConversationContext {
   others?: Array<{ memberId: string; name: string; shared: string[]; missing: string[] }>;
   /** What the bot passed on between this person and others at their request, so "did you tell Mason that I have a car?" can be answered. */
   relays?: Array<{ withName: string; byMe: boolean; kind: 'ask' | 'tell' | 'request' | 'invite'; text: string }>;
+  /** What this person has told the bot about themselves, so "what's my budget?" and "what dates did I give you?" are answered (to them only). */
+  own?: { budgetDollars?: number; dates?: string; likes?: string[] };
+  /** The last few messages with this person, oldest first, so follow-ups like "the second one" or "how much was that?" make sense. */
+  recent?: Array<{ from: 'you' | 'bot'; text: string }>;
+  /** The options on offer in plain words (title and rough cost each), for answering questions about them. */
+  optionFacts?: string[];
   /** Who has said "I'm in" on the picked plan, so "has Mason confirmed?" gets an exact answer. */
   approval?: { title: string; inNames: string[]; waitingNames: string[]; youIn: boolean };
   /** Where the trip stands, so "what's the status?" can be answered without guessing. */

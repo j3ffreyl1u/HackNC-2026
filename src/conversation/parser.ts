@@ -93,6 +93,7 @@ function chatFacts(ctx: TripConversationContext): string[] {
   const needed = [...new Set([...(ctx.pendingQuestion ? [ctx.pendingQuestion.field] : []), ...(ctx.openFields ?? [])].map((f) => word[f] ?? f))];
   facts.push(needed.length ? `Still needed from the person asking: ${needed.join(', ')}.` : 'Nothing else is needed from the person asking right now.');
   if (ctx.actionable.length) facts.push('There are options waiting for the person asking to pick or approve.');
+  if (ctx.optionFacts?.length) facts.push(`Options on offer: ${ctx.optionFacts.join(' | ')}.`);
   if (ctx.approval) facts.push(`The picked plan is ${ctx.approval.title}. Said "I'm in": ${ctx.approval.youIn ? 'the person asking' : 'not the person asking'}${ctx.approval.inNames.length ? ` (people in: ${ctx.approval.inNames.join(', ')})` : ''}. Still waiting on: ${[...(ctx.approval.youIn ? [] : ['the person asking']), ...ctx.approval.waitingNames].join(', ') || 'nobody'}.`);
   facts.push('How plans change: when anyone changes the dates, the number of nights, the place, the starting city, the car, or their own maximum budget, the old options are dropped and a fresh search starts. Budgets are private, so never say whose budget changed or by how much; say only that someone changed a detail or a limit.');
   return facts;
@@ -102,6 +103,9 @@ export function createParser(deps: ConversationDependencies) {
   const { trip } = deps;
   assertTimeZone(trip.timezone);
 
+  const noteMiss = (kind: 'help' | 'unavailable' | 'unclear', msg: InboundMessage, ctx?: TripConversationContext) => {
+    try { deps.onMiss?.({ kind, text: (msg.text ?? '').slice(0, 300), senderId: msg.senderId, ...(ctx?.status ? { status: ctx.status } : {}) }); } catch { /* never break the chat */ }
+  };
   const reply = (msg: InboundMessage, text: string, tag: string, forcePrivate = false): ParseResult => ({
     kind: 'reply',
     message: replyMessage(msg, text, tag, forcePrivate),
@@ -321,6 +325,40 @@ export function createParser(deps: ConversationDependencies) {
     // "start over": nothing can be wiped yet, so say so and point at what can be changed.
     if (/^(?:please\s+)?(?:start over|restart|reset|begin again|start again|from scratch)(?:\s+please)?$/i.test(plain)) {
       return reply(msg, 'I can\'t clear a trip yet, but you can change anything by telling me, like "leaving from Raleigh", "3 nights" or "my max is $300".', 'start-over', true);
+    }
+    const talkative = msg.visibility === 'private' || trip.mode === 'direct';
+    // "actually pick the other one": the option that is not already the pick; with nothing picked yet, ask which.
+    if (/^(?:actually\s+|no\s+|wait\s+)?(?:pick|choose|select|go\s+with|switch\s+to|take|change\s+(?:it\s+|my\s+pick\s+)?to)\s+(?:the\s+)?(?:other|another|different)(?:\s+(?:one|option|plan))?$/i.test(plain) && (msg.visibility === 'private' || trip.mode === 'direct')) {
+      const choices = ctx.actionable.filter((a) => a.kind === 'select');
+      // A pick is already made and waiting on everyone: the plan can't be swapped for the other option mid-way, but a changed detail brings fresh options.
+      if (ctx.approval && choices.length === 0) return reply(msg, `${ctx.approval.title} is already picked and waiting on everyone's OK. If you want to go a different way, change a detail like your dates, the nights or your max, and I'll bring fresh options.`, 'pick-locked', true);
+      if (choices.length === 1) return one(msg, ctx, { kind: 'select_candidate', candidateId: choices[0]!.candidateId, revision: choices[0]!.revision });
+      if (choices.length > 1) return reply(msg, `Which one do you mean? ${choices.map((c, i) => `option ${i + 1}`).join(' or ')}?`, 'pick-which', true);
+    }
+    // What this person has told the bot about themselves: their own budget, dates and likes are theirs to hear back.
+    if (ctx.own !== undefined || /^(?:what|whats)/i.test(plain)) {
+      const own = ctx.own ?? {};
+      const mine = /^(?:what(?:'s|s| is| was| are| were)|what\s+did\s+i\s+(?:say|tell\s+you|give\s+you)|remind\s+me|show\s+me|tell\s+me)\s+(?:about\s+)?(?:my|the)\s+(max(?:imum)?|budget|limit|cap|dates?|availability|preferences?|likes?|interests?)\b/i.exec(plain)
+        ?? /^how\s+much\s+(?:is|was)\s+my\s+(budget|max)/i.exec(plain);
+      const askDates = /^what\s+(?:dates|days)\s+(?:did\s+i|have\s+i|do\s+you\s+have\s+for\s+me)\b|^when\s+(?:am\s+i|did\s+i\s+say\s+i\s+was)\s+free/i.test(plain);
+      const askLikes = /^what\s+(?:do\s+i|did\s+i\s+say\s+i|am\s+i|are\s+my)\s+(?:like|into|want|prefer\w*|interests?)\b/i.test(plain) || /^what\s+(?:do\s+i\s+want\s+to\s+do|are\s+my\s+(?:preferences|likes|interests))\b/i.test(plain);
+      const askAll = /^what\s+(?:do\s+you\s+(?:have|know)\s+(?:for|about)\s+me|did\s+i\s+tell\s+you|have\s+i\s+(?:told|given)\s+you)\b|^(?:recap|summari[sz]e)\s+(?:my|what\s+i)/i.test(plain);
+      const topic = mine ? (/budget|max|limit|cap/i.test(mine[1]!) ? 'budget' : /date|avail/i.test(mine[1]!) ? 'dates' : 'likes') : askDates ? 'dates' : askLikes ? 'likes' : askAll ? 'all' : undefined;
+      if (topic && talkative) {
+        const lines: string[] = [];
+        if ((topic === 'budget' || topic === 'all') && own.budgetDollars !== undefined) lines.push(`your max is $${own.budgetDollars.toLocaleString('en-US')} (just between us)`);
+        if ((topic === 'dates' || topic === 'all') && own.dates) lines.push(`you're free ${own.dates}`);
+        if ((topic === 'likes' || topic === 'all') && own.likes?.length) lines.push(`you're into ${list(own.likes)}`);
+        if (lines.length > 0) return reply(msg, `${topic === 'all' ? 'So far I have that ' : 'I have that '}${list(lines)}.`, 'own-info', true);
+        const missing = topic === 'budget' ? "You haven't given me a max yet. What's the most you'd want to spend on the trip, including food and travel?" : topic === 'dates' ? "You haven't told me your free dates yet. Which dates could you do?" : topic === 'likes' ? "You haven't told me what you like yet. What would you like out of this trip?" : "You haven't told me anything yet. Where are you leaving from?";
+        return reply(msg, missing, 'own-info', true);
+      }
+    }
+    // Changing their mind is fine: say what can be changed, based on where things are.
+    if (/^(?:i\s+)?(?:changed|change)\s+(?:my|our)\s+mind\b/i.test(plain) && talkative) {
+      if (ctx.approval) return reply(msg, `No problem! ${ctx.approval.title} is picked and waiting on everyone's OK. To go a different way, change a detail like your dates, the number of nights, or your max, and I'll bring fresh options. What would you like to change?`, 'changed-mind', true);
+      const choose = ctx.actionable.some((a) => a.kind === 'select') ? ' You can pick a different option (say "option 1" or "option 2").' : '';
+      return reply(msg, `No problem!${choose} You can also change a detail like your dates, the number of nights, or your max, and I'll update the plan. What would you like to change?`, 'changed-mind', true);
     }
     // Leading filler ("yes ask if...", "ok and tell him...") does not change what is being asked.
     const lean = plain.replace(/^(?:(?:yes|yeah|yep|yup|ok(?:ay)?|sure|please|pls|also|and|so|then|now|well|hey|actually)[,.!]?\s+)+/i, '');
@@ -568,9 +606,9 @@ export function createParser(deps: ConversationDependencies) {
   /** Hellos, thanks and filler. Needs no model: warm in a one-on-one chat, silent in a group. Never a place, a date or a number. */
   function smallTalk(msg: InboundMessage, ctx: TripConversationContext, text: string, talkative: boolean): ParseResult {
     if (!talkative) return { kind: 'ignored', reason: 'small talk' };
-    if (/^(?:thanks?|thank you|thx|ty|appreciate)/i.test(text)) return reply(msg, 'Anytime! Tell me if you want to change anything, or say "show us some options" when you\'re ready.', 'welcome');
+    if (/^(?:thanks?|thank you|thx|ty|appreciate|you'?re (?:awesome|great|the best|amazing|so helpful|helpful|a lifesaver|funny)|great job|good job|nice work|love it|this is (?:great|awesome|amazing|fun|cool))/i.test(text)) return reply(msg, 'Anytime! Tell me if you want to change anything, or say "show us some options" when you\'re ready.', 'welcome');
     if (/^good ?night\b|^(?:night|nite|gn|bye|goodbye|see ya|later|ttyl|talk later)\b/i.test(text)) return reply(msg, 'Night! I\'ll be here whenever you want to pick this back up.', 'goodnight');
-    if (/^(?:hi|hey|hello|yo|hiya|howdy|hola|sup|wassup|what'?s up|whats up|what up|good |gm)/i.test(text)) {
+    if (/^(?:(?:hi|hey|hello|yo|hiya|howdy|hola|sup|wassup|what'?s up|whats up|what up|gm)\b|good )/i.test(text)) {
       // Partway through a question: put it back instead of inviting them to start over.
       const open = ctx.pendingQuestion ? REASK[ctx.pendingQuestion.field] : undefined;
       if (open) return reply(msg, `Hey! ${open}`, 'greeting-open');
@@ -693,6 +731,7 @@ export function createParser(deps: ConversationDependencies) {
       ...(ctx.pendingQuestion ? { pendingField: ctx.pendingQuestion.field } : {}),
       hasActionable: ctx.actionable.length > 0,
       facts,
+      ...(ctx.recent?.length ? { history: ctx.recent.slice(-6) } : {}),
       ...(actionable(ctx, 'select').length > 0 ? { options: actionable(ctx, 'select').map((a) => a.description) } : {}),
     });
     const intent = validateIntent(raw);
@@ -712,21 +751,25 @@ export function createParser(deps: ConversationDependencies) {
       case 'none':
         // In a group, ordinary chat between friends is none of our business. In a one-on-one DM every message
         // is addressed to us, so staying silent just looks broken.
+        if (msg.visibility === 'private' || trip.mode === 'direct') noteMiss('help', msg, ctx);
         return msg.visibility === 'private' || trip.mode === 'direct'
           ? reply(msg, HELP, 'help')
           : { kind: 'ignored', reason: 'not addressed to the assistant' };
       case 'chat': {
         if (!(msg.visibility === 'private' || trip.mode === 'direct')) return { kind: 'ignored', reason: 'casual chat in a group' };
         const answer = safeChatAnswer(intent.answer, `${facts.join(' ')} ${handoffText}`);
+        if (!answer) noteMiss('unclear', msg, ctx);
         return reply(msg, answer ?? HELP, answer ? 'chat' : 'help', true);
       }
       case 'unavailable':
         // Same rule as an unclear message: in a group, friends talking are none of our business even when the service is down.
+        if (msg.visibility === 'private' || trip.mode === 'direct') noteMiss('unavailable', msg, ctx);
         return msg.visibility === 'private' || trip.mode === 'direct'
           ? reply(msg, UNAVAILABLE, 'unavailable')
           : { kind: 'ignored', reason: 'language service unavailable, group message' };
       case 'clarify':
         // In a group, an unclear message is usually just friends talking: stay quiet there.
+        if (msg.visibility === 'private' || trip.mode === 'direct') noteMiss('help', msg, ctx);
         return msg.visibility === 'private' || trip.mode === 'direct'
           ? reply(msg, HELP, 'help')
           : { kind: 'ignored', reason: 'unclear group message' };
