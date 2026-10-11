@@ -8,7 +8,7 @@ import type {
   TripCommand,
   TripConversationContext,
 } from './contracts-local.js';
-import { extractConstraints, HEDGE, type Extracted } from './constraints.js';
+import { extractWithCoverage, HEDGE, TRIVIAL, type Extracted } from './constraints.js';
 import { assertTimeZone, formatWindow, toIntervalWindows } from './dates.js';
 import { guestProviderUserId, isGuest, parseJoinCode } from './join.js';
 import { validateIntent } from './intent.js';
@@ -99,7 +99,7 @@ export function createParser(deps: ConversationDependencies) {
       .some((m) => new RegExp(`\\b${escapeRe(m.displayName)}(?:'s)?\\b`, 'i').test(text));
   }
 
-  function fromConstraints(msg: InboundMessage, ctx: TripConversationContext, text: string, items: Extracted[]): ParseResult {
+  function fromConstraints(msg: InboundMessage, ctx: TripConversationContext, text: string, items: Extracted[], extra: TripAction[] = []): ParseResult {
     const commands: TripCommand[] = [];
     const asks: string[] = [];
     let private_ = false;
@@ -132,6 +132,7 @@ export function createParser(deps: ConversationDependencies) {
       commands.push(updateCommand(msg, ctx, v, item.hedged));
       acks.push(ackPart(v, item.hedged));
     }
+    for (const action of extra) commands.push(command(msg, ctx, action));
     // In a one-on-one chat, silence feels like being ignored: say what we noted. Groups stay quiet.
     const talkative = msg.visibility === 'private' || trip.mode === 'direct';
     if (talkative && acks.length) {
@@ -248,12 +249,24 @@ export function createParser(deps: ConversationDependencies) {
     if (YES.test(text) || YES.test(plain)) return resolveAnswer(msg, ctx, true);
     if (NO.test(text) || NO.test(plain)) return resolveAnswer(msg, ctx, false);
 
-    const extracted = extractConstraints(text, msg.occurredAt, ctx.pendingQuestion?.field);
-    if (extracted.length) return fromConstraints(msg, ctx, text, extracted);
+    // Rules first (fast, exact). Anything the rules did not recognize is handed to the language model automatically,
+    // and its (validated) answer is merged with what the rules found.
+    const { items: extracted, unmatched } = extractWithCoverage(text, msg.occurredAt, ctx.pendingQuestion?.field);
+    const talkative = msg.visibility === 'private' || trip.mode === 'direct';
+    if (!extracted.length && TRIVIAL.test(text)) {
+      // Small talk needs no model. In a one-on-one chat answer it warmly; in a group stay out of it.
+      if (!talkative) return { kind: 'ignored', reason: 'small talk' };
+      if (/^(?:thanks?|thank you|thx|ty|appreciate)/i.test(text)) return reply(msg, 'Anytime! Tell me if you want to change anything, or say "show us some options" when you\'re ready.', 'welcome');
+      if (/^(?:hi|hey|hello|yo|hiya|good )/i.test(text)) return reply(msg, 'Hey! Want to plan a trip? Say "let\'s plan a trip" to get started.', 'greeting');
+      return reply(msg, 'Sounds good. I\'m here whenever you want to add something or see options.', 'smalltalk');
+    }
+    const handoffText = extracted.length ? unmatched.join(' ') : text;
+    if (extracted.length && unmatched.length === 0) return fromConstraints(msg, ctx, text, extracted);
 
     const raw = await deps.intentModel.interpret({
-      text,
+      text: handoffText,
       occurredAt: msg.occurredAt,
+      ...(extracted.length ? { alreadyKnown: extracted.map((e) => e.value.field) } : {}),
       visibility: msg.visibility,
       timezone: trip.timezone,
       memberNames: trip.members.map((m) => m.displayName),
@@ -261,7 +274,18 @@ export function createParser(deps: ConversationDependencies) {
       hasActionable: ctx.actionable.length > 0,
     });
     const intent = validateIntent(raw);
-    const hedged = HEDGE.test(text);
+    const hedged = HEDGE.test(handoffText);
+    if (extracted.length) {
+      // Partly understood by rules, the rest by the model: keep the rules' answers, add anything new the model found.
+      const items = [...extracted];
+      const extra: TripAction[] = [];
+      if (intent.intent === 'constraints') {
+        for (const value of intent.items) if (!items.some((i) => i.value.field === value.field)) items.push({ value, hedged });
+      } else if (intent.intent === 'request_plans') extra.push({ kind: 'request_plans' });
+      else if (intent.intent === 'ask_guide') extra.push({ kind: 'ask_guide', question: intent.question });
+      else if (intent.intent === 'request_funding' && !hedged) extra.push({ kind: 'request_funding' });
+      return fromConstraints(msg, ctx, text, items, extra);
+    }
     switch (intent.intent) {
       case 'none':
         // In a group, ordinary chat between friends is none of our business. In a one-on-one DM every message

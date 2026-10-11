@@ -14,12 +14,12 @@ export interface Extracted {
 }
 
 const MONEY = '\\$\\s*([\\d,]+(?:\\.\\d{1,2})?)|([\\d,]+(?:\\.\\d{1,2})?)\\s*(?:dollars|bucks|usd)';
-const BUDGET_KEYWORD = '(?:budget|max(?:imum)?|cap|limit|spend|afford|up to|at most|no more than|can do|can pay|can swing|all[- ]in)';
+const BUDGET_KEYWORD = '(?:budget|max(?:imum)?|cap|limit|spend|afford|up to|at most|no more than|can (?:only )?do|can (?:only )?pay|can swing|only (?:got|have|has)|all[- ]in)';
 const BUDGET_AFTER = new RegExp(`\\b${BUDGET_KEYWORD}\\b[^.!?\\n$\\d]{0,30}?(?:${MONEY})`, 'i');
-const BUDGET_BEFORE = new RegExp(`(?:${MONEY})\\s*(?:max|total|tops|cap|limit|all[- ]in|budget|at most)\\b`, 'i');
+const BUDGET_BEFORE = new RegExp(`(?:${MONEY})\\s*(?:(?:is|'s)\\s+(?:my|the|our)\\s+(?:(?:firm|hard|absolute|final)\\s+)?)?(?:max|maximum|total|tops|cap|limit|all[- ]in|budget|at most)\\b`, 'i');
 const BUDGET_BARE = /\b(?:budget|max(?:imum)?|cap|limit)\b\s*(?:is|of|:|=|around|about)?\s*([\d,]+(?:\.\d{1,2})?)\b(?!\s*[a-z])/i;
 const BARE_AMOUNT = /^\$?\s*([\d,]+(?:\.\d{1,2})?)\s*(?:dollars|bucks|usd)?[.!]*$/i;
-const AVAIL_WORDS = /\b(free|available|availability|open|works?|can (?:do|go|make(?: it)?|leave)|good|window|off)\b/i;
+const AVAIL_WORDS = /\b(free|available|availability|open|works?|can (?:do|go|make(?: it)?|leave)|good|window|off|maybe|perhaps|how about|what about|could (?:do|go|make it))\b/i;
 const NEGATIVE = /\b(not|n't|busy|can'?t|cannot|unavailable|booked|out of town)\b/i;
 
 /** One-way drive limit in minutes from text like "within 3 hours", "1.5 hour drive", "within 90 minutes". */
@@ -32,7 +32,11 @@ export function parseMaxTravelMinutes(text: string): number | undefined {
 }
 
 const NOT_A_PLACE = /\b(i|we|you|he|she|they|has|have|had|is|are|was|am|can|will|would|want|like|need|car|trip|my|our|it|not|but|with|for|please|thanks|yes|no)\b/i;
-const THIRD_PERSON_VEHICLE = /\b(?:[Ww]e|[Ss]omeone|[Ss]omebody|[Aa]nyone|[Ee]veryone|[A-Z][a-z]+)\s+(?:has|have|got)\s+(?:a\s+|an\s+|the\s+)?(?:car|vehicle|truck|suv)\b/;
+const THIRD_PERSON_VEHICLE = /\b(?:[Ww]e|[Ss]omeone|[Ss]omebody|[Aa]nyone|[Ee]veryone|[A-Z][a-z]+)\s+(?:has|have|got)\s+(?:a\s+|an\s+|the\s+|two\s+|2\s+|both\s+)?(?:cars?|vehicles?|trucks?|suvs?)\b/;
+
+const NOT_ORIGIN = /^(?:there|here|home|it|that|this|them|where|somewhere|anywhere)$/i;
+/** A sentence that is a question ("how long is the drive to Asheville") is not a statement of where we are going. */
+const QUESTION_START = /^(?:how|what|what's|whats|where|when|which|who|why|is|are|does|do|can|could|will|would|should)\b/i;
 
 const clean = (s: string) => s.trim().replace(/^(?:(?:a bunch of|a lot of|lots of|a few|some|a|an|the)\s+)+/i, '').replace(/[.!,;]+$/, '').trim();
 const GENERIC = /^(?:that|it|this|those|these|them|the idea|to|doing)\b/i;
@@ -65,16 +69,17 @@ function extractSentence(s: string, reference: string, pending: ConstraintField 
     else push({ field: 'availability', value: windows });
   }
 
-  if ((m = /\b(\d{1,2})\s*[- ]?nights?\b/i.exec(s))) {
-    const n = Number(m[1]);
+  if ((m = /\b(\d{1,2}|one|two|three|four|five|six|seven)\s*[- ]?nights?\b/i.exec(s))) {
+    const n = /^\d/.test(m[1]!) ? Number(m[1]) : ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven'].indexOf(m[1]!.toLowerCase());
     if (n >= 1 && n <= 30) push({ field: 'duration', value: n });
   }
   if ((m = /\b(?:leav(?:e|ing)|depart(?:ing)?|start(?:ing)?|driv(?:e|ing)|coming|going)\s+from\s+([A-Za-z][A-Za-z .'-]{1,40}?)(?=[,.;!?]|\s+(?:and|but|on|at|around|with|to|for|in|if)\b|$)/i.exec(s)) ?? (m = /\b(?:origin|departing city)\s*(?:is|:)\s*([A-Za-z][A-Za-z .'-]{1,40})/i.exec(s))) {
-    push({ field: 'origin', value: m![1]!.trim() });
+    const place = m![1]!.trim();
+    if (!NOT_ORIGIN.test(place)) push({ field: 'origin', value: place });
   }
-  if ((m = /\bwithin\s+(?:about\s+|around\s+)?(\d{1,2}(?:\.\d)?)\s*(?:hours?|hrs?|h)\b/i.exec(s)) ?? (m = /\b(\d{1,2}(?:\.\d)?)\s*[- ]?(?:hours?|hrs?)\s+(?:drive|away|radius)\b/i.exec(s))) {
+  if ((m = /\b(?:within|no more than|at most|up to|under|max(?:imum)? of)\s+(?:about\s+|around\s+)?(\d{1,2}(?:\.\d)?)\s*(?:hours?|hrs?|h)\b(?!\s*of\s+(?:sleep|work))/i.exec(s)) ?? (m = /\b(\d{1,2}(?:\.\d)?)\s*[- ]?(?:hours?|hrs?)\s+(?:drive|away|radius)\b/i.exec(s))) {
     push({ field: 'region', value: `within ${m![1]} hours by car`, maxTravelMinutes: Math.round(Number(m![1]) * 60) });
-  } else if ((m = /\b(?:[Gg]o|[Tt]ravel|[Dd]rive|[Hh]ead|going|headed|heading|trip)\s+to\s+((?:[A-Z][A-Za-z.'-]*)(?:\s+[A-Z][A-Za-z.'-]*){0,3})/.exec(s))) {
+  } else if ((m = /\b(?:[Gg]o|[Tt]ravel|[Dd]rive|[Hh]ead|going|headed|heading|trip)\s+to\s+(?:the\s+)?((?:[A-Z][A-Za-z.'-]*)(?:\s+[A-Z][A-Za-z.'-]*){0,3})/.exec(s)) && !QUESTION_START.test(s)) {
     push({ field: 'region', value: clean(m[1]!) });
   } else if (/\b(?:any|whatever)\s+distance\b|\bdrive\s+(?:anywhere|as far as)\b|\bdon'?t\s+mind\s+(?:driving|how far)\b/i.test(s)) {
     push({ field: 'region', value: 'any distance by car', maxTravelMinutes: 1440 });
@@ -89,7 +94,7 @@ function extractSentence(s: string, reference: string, pending: ConstraintField 
 
   if (/\b(?:no (?:real )?preferences?|don'?t (?:really )?care|i'?m (?:easy|flexible|open to anything))\b/i.test(s)) {
     push({ field: 'preferences', value: ['no preference'] });
-  } else if ((m = /\b(?:i|we)(?:\s+really)?(?:\s+|(?='d\s))(?:prefer|like|love|enjoy|(?:am|'m)\s+into|(?:want|'d like|would like) to (?:be able to )?(?:do|try|see|visit|explore|check out))\s+(.+)$/i.exec(s))) {
+  } else if ((m = /\b(?:i|we)(?:\s+really)?(?:\s+|(?='))(?:prefer|like|love|enjoy|(?:am|are|'m|'re)\s+into|(?:want|'d like|would like) to (?:be able to )?(?:do|try|see|visit|explore|check out))\s+(.+)$/i.exec(s))) {
     const items = splitItems(m[1]!.split(/\b(?:but|so|because)\b/i)[0]!);
     if (items.length) push({ field: 'preferences', value: items });
   }
@@ -138,12 +143,44 @@ function pendingAnswer(text: string, reference: string, pending: ConstraintField
  * a hedged value means for each field.
  */
 export function extractConstraints(text: string, reference: string, pending?: ConstraintField): Extracted[] {
+  return extractWithCoverage(text, reference, pending).items;
+}
+
+/** Small talk that needs no interpretation (and therefore no model call). */
+export const TRIVIAL = /^(?:(?:hi|hey|hello|yo|thanks?|thank you|thx|ty|so much|very much|a lot|a ton|appreciate (?:it|that)|you(?:'re| are) (?:the best|awesome|great|amazing)|the best|ok(?:ay)?|cool|nice|great|awesome|perfect|sweet|lol|haha+|lmao|got it|sounds good|no worries|np|please|pls|sorry|oops)\b[\s,.!?:)-]*)+$/i;
+
+export interface Coverage {
+  items: Extracted[];
+  /** Sentences the rules did not recognize at all (minus small talk). These are what gets handed to the model. */
+  unmatched: string[];
+}
+
+/**
+ * Like extractConstraints, but also reports which sentences the rules did NOT understand, so the caller can hand
+ * exactly those to the language model instead of dropping them or guessing.
+ */
+export function extractWithCoverage(text: string, reference: string, pending?: ConstraintField): Coverage {
   const out: Extracted[] = [];
+  const unmatched: string[] = [];
   const sentences = text.split(/(?<=[!?\n;])\s+|(?<=[a-z0-9)])\.\s+(?=[A-Z])/).map((s) => s.trim()).filter(Boolean);
-  for (const s of sentences) extractSentence(s, reference, pending, out);
+  for (const s of sentences) {
+    const before = out.length;
+    extractSentence(s, reference, pending, out);
+    if (out.length === before) {
+      if (!TRIVIAL.test(s) && s.replace(/[^A-Za-z0-9]/g, '').length >= 3) unmatched.push(s);
+      continue;
+    }
+    // Understood overall, but a long extra clause ("... and honestly anywhere with a good brewery works") may not be.
+    for (const clause of s.split(/,|;|\band\b|\bbut\b|\balso\b|\bplus\b/i).map((c) => c.trim())) {
+      if (clause.split(/\s+/).length < 4 || TRIVIAL.test(clause)) continue;
+      const probe: Extracted[] = [];
+      extractSentence(clause, reference, pending, probe);
+      if (probe.length === 0) unmatched.push(clause);
+    }
+  }
   if (out.length === 0 && pending) {
     const a = pendingAnswer(text, reference, pending);
-    if (a) out.push(a);
+    if (a) { out.push(a); unmatched.length = 0; }
   }
   // A destination and a drive limit in separate sentences describe the same region: keep both.
   const regions = out.filter((e) => e.value.field === 'region');
@@ -154,5 +191,5 @@ export function extractConstraints(text: string, reference: string, pending?: Co
   }
   // One value per field per message: keep the first.
   const seen = new Set<string>();
-  return out.filter((e) => !seen.has(e.value.field) && !!seen.add(e.value.field));
+  return { items: out.filter((e) => !seen.has(e.value.field) && !!seen.add(e.value.field)), unmatched };
 }

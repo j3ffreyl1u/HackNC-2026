@@ -194,7 +194,9 @@ describe('requests, guide questions, and the model', () => {
   it('model-proposed constraints are validated, attributed to the sender, and hedges are decided by code', async () => {
     const { service } = setup({}, () => ({ intent: 'constraints', items: [{ field: 'budget', amount: '180' }, { field: 'duration', nights: 2 }, { field: 'budget', amount: '1e3' }, { field: 'nope' }] }));
     const r = await service.parseInbound(msg({ senderId: 'alex', text: 'I can only afford about one-eighty, two nights is plenty' }));
-    expect(updates(r).map((u) => [u.memberId, u.field, u.value, u.certainty])).toEqual([['alex', 'budget', 18000, 'confirmed'], ['alex', 'duration', 2, 'confirmed']]);
+    // "two nights" is understood by the rules; the budget phrase is handed to the model; the results are merged.
+    const got = updates(r).map((u) => [u.memberId, u.field, u.value, u.certainty]).sort((a, b) => String(a[1]).localeCompare(String(b[1])));
+    expect(got).toEqual([['alex', 'budget', 18000, 'confirmed'], ['alex', 'duration', 2, 'confirmed']]);
   });
   it('a model claiming the sender is someone else, or a malformed intent, creates no command', async () => {
     const { service } = setup({}, () => ({ intent: 'wire_money', actor: 'alex' }));

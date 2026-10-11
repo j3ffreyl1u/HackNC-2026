@@ -51,7 +51,7 @@ function monthIndex(word: string): number | undefined {
 const MONTH = '(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
 const SEP = '(?:to|-|–|—|through|thru|until|till)';
 const ISO_RANGE = new RegExp(`(\\d{4}-\\d{2}-\\d{2})(?:\\s*${SEP}\\s*(\\d{4}-\\d{2}-\\d{2}))?`, 'gi');
-const MD_RANGE = new RegExp(`\\b${MONTH}\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:\\s*${SEP}\\s*(?:${MONTH}\\.?\\s+)?(\\d{1,2})(?:st|nd|rd|th)?)?\\b`, 'gi');
+const MD_RANGE = new RegExp(`\\b${MONTH}\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?(?:\\s*${SEP}\\s*(?:the\\s+)?(?:${MONTH}\\.?\\s+)?(\\d{1,2})(?:st|nd|rd|th)?)?\\b`, 'gi');
 const SLASH_RANGE = new RegExp(`\\b(\\d{1,2})/(\\d{1,2})(?:\\s*${SEP}\\s*(\\d{1,2})/(\\d{1,2}))?\\b`, 'gi');
 
 export interface ParsedWindow { start: string; end: string }

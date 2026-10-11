@@ -35,6 +35,8 @@ export interface IntentInput {
   memberNames: string[];
   pendingField?: ConstraintField;
   hasActionable: boolean;
+  /** Fields the rules already captured from this message. The model should report only OTHER things. */
+  alreadyKnown?: ConstraintField[];
 }
 
 /** Untrusted model output. Always validated by `validateIntent` before use. */
