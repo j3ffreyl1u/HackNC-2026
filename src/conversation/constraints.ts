@@ -31,6 +31,9 @@ export function parseMaxTravelMinutes(text: string): number | undefined {
   return minutes !== undefined && minutes >= 15 && minutes <= 1440 ? minutes : undefined;
 }
 
+const NOT_A_PLACE = /\b(i|we|you|he|she|they|has|have|had|is|are|was|am|can|will|would|want|like|need|car|trip|my|our|it|not|but|with|for|please|thanks|yes|no)\b/i;
+const THIRD_PERSON_VEHICLE = /\b(?:[Ww]e|[Ss]omeone|[Ss]omebody|[Aa]nyone|[Ee]veryone|[A-Z][a-z]+)\s+(?:has|have|got)\s+(?:a\s+|an\s+|the\s+)?(?:car|vehicle|truck|suv)\b/;
+
 const clean = (s: string) => s.trim().replace(/^(?:a|an|the|some)\s+/i, '').replace(/[.!,;]+$/, '').trim();
 const GENERIC = /^(?:that|it|this|those|these|them|the idea|to|doing)\b/i;
 
@@ -77,6 +80,7 @@ function extractSentence(s: string, reference: string, pending: ConstraintField 
     push({ field: 'region', value, ...(maxTravelMinutes !== undefined ? { maxTravelMinutes } : {}) });
   }
   if (/\bi\s+(?:have|got)\s+(?:a\s+|my\s+)?(?:own\s+)?(?:car|vehicle|truck|suv)\b|\bi\s+can\s+drive\b|\bi(?:'ll| will)\s+drive\b/i.test(s)) push({ field: 'transport', value: 'own_vehicle', vehicleAvailable: true });
+  else if (!s.includes('?') && THIRD_PERSON_VEHICLE.test(s)) push({ field: 'transport', value: 'own_vehicle', vehicleAvailable: true });
   else if (/\bi\s+(?:don'?t|do not)\s+have\s+(?:a\s+)?(?:car|vehicle)\b|\bno car\b/i.test(s)) push({ field: 'transport', value: 'no_vehicle', vehicleAvailable: false });
 
   if (/\b(?:no (?:real )?preferences?|don'?t (?:really )?care|i'?m (?:easy|flexible|open to anything))\b/i.test(s)) {
@@ -106,8 +110,12 @@ function pendingAnswer(text: string, reference: string, pending: ConstraintField
     case 'duration':
       return (m = /^(\d{1,2})\s*(?:nights?)?[.!]*$/i.exec(t)) && Number(m[1]) >= 1 && Number(m[1]) <= 30 ? { value: { field: 'duration', value: Number(m[1]) }, hedged } : null;
     case 'origin':
-    case 'region':
-      return /^[A-Za-z][A-Za-z ,.'-]{1,40}$/.test(t) && !hedged ? { value: { field: pending, value: t.replace(/[.!]+$/, '') }, hedged } : null;
+    case 'region': {
+      // Only something that looks like a place: a few words, no pronouns/verbs ("Mason has a car for the trip" is not a destination).
+      const place = t.replace(/[.!]+$/, '');
+      const looksLikePlace = /^[A-Za-z][A-Za-z ,.'-]{1,40}$/.test(place) && place.split(/\s+/).length <= 4 && !NOT_A_PLACE.test(place);
+      return looksLikePlace && !hedged ? { value: { field: pending, value: place }, hedged } : null;
+    }
     case 'preferences':
     case 'must_dos': {
       if (t.length > 200 || t.includes('?')) return null;

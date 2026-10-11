@@ -78,6 +78,18 @@ describe('other fields', () => {
     expect(one('hiking, good food', 'preferences', 'preferences')?.value).toMatchObject({ value: ['hiking', 'good food'] });
     expect(one('none', 'must_dos', 'must_dos')?.value).toMatchObject({ value: [] });
   });
+  it('a sentence is not a place: pending origin/region answers must look like a place', () => {
+    expect(one('Mason has a car for the trip.', 'region', 'region')).toBeUndefined();
+    expect(one('I want to see historical places', 'origin', 'origin')).toBeUndefined();
+    expect(one('Asheville, NC', 'region', 'region')?.value).toMatchObject({ value: 'Asheville, NC' });
+    expect(one('Chapel Hill', 'origin', 'origin')?.value).toMatchObject({ value: 'Chapel Hill' });
+  });
+  it('someone else having a car means a vehicle is available, but a question does not', () => {
+    expect(one('Mason has a car for the trip.', 'transport', 'region')?.value).toMatchObject({ value: 'own_vehicle', vehicleAvailable: true });
+    expect(one('We have a car', 'transport')?.value).toMatchObject({ vehicleAvailable: true });
+    expect(one('Does anyone have a car?', 'transport')).toBeUndefined();
+    expect(one('Who has a car?', 'transport')).toBeUndefined();
+  });
   it('ordinary chatter yields nothing', () => {
     expect(ex('lol that was so funny')).toEqual([]);
   });
