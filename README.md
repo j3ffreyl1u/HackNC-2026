@@ -121,7 +121,7 @@ src/
   storage/        SQLite repository and message outbox
   availability/   Manual availability and an optional Google Calendar free/busy adapter
 web/              Trip page: plain HTML, CSS and JavaScript with a canvas-drawn reef scene
-scripts/          Offline chat demo, trip page demo, Nessie simulator, seeding and diagnostics
+scripts/          Offline chat demo, trip page demo, Nessie simulator and seeding
 tests/            Unit, integration and scripted-conversation tests (Vitest)
 ```
 

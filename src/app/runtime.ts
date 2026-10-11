@@ -54,8 +54,6 @@ export interface ApplicationRuntimeDependencies {
   stopWaitMs?: number;
   /** Records a purchase someone says they made in their simulated Nessie account. Demo only; the assistant never moves real money. */
   purchaseLogger?: { log(memberId: string, category: string, dollars: number, what: string): Promise<string | undefined> };
-  /** The scripted bank walk-through shown once a plan is approved (demo only). Receives what it needs to message everyone and read the settle-up. */
-  demoLedger?: (run: import('../funding/demo-sequence.js').DemoRun) => Promise<void>;
   /** How often the bank is read for purchases worth asking the buyer about (default 2 minutes, 0 turns it off). */
   purchaseCheckMs?: number;
 }
@@ -95,10 +93,8 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
   let retryTimer: ReturnType<typeof setInterval> | undefined;
   let purchaseTimer: ReturnType<typeof setInterval> | undefined;
   const researchRevisions = new Set<number>();
-  const demoRevisions = new Set<number>();
   /** A purchase someone said they made, waiting for an amount or a yes before it is logged. In memory: any other message cancels it. */
   const logPending = new Map<string, { category: string; what: string; dollars?: number; revision: number; shared?: boolean }>();
-  let demoRunning = false;
   /** Who asked whom what through the bot, so the answer can be passed back. Kept in memory: lost if the app restarts mid-question. */
   const relayAsks = new Map<string, { askerId: string; field?: string }>();
   /** What people answered to a question the bot passed on, kept per asker (in memory) so "did he answer?" can be answered. Never money. */
@@ -261,13 +257,6 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
         const result = await repository.commitEvent({ eventId: message.eventId, state: { ...state, ...quiet, purchaseChecks: { ...state.purchaseChecks, [purchaseId]: { ...check, status: answer } } }, expectedRevision: state.revision, messages: [makeMessage(tripId, `purchase-answer:${message.eventId}`, { audience: { kind: 'private', memberId: member.memberId }, text })] });
         if (result === 'stale') continue;
         if (result === 'committed') await runtime.drainOutbox();
-        return;
-      }
-      // "bank demo": run the bank walk-through again for the approved plan (rehearsals).
-      if (!message.reaction && dependencies.demoLedger && /^bank demo[.!\s]*$/i.test((message.text ?? '').trim()) && state.status === 'approved' && (message.visibility === 'private' || enrollment.mode === 'direct')) {
-        const result = await repository.commitEvent({ eventId: message.eventId, state, expectedRevision: state.revision, messages: [] });
-        if (result === 'stale') continue;
-        startDemoLedger(state.revision, true);
         return;
       }
       // "fresh restart": wipe the trip back to a blank slate for everyone (for testing and demos), and forget the sandbox fund account.
@@ -595,45 +584,9 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
       if (researchRequested) {
         scheduleResearch(nextState);
       }
-      if (state.status !== 'approved' && nextState.status === 'approved') startDemoLedger(nextState.revision);
       return;
     }
     throw new Error(`Could not apply event ${message.eventId} after repeated concurrent trip revisions.`);
-  }
-
-  /** The bank walk-through for the demo: it lists the accounts, posts purchases one by one, and ends with who owes whom. */
-  function startDemoLedger(revision: number, force = false) {
-    if (!dependencies.demoLedger || !fundService || stopped || demoRunning || (!force && demoRevisions.has(revision))) return;
-    demoRevisions.add(revision);
-    demoRunning = true;
-    let sent = 0;
-    const task = (async () => {
-      const first = await repository.loadTrip(tripId);
-      if (!first) return;
-      const roster = (first.roster ?? []).filter((m) => m.consented);
-      await dependencies.demoLedger!({
-        memberIds: roster.map((m) => m.memberId),
-        nameOf: (id) => roster.find((m) => m.memberId === id)?.displayName ?? id,
-        send: async (text) => {
-          for (let attempt = 0; attempt < 3; attempt += 1) {
-            const st = await repository.loadTrip(tripId);
-            if (!st) return;
-            sent += 1;
-            const eventId = `demo-ledger:${revision}:${Date.now()}:${sent}`;
-            const result = await repository.commitEvent({ eventId, state: st, expectedRevision: st.revision, messages: roster.map((m) => makeMessage(tripId, `${eventId}:${m.memberId}`, { audience: { kind: 'private', memberId: m.memberId }, text })) });
-            if (result === 'stale') continue;
-            if (result === 'committed') await runtime.drainOutbox();
-            return;
-          }
-        },
-        settleUp: async () => {
-          const st = await repository.loadTrip(tripId);
-          const report = st ? await fundService.inspect(st) : undefined;
-          return st && report?.coverage ? describeWrapUp(toPlanningState(st), report.coverage, { simulated: true }) : "I couldn't read the accounts just now.";
-        },
-      });
-    })().catch(() => undefined).finally(() => { demoRunning = false; });
-    queued.push(task);
   }
 
   function scheduleResearch(state: TripState) {
