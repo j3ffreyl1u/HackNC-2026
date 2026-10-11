@@ -3,7 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { createHttpServer } from '../src/app/server.js';
 import { loadDemoTrip } from '../src/app/fixture.js';
 import { runMockDemo } from '../src/app/mock-demo.js';
-import { applyDemoStatus } from '../src/app/demo-state.js';
+import { saveDemoStage } from '../src/app/demo-state.js';
 import { createFundService } from '../src/funding/service.js';
 import type { Purchase } from '../src/planning/funding.js';
 import { SqliteTripRepository } from '../src/storage/sqlite-repository.js';
@@ -16,6 +16,7 @@ import { SqliteTripRepository } from '../src/storage/sqlite-repository.js';
  *   PORT=3100 npm run demo:web       another port
  *   DEMO_LEDGER=empty|sample|uneven|even   which purchases the pretend banks report (default sample)
  *   DEMO_STATE=gathering|researching|proposed|awaiting_acceptance|approved   which stage the trip is in (default approved)
+ *   DEMO_CANDIDATES=empty            the stage with no options found at all
  *   DEMO_FUND=off                    fund panel hidden, as when tracking is disabled
  */
 const LEDGERS: Record<string, Purchase[]> = {
@@ -46,14 +47,16 @@ if (!purchases) throw new Error(`DEMO_LEDGER must be one of ${Object.keys(LEDGER
 const stages = ['gathering', 'researching', 'proposed', 'awaiting_acceptance', 'approved'] as const;
 const stage = (process.env.DEMO_STATE ?? 'approved') as (typeof stages)[number];
 if (!stages.includes(stage)) throw new Error(`DEMO_STATE must be one of ${stages.join(', ')}.`);
-const path = resolve(process.env.DATABASE_PATH || (stage === 'approved' ? 'data/web-demo.sqlite' : `data/web-demo-${stage}.sqlite`));
+const emptyCandidates = process.env.DEMO_CANDIDATES === 'empty';
+if (process.env.DEMO_CANDIDATES && !emptyCandidates) throw new Error('DEMO_CANDIDATES can only be "empty".');
+const path = resolve(process.env.DATABASE_PATH || (stage === 'approved' ? 'data/web-demo.sqlite' : `data/web-demo-${stage}${emptyCandidates ? '-empty' : ''}.sqlite`));
 await mkdir(dirname(path), { recursive: true });
 const repository = SqliteTripRepository.open(path);
 const trip = await loadDemoTrip('tests/fixtures/trip.json');
 if (!(await repository.loadTrip(trip.state.tripId))) {
   await runMockDemo(repository, trip.enrollment, trip.state, {});
   const finished = (await repository.loadTrip(trip.state.tripId))!;
-  if (stage !== 'approved') await repository.saveTripIfRevision({ ...applyDemoStatus(finished, stage), revision: finished.revision + 1 }, finished.revision);
+  await saveDemoStage(repository, finished, stage, { emptyCandidates });
 }
 const fundService = process.env.DEMO_FUND === 'off' ? undefined : createFundService({ read: async () => ({ purchases }) }, 'mock', { cacheMs: 0 });
 const server = createHttpServer({ repository, ...(fundService ? { fundService } : {}) });
