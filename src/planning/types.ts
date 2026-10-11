@@ -223,7 +223,8 @@ export type TripAction =
   | { kind: 'ask_guide'; question: string }
   | { kind: 'request_funding'; topic?: 'status' | 'remind' | 'wrap_up' }
   | { kind: 'relay'; to: string; mode: 'ask' | 'tell' | 'request' | 'invite'; text: string; field?: string }
-  | { kind: 'fund_pay'; dollars?: number; forName?: string };
+  | { kind: 'fund_pay'; dollars?: number; forName?: string }
+  | { kind: 'fund_spend'; dollars: number; category: string };
 
 export interface TripCommand {
   commandId: string;

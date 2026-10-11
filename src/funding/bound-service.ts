@@ -9,6 +9,8 @@ import { createFundService, type FundService } from './service.js';
 /** A fund that can also take a simulated deposit. Only the sandbox and the offline mock implement it; the app never moves real money. */
 export type PayableFundService = FundService & {
   deposit?(memberId: string, dollars: number, revision: number): Promise<void>;
+  /** A simulated purchase from the pot, in one of the plan's categories (accommodation, food, fuel_parking_tolls, activities, taxes_fees, other). */
+  purchase?(category: string, dollars: number, revision: number): Promise<void>;
   /** Forget the sandbox account (a fresh start). The next approved plan gets a new one. */
   forget?(): Promise<void>;
 };
@@ -99,8 +101,24 @@ export function createBoundFundService(options: BoundFundOptions): PayableFundSe
     if (!response.ok) throw new Error(`The sandbox refused the deposit (HTTP ${response.status}).`);
     current = undefined;   // read the ledger fresh next time, so the new deposit shows straight away
   };
+  const purchase = async (category: string, dollars: number, revision: number) => {
+    const binding = await readJson(options.bindingPath) as { accountId?: unknown; revision?: unknown } | undefined;
+    if (!binding || typeof binding.accountId !== 'string' || binding.revision !== revision) throw new Error('The sandbox fund account is not set up for this plan.');
+    if (!Number.isSafeInteger(dollars) || dollars <= 0 || dollars > 100_000) throw new Error('Purchases are whole dollars.');
+    const merchants = ((await readJson(options.merchantsPath)) ?? {}) as Record<string, string>;
+    let merchantId = Object.entries(merchants).find(([, c]) => c === category)?.[0];
+    if (!merchantId) {
+      const address = { street_number: '1', street_name: 'Simulation Way', city: 'Chapel Hill', state: 'NC', zip: '27514' };
+      merchantId = await create('merchants', { name: `SIMULATED ${category}`, category, address, geocode: { lat: 35.9132, lng: -79.0558 } });
+      await mkdir(dirname(options.merchantsPath), { recursive: true });
+      await writeFile(options.merchantsPath, JSON.stringify({ ...merchants, [merchantId]: category }, null, 2));
+    }
+    await create(`accounts/${encodeURIComponent(binding.accountId)}/purchases`, { merchant_id: merchantId, medium: 'balance', status: 'completed', purchase_date: new Date().toISOString().slice(0, 10), amount: dollars, description: `SIMULATED trip purchase;rev=${revision}` });
+    current = undefined;
+  };
   return {
     deposit,
+    purchase,
     async forget() { current = undefined; creating.clear(); await rm(options.bindingPath, { force: true }); await rm(options.merchantsPath, { force: true }); },
     async inspect(state: TripState) { const failed = await prepare(state); if (failed) return { ...notReady(state), reason: failed.reason }; const service = await bound(); return service ? service.inspect(state) : notReady(state); },
     async publicView(state: TripState) { const failed = await prepare(state); if (failed) return { ...notReady(state), reason: failed.reason }; const service = await bound(); return service ? service.publicView(state) : notReady(state); },

@@ -33,8 +33,9 @@ async function live() {
   const messenger = new MockMessenger();
   const chat = await createChatAdapter(trip.enrollment, trip.state.timeZone ?? 'America/New_York', 'mock', process.env, messenger);
   const planner = createPlannerAdapter(createResearchProvider({ mode: 'mock', fixtures: defaultFixtures }), trip.enrollment.groupSpaceId);
-  const ledger: { deposits: Array<{ id: string; amountDollars: number; description: string; status: string }> } = { deposits: [] };
-  const fund = Object.assign(createFundService({ read: async () => ({ deposits: ledger.deposits, purchases: [] }) }, 'mock', undefined, { cacheMs: 0 }), {
+  const ledger: { deposits: Array<{ id: string; amountDollars: number; description: string; status: string }>; purchases: Array<{ id: string; amountDollars: number; category: string; status: string }> } = { deposits: [], purchases: [] };
+  const fund = Object.assign(createFundService({ read: async () => ({ deposits: ledger.deposits, purchases: ledger.purchases }) }, 'mock', undefined, { cacheMs: 0 }), {
+    purchase: async (category: string, dollars: number) => { ledger.purchases.push({ id: `p${ledger.purchases.length + 1}`, amountDollars: dollars, category, status: 'completed' }); },
     deposit: async (memberId: string, dollars: number, revision: number) => { ledger.deposits.push({ id: `d${ledger.deposits.length + 1}`, amountDollars: dollars, description: depositTag(memberId, revision), status: 'completed' }); },
   });
   const runtime = createApplicationRuntime({ repository, conversation: chat.conversation, planner, tripId: 'dm', fundService: fund });
@@ -162,5 +163,58 @@ describe('paying into the simulated fund from the chat', () => {
     expect((await t.say(JEFF, 'I paid my share')).jeff.join(' ')).toMatch(/Say "pay my share"/);
     expect(t.ledger.deposits).toEqual([]);
     await t.stop();
+  });
+
+  describe('spending from the simulated fund', () => {
+    it('"I spent $60 on gas" asks first, then a yes logs the purchase and the fund shows it', async () => {
+      const t = await approvedTrip();
+      const ask = await t.say(JEFF, 'I spent $60 on gas');
+      expect(ask.jeff.join(' ')).toMatch(/Log \$60 on gas, parking and tolls against the trip fund\? This is simulated sandbox money\. Say "yes" to confirm\./);
+      expect(t.ledger.purchases).toEqual([]);
+      expect((await t.say(JEFF, 'yes')).jeff.join(' ')).toMatch(/Done, \$60 on gas, parking and tolls is logged against the trip fund/);
+      expect(t.ledger.purchases).toEqual([{ id: 'p1', amountDollars: 60, category: 'fuel_parking_tolls', status: 'completed' }]);
+      expect((await t.say(MASON, "how's the fund?")).mason.join(' ')).toMatch(/\$60 spent so far/);
+      await t.stop();
+    });
+
+    it.each([
+      ['we paid 297 for the hotel', 297, 'accommodation'], ['bought food for $40', 40, 'food'], ['the hotel cost $297', 297, 'accommodation'], ['log $20 for parking', 20, 'fuel_parking_tolls'],
+      ['I spent $50 on dinner', 50, 'food'], ['spent 35 on tickets', 35, 'activities'], ["I just paid $12 for the toll", 12, 'fuel_parking_tolls'], ['record an expense of $80 for the cabin', 80, 'accommodation'],
+    ])('"%s" logs $%i as %s', async (text, dollars, category) => {
+      const t = await approvedTrip();
+      await t.say(JEFF, text as string);
+      await t.say(JEFF, 'yes');
+      expect(t.ledger.purchases.map((p) => [p.amountDollars, p.category])).toEqual([[dollars, category]]);
+      await t.stop();
+    });
+
+    it('"I spent money" and "I spent $50" ask what it was for instead of guessing', async () => {
+      const t = await approvedTrip();
+      expect((await t.say(JEFF, 'I spent money')).jeff.join(' ')).toMatch(/How much was it, and what was it for\?/);
+      expect((await t.say(JEFF, 'I spent $50')).jeff.join(' ')).toMatch(/What was the \$50 for\?/);
+      expect(t.ledger.purchases).toEqual([]);
+      await t.stop();
+    });
+
+    it('a no cancels it, and logging is refused before a plan is approved', async () => {
+      const t = await approvedTrip();
+      await t.say(JEFF, 'I spent $60 on gas');
+      expect((await t.say(JEFF, 'no')).jeff.join(' ')).toMatch(/I didn't add anything/);
+      await t.say(JEFF, 'yes');
+      expect(t.ledger.purchases).toEqual([]);
+      const early = await live();
+      await early.say(JEFF, START);
+      expect((await early.say(JEFF, 'I spent $60 on gas')).jeff.join(' ')).toMatch(/approved/i);
+      await t.stop(); await early.stop();
+    });
+
+    it('budget messages are never read as spending', async () => {
+      const t = await approvedTrip();
+      for (const text of ['my max is $450', 'the budget is $300', 'I can spend 200 total']) {
+        const r = await t.say(JEFF, text);
+        expect(r.jeff.join(' '), text).not.toMatch(/Log \$|What was the/);
+      }
+      await t.stop();
+    });
   });
 });

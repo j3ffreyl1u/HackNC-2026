@@ -85,7 +85,7 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
   /** Who asked whom what through the bot, so the answer can be passed back. Kept in memory: lost if the app restarts mid-question. */
   const relayAsks = new Map<string, { askerId: string; field?: string }>();
   /** A simulated payment waiting for a yes. In memory on purpose: it expires with the app, and any other message cancels it. */
-  const payPending = new Map<string, { targetId: string; dollars: number; revision: number }>();
+  const payPending = new Map<string, { targetId: string; dollars: number; revision: number; category?: string }>();
   /** This person was asked something through the bot: tell whoever asked what they just said (never anything about money). */
   const relayBack = (member: { memberId: string; displayName: string }, message: InboundMessage, before: TripState, after: TripState): OutboundMessage[] => {
     const asked = relayAsks.get(member.memberId);
@@ -203,10 +203,18 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
             try {
               const report = fundService ? await fundService.inspect(state) : undefined;
               const target = (state.roster ?? []).find((m) => m.memberId === waitingPay.targetId);
-              if (!fundService?.deposit || !report?.plan || !report.funding || !target) out.push(toPerson(member.memberId, "I couldn't add that: the fund isn't ready.", `pay-fail:${message.eventId}`));
+              if (!fundService || !(waitingPay.category ? fundService.purchase : fundService.deposit) || !report?.plan || !report.funding || !target) out.push(toPerson(member.memberId, "I couldn't add that: the fund isn't ready.", `pay-fail:${message.eventId}`));
               else if (report.plan.revision !== waitingPay.revision) out.push(toPerson(member.memberId, "The plan changed while we were talking, so I didn't add anything. Ask again once it's approved.", `pay-stale:${message.eventId}`));
               else {
-                await fundService.deposit(waitingPay.targetId, waitingPay.dollars, waitingPay.revision);
+                if (waitingPay.category) {
+                  await fundService.purchase!(waitingPay.category, waitingPay.dollars, waitingPay.revision);
+                  out.push(toPerson(member.memberId, `Done, $${waitingPay.dollars} on ${CATEGORY_WORDS[waitingPay.category] ?? waitingPay.category} is logged against the trip fund. Ask "how's the fund?" to see what's left. (Simulated money.)`, `spend-done:${message.eventId}`));
+                  const result = await repository.commitEvent({ eventId: message.eventId, state, expectedRevision: state.revision, messages: out });
+                  if (result === 'stale') continue;
+                  if (result === 'committed') await runtime.drainOutbox();
+                  return;
+                }
+                await fundService.deposit!(waitingPay.targetId, waitingPay.dollars, waitingPay.revision);
                 const forSelf = waitingPay.targetId === member.memberId;
                 out.push(toPerson(member.memberId, forSelf ? `Done, $${waitingPay.dollars} is in the trip fund. Ask "how's the fund?" to see it. (Simulated money.)` : `Done, I put $${waitingPay.dollars} in for ${target.displayName}. (Simulated money.)`, `pay-done:${message.eventId}`));
                 if (!forSelf) out.push(toPerson(waitingPay.targetId, `${member.displayName} covered $${waitingPay.dollars} of your share of the trip fund. (Simulated money.)`, `pay-told:${message.eventId}`));
@@ -257,6 +265,7 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
       }
       let fundRequested = false;
       let payRequest: { dollars?: number; forName?: string } | undefined;
+      let spendRequest: { dollars: number; category: string } | undefined;
       let fundTopic: 'status' | 'remind' | 'wrap_up' = 'status';
 
       for (const [index, parsedCommand] of commands.entries()) {
@@ -268,6 +277,7 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
           tripId,
         };
         if (command.action.kind === 'request_funding') { fundRequested = true; fundTopic = command.action.topic ?? 'status'; continue; }
+        if (command.action.kind === 'fund_spend') { spendRequest = { dollars: command.action.dollars, category: command.action.category }; continue; }
         if (command.action.kind === 'fund_pay') { payRequest = { ...(command.action.dollars !== undefined ? { dollars: command.action.dollars } : {}), ...(command.action.forName ? { forName: command.action.forName } : {}) }; continue; }
         if (command.action.kind === 'relay') {
           const relay = command.action;
@@ -399,6 +409,24 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
         if (parsed.kind === 'commands' && parsed.expects) confirmations[member.memberId] = parsed.expects;
         else delete confirmations[member.memberId];
         nextState = { ...nextState, pendingConfirmations: confirmations };
+      }
+      if (spendRequest) {
+        const toMe = (text: string) => makeMessage(tripId, `spend-ask:${message.eventId}`, { audience: { kind: 'private', memberId: member.memberId }, text });
+        if (!fundService) replies.push(toMe('The trip fund is switched off, so there is nothing to log spending against.'));
+        else {
+          try {
+            const report = await fundService.inspect(nextState);
+            if (!report.funding || !report.plan) replies.push(toMe(report.reason ?? 'The plan has to be approved before spending can be logged against the fund.'));
+            else if (typeof fundService.purchase !== 'function') replies.push(toMe("Logging spending isn't set up here, so I can't add that."));
+            else if (spendRequest.dollars > 10_000) replies.push(toMe("That's more than I'll log in one go. Try a smaller amount."));
+            else {
+              payPending.set(member.memberId, { targetId: member.memberId, dollars: spendRequest.dollars, revision: report.plan.revision, category: spendRequest.category });
+              replies.push(toMe(`Log $${spendRequest.dollars} on ${CATEGORY_WORDS[spendRequest.category] ?? spendRequest.category} against the trip fund? This is simulated sandbox money. Say "yes" to confirm.`));
+            }
+          } catch {
+            replies.push(toMe("I couldn't check the fund just now. Try again in a moment."));
+          }
+        }
       }
       if (payRequest) {
         const toMe = (text: string) => makeMessage(tripId, `pay-ask:${message.eventId}`, { audience: { kind: 'private', memberId: member.memberId }, text });
@@ -648,6 +676,8 @@ function dayRange(startAt: string, endAt: string, timeZone: string): string {
 }
 
 const fundService_disabled = (fund: unknown) => fund === undefined;
+
+const CATEGORY_WORDS: Record<string, string> = { accommodation: 'lodging', fuel_parking_tolls: 'gas, parking and tolls', food: 'food', activities: 'activities', taxes_fees: 'taxes and fees', other: 'other costs' };
 
 /** "remind Mason to lock it in" while a plan waits on them: ask for the "I'm in" instead of a vague nudge. */
 function approvalPrompt(state: TripState, askerId: string, targetId: string, text: string): string | undefined {

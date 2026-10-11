@@ -472,6 +472,36 @@ export function createParser(deps: ConversationDependencies) {
       if (ctx.approval) return ctx.approval.waitingNames.includes(nudge[1]!) || ctx.approval.waitingNames.some((n) => n.toLowerCase() === nudge[1]!.toLowerCase()) ? one(msg, ctx, { kind: 'relay', to: ctx.others!.find((o) => o.name.toLowerCase() === nudge[1]!.toLowerCase())!.name, mode: 'request', text: 'lock it in' }) : reply(msg, `${nudge[1]} is already in on ${ctx.approval.title}.`, 'approval-other', true);
       return one(msg, ctx, { kind: 'request_plans' });
     }
+    // Spending from the simulated fund: "I spent $60 on gas", "we paid 300 for the hotel", "bought food for $40", "log $20 for parking". The app asks for a yes first.
+    const spendCategory = (thing: string): string | undefined => {
+      const w = thing.toLowerCase();
+      if (/\b(?:hotel|motel|lodging|cabin|airbnb|room|rental|stay|accommodation|inn|lodge|campsite|camping)\b/.test(w)) return 'accommodation';
+      if (/\b(?:gas|gasoline|fuel|parking|toll|tolls|charging|uber|lyft|taxi)\b/.test(w)) return 'fuel_parking_tolls';
+      if (/\b(?:food|dinner|lunch|breakfast|brunch|groceries|grocery|restaurant|meal|meals|snacks?|coffee|drinks?|pizza|burgers?|eats|bbq|takeout)\b/.test(w)) return 'food';
+      if (/\b(?:tickets?|admission|entry|activities|activity|museum|tour|tours|park|hike|hiking|rental|zoo|show|concert|passes?)\b/.test(w)) return 'activities';
+      if (/\b(?:fees?|taxes|tax|tips?|resort fee)\b/.test(w)) return 'taxes_fees';
+      return undefined;
+    };
+    const amountOf = (text: string) => { const m = /\$\s*([\d,]+(?:\.\d{1,2})?)|\b([\d,]+(?:\.\d{1,2})?)\s*(?:dollars|bucks|usd)\b|\b(\d{1,6})\b/i.exec(text); const raw = m?.[1] ?? m?.[2] ?? m?.[3]; return raw ? Math.ceil(Number(raw.replace(/,/g, ''))) : undefined; };
+    const spendFormA = /^(?:(?:please|pls|ok(?:ay)?)\s+)*(?:i|we|jeffrey|mason|\w+)?\s*(?:'ve|have|just|already|had to)?\s*(?:spent|paid|put|used|dropped|blew)\s+\$?\s*([\d,]+(?:\.\d{1,2})?)(?:\s*(?:dollars|bucks|usd))?\s+(?:on|for|at|towards?)\s+(?:the\s+|a\s+|an\s+|our\s+|some\s+)?(.+)$/i.exec(lean)
+      ?? /^(?:(?:please|pls|ok(?:ay)?)\s+)*(?:log|record|add|enter|put\s+down|note|track)\s+(?:a\s+|an\s+|the\s+)?(?:purchase|expense|spend(?:ing)?|cost|charge)?\s*(?:of\s+)?\$?\s*([\d,]+(?:\.\d{1,2})?)(?:\s*(?:dollars|bucks|usd))?\s+(?:on|for|at)\s+(?:the\s+|a\s+|an\s+)?(.+)$/i.exec(lean);
+    // The "thing first" forms are only an expense when the thing is one: "my max is $450" must stay a budget.
+    const spendFormB = /^(?:(?:please|pls|ok(?:ay)?)\s+)*(?:i|we)?\s*(?:bought|got|grabbed|booked|paid\s+for)\s+(?:the\s+|a\s+|an\s+|some\s+|our\s+)?(.+?)\s+(?:for|at|costing|which\s+cost(?:s)?)\s+\$?\s*([\d,]+(?:\.\d{1,2})?)(?:\s*(?:dollars|bucks|usd))?$/i.exec(lean)
+      ?? /^(?:the\s+|our\s+)?([a-z][a-z ]{2,30}?)\s+(?:cost|costs|was|came\s+to|ran(?:\s+us)?)\s+\$?\s*([\d,]+(?:\.\d{1,2})?)(?:\s*(?:dollars|bucks|usd))?$/i.exec(lean);
+    if (talkativeChat && ctx.status !== undefined && (spendFormA || (spendFormB && spendCategory(spendFormB[1]!)))) {
+      const thing = spendFormA ? spendFormA[2]! : spendFormB![1]!;
+      const amount = spendFormA ? spendFormA[1]! : spendFormB![2]!;
+      const dollars = Math.ceil(Number(amount.replace(/,/g, '')));
+      const category = spendCategory(thing);
+      if (Number.isFinite(dollars) && dollars > 0 && category) return one(msg, ctx, { kind: 'fund_spend', dollars, category });
+      if (Number.isFinite(dollars) && dollars > 0 && ctx.status === 'approved') return reply(msg, `What was the $${dollars} for? I can log it as lodging, gas, food, activities or fees. Try "I spent $${dollars} on food".`, 'spend-what', true);
+    }
+    // "I spent money", "log a purchase": there is no amount or purpose yet, so ask for both.
+    if (talkativeChat && ctx.status === 'approved' && /^(?:(?:please|pls|ok(?:ay)?|so)\s+)*(?:(?:i|we)\s+)?(?:(?:'ve|have|just|also)\s+)*(?:spent|paid|bought|purchased)\s+(?:some\s+|a\s+bit\s+of\s+|more\s+)?(?:money|cash|something|stuff|things)(?:\s+(?:on\s+the\s+trip|today|too))?$|^(?:(?:please|pls)\s+)*(?:log|record|add|enter|track)\s+(?:a\s+|an\s+|some\s+)?(?:purchase|expense|spending|spend|cost)$|^(?:i|we)\s+made\s+(?:a\s+)?purchase$|^(?:i|we)\s+need\s+to\s+(?:log|record|add)\s+(?:a\s+|some\s+)?(?:purchase|expense|spending)$/i.test(lean)) {
+      return reply(msg, 'How much was it, and what was it for? Try "I spent $60 on gas", "we paid $297 for the hotel" or "bought food for $40".', 'spend-what', true);
+    }
+    const spentBare = /^(?:i|we)?\s*(?:'ve|have|just)?\s*(?:spent|paid)\s+\$?\s*([\d,]+(?:\.\d{1,2})?)(?:\s*(?:dollars|bucks|usd))?$/i.exec(lean);
+    if (spentBare && talkativeChat && ctx.status === 'approved') return reply(msg, `What was the $${amountOf(spentBare[1]!) ?? ''} for? I can log it as lodging, gas, food, activities or fees. Try "I spent $${amountOf(spentBare[1]!) ?? 50} on food".`, 'spend-what', true);
     // Paying into the simulated fund: "pay my share", "let me chip in $50", "cover Mason's share", "put in $60 for Jeffrey". The app asks for a yes before anything is added.
     const lead = "(?:(?:please|pls|ok(?:ay)?|so)\\s+)*(?:(?:can|could|may|should|shall|would)\\s+(?:i|we)\\s+|let\\s*me\\s+|lemme\\s+|time\\s+to\\s+|(?:i|we)(?:'ll|\\s+will|'d like to|\\s+would like to|\\s+want to|\\s+wanna|\\s+should|\\s+can|\\s+gotta|\\s+need to|\\s+have to)?\\s+)?";
     const tail = "(?:\\s+(?:now|please|pls|today|too|as well|also|real quick|right now))*[?!.]*$";

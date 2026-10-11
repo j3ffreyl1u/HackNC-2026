@@ -40,14 +40,14 @@ export async function startApp(): Promise<() => Promise<void>> {
   await mkdir(dirname(config.databasePath), { recursive: true });
   const repository = SqliteTripRepository.open(config.databasePath);
   const display = config.researchMode === 'gemini' ? new LiveResearchDisplay(process.env.GEMINI_API_KEY!, process.env.GEMINI_MODEL || 'gemini-3.8-flash', `http://127.0.0.1:${config.port}`) : undefined;
-  const mockLedger = { deposits: [] as Array<{ id: string; amountDollars: number; description: string; status: string }> };   // offline mock only: lets "pay my share" work without Nessie
+  const mockLedger = { deposits: [] as Array<{ id: string; amountDollars: number; description: string; status: string }>, purchases: [] as Array<{ id: string; amountDollars: number; category: string; status: string }> };   // offline mock only: lets "pay my share" work without Nessie
   const fundService = config.fundingMode === 'disabled' ? undefined
     : config.fundingMode === 'nessie' && process.env.NESSIE_BINDING_PATH
       ? createBoundFundService({ bindingPath: process.env.NESSIE_BINDING_PATH, merchantsPath: process.env.NESSIE_MERCHANTS_PATH || 'data/simulated-merchant-categories.json', baseUrl: process.env.NESSIE_BASE_URL!, apiKey: process.env.NESSIE_API_KEY! })
       : createFundService(config.fundingMode === 'nessie'
     ? createNessieReader({ baseUrl: process.env.NESSIE_BASE_URL!, apiKey: process.env.NESSIE_API_KEY!, accountId: process.env.NESSIE_ACCOUNT_ID!, merchantCategories })
-    : { read: async () => ({ deposits: mockLedger.deposits, purchases: [] }) }, config.fundingMode, config.fundingMode === 'nessie' ? Number(process.env.NESSIE_PLAN_REVISION) : undefined);
-  if (fundService && config.fundingMode === 'mock') Object.assign(fundService, { deposit: async (memberId: string, dollars: number, revision: number) => { mockLedger.deposits.push({ id: `mock-${mockLedger.deposits.length + 1}`, amountDollars: dollars, description: depositTag(memberId, revision), status: 'completed' }); } });
+    : { read: async () => ({ deposits: mockLedger.deposits, purchases: mockLedger.purchases }) }, config.fundingMode, config.fundingMode === 'nessie' ? Number(process.env.NESSIE_PLAN_REVISION) : undefined);
+  if (fundService && config.fundingMode === 'mock') Object.assign(fundService, { deposit: async (memberId: string, dollars: number, revision: number) => { mockLedger.deposits.push({ id: `mock-${mockLedger.deposits.length + 1}`, amountDollars: dollars, description: depositTag(memberId, revision), status: 'completed' }); }, purchase: async (category: string, dollars: number) => { mockLedger.purchases.push({ id: `mock-p${mockLedger.purchases.length + 1}`, amountDollars: dollars, category, status: 'completed' }); } });
   const server = createHttpServer({ repository, researchDisplay: display, fundService });
   let runtime: ReturnType<typeof createApplicationRuntime> | undefined;
   try {
