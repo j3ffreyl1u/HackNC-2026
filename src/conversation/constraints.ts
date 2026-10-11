@@ -134,7 +134,10 @@ function pendingAnswer(text: string, reference: string, pending: ConstraintField
     case 'must_dos': {
       if (t.length > 200 || t.includes('?')) return null;
       if (/^(?:none|nothing|no)[.!]*$/i.test(t)) return { value: { field: pending, value: pending === 'preferences' ? ['no preference'] : [] }, hedged: false };
-      const items = splitItems(t);
+      // "I want to have fun and learn about historical museums" is about historical museums, not the whole sentence.
+      let core = t.replace(/^(?:i|we)(?:\s+really)?\s+(?:want to|wanna|would like to|'d like to|like to|like|love|enjoy|prefer|am into|are into|'m into|'re into)\s+/i, '');
+      for (let i = 0; i < 3; i += 1) core = core.replace(/^(?:have fun(?:\s+and)?|have a good time(?:\s+and)?|just\s+|learn(?:ing)?(?:\s+about)?|see|visit|do|try|explore|check out|go to|going to)\s+/i, '');
+      const items = splitItems(core.trim() === '' ? t : core);
       return items.length ? { value: { field: pending, value: items }, hedged } : null;
     }
     default:

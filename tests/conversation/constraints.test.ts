@@ -123,3 +123,15 @@ describe('parseMaxTravelMinutes', () => {
     expect(parseMaxTravelMinutes('Asheville')).toBeUndefined();
   });
 });
+
+describe('preferences read from a plain answer', () => {
+  it.each([
+    ['I want to have fun and learn about historical museums', ['historical museums']],
+    ['I like hiking and good food', ['hiking', 'good food']],
+    ['I love trying local breweries', ['trying local breweries']],
+    ['museums', ['museums']],
+  ])('"%s"', (text, expected) => {
+    const items = extractConstraints(text, '2026-10-10T12:00:00Z', 'preferences');
+    expect(items.find((i) => i.value.field === 'preferences')?.value).toMatchObject({ value: expected });
+  });
+});
