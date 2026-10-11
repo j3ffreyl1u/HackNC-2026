@@ -37,7 +37,7 @@ async function run() {
   const customer = { first_name: 'SIMULATED', last_name: 'Trip Group', address };
   const account = { type: 'Checking', nickname: `SIMULATED trip revision ${input.revision}`, rewards: 0, balance: 0 };
   if (!args.includes('--execute')) {
-    console.log(JSON.stringify({ ...(provision ? { customer, account, merchants: input.purchases.map(p => ({ name: `SIMULATED ${p.category}`, category: p.category, address, geocode: { lat: 35.9132, lng: -79.0558 } })) } : {}), transactions: payloads }, null, 2));
+    console.log(JSON.stringify({ ...(provision ? { customer, account, merchants: input.purchases.map(p => ({ name: `SIMULATED ${p.category}`, category: [p.category], address, geocode: { lat: 35.9132, lng: -79.0558 } })) } : {}), transactions: payloads }, null, 2));
     console.log('Preview only. --execute posts once; rerunning creates duplicates.'); return;
   }
   const env = process.env;
@@ -65,7 +65,7 @@ async function run() {
     const customerId = createdId(await post('customers', customer));
     accountId = createdId(await post(`customers/${encodeURIComponent(customerId)}/accounts`, account));
     for (const p of input.purchases) {
-      p.merchantId = createdId(await post('merchants', { name: `SIMULATED ${p.category}`, category: p.category, address, geocode: { lat: 35.9132, lng: -79.0558 } }));
+      p.merchantId = createdId(await post('merchants', { name: `SIMULATED ${p.category}`, category: [p.category], address, geocode: { lat: 35.9132, lng: -79.0558 } }));
       merchantCategories[p.merchantId] = p.category!;
     }
     await mkdir('data', { recursive: true });
