@@ -190,6 +190,21 @@ export async function answerGuideQuestion(
   const overCap = effects.length - affordable.length;
   const shown = affordable.slice(0, MAX_ALTERNATIVES);
 
+  const byEvidence = new Map(result.evidence.map((e) => [e.evidenceId, e]));
+  const answerEvidence = (result.answer?.evidenceIds ?? []).map((id) => byEvidence.get(id)).filter((e): e is SourceEvidence => e !== undefined);
+  const direct = result.answer && answerEvidence.length > 0 ? result.answer.text : undefined;
+
+  if (shown.length === 0 && direct !== undefined) {
+    // A cited, direct answer is enough on its own; there is no priced idea to add.
+    const sites = [...new Set(answerEvidence.map(siteName))].slice(0, 3);
+    return {
+      text: `${direct}\nSource${sites.length === 1 ? '' : 's'}: ${answerEvidence.slice(0, 3).map((e) => `${siteName(e)} ${e.url}`).join('; ')}`,
+      short: `${direct}\nSource${sites.length === 1 ? '' : 's'}: ${sites.join(', ')}.`,
+      evidence: answerEvidence,
+      mode: result.mode,
+    };
+  }
+
   if (shown.length === 0) {
     const reasons = overCap > 0 ? ` ${overCap === 1 ? 'One option I found would' : `${overCap} options I found would`} put at least one person over their limit, so I left ${overCap === 1 ? 'it' : 'them'} out.` : '';
     return {
@@ -202,6 +217,7 @@ export async function answerGuideQuestion(
 
   const byId = new Map(result.evidence.map((e) => [e.evidenceId, e]));
   const cited = new Set(shown.flatMap((e) => [...e.option.evidenceIds, ...e.option.stops.flatMap((s) => s.evidenceIds)]));
+  for (const e of answerEvidence) cited.add(e.evidenceId);
   const evidence = result.evidence.filter((e) => cited.has(e.evidenceId));
 
   const planWords = !candidate
@@ -210,7 +226,7 @@ export async function answerGuideQuestion(
       ? `your approved plan, ${candidate.title}`
       : `the plan up for approval, ${candidate.title}`;
   const where = next ? ` Your next stop is "${next.label}" in ${next.location}.` : '';
-  const lines = [`Based on ${planWords}, here is what I found for "${asked}".${where}`, ...shown.map((e) => describeAlternative(e, byId, options.fund))];
+  const lines = [...(direct !== undefined ? [direct] : []), `Based on ${planWords}, here is what I found for "${asked}".${where}`, ...shown.map((e) => describeAlternative(e, byId, options.fund))];
   if (overCap > 0) lines.push(`${overCap === 1 ? 'One other option' : `${overCap} other options`} would put at least one person over their limit, so I left ${overCap === 1 ? 'it' : 'them'} out.`);
   lines.push(
     candidate
@@ -218,5 +234,5 @@ export async function answerGuideQuestion(
       : "Nothing here is part of a plan yet.",
   );
   lines.push(...result.limitations);
-  return { text: lines.join('\n'), short: shortGuideText(asked, shown, evidence, overCap, !candidate ? 'your trip so far' : state.status === 'approved' ? 'your approved plan' : 'the plan up for approval', options.fund), evidence, mode: result.mode };
+  return { text: lines.join('\n'), short: (direct !== undefined ? `${direct}\n` : '') + shortGuideText(asked, shown, evidence, overCap, !candidate ? 'your trip so far' : state.status === 'approved' ? 'your approved plan' : 'the plan up for approval', options.fund), evidence, mode: result.mode };
 }

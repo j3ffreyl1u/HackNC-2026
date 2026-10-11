@@ -214,3 +214,31 @@ describe('the chat version of a guide answer', () => {
     expect(answer.short).not.toMatch(/\n\s+-|These are separate individual reports/);   // none of the long per-source paragraphs
   });
 });
+
+describe('a guide answer that answers the question', () => {
+  const withAnswer = (extra: Partial<ResearchResult> = {}): ResearchProvider => ({
+    mode: 'live',
+    async search(request) {
+      return {
+        mode: 'live', revision: request.revision, retrievedAt: NOW, options: [], limitations: [],
+        evidence: [{ evidenceId: 'e1', url: 'https://nps.gov/parking', title: 'nps.gov', retrievedAt: NOW, kind: 'official', claim: 'Parking near the Mall is metered and limited.' }],
+        answer: { text: 'Street parking near the Mall is limited and metered; garages near Union Station are easier.', evidenceIds: ['e1'] },
+        ...extra,
+      };
+    },
+  });
+
+  it('leads with the answer and names its source, even when there are no priced ideas to list', async () => {
+    const answer = await answerGuideQuestion(await approvedState(), 'is parking hard near the national mall?', withAnswer());
+    expect(answer.short).toMatch(/^Street parking near the Mall is limited/);
+    expect(answer.short).toMatch(/Source: nps\.gov/);
+    expect(answer.short).not.toMatch(/couldn't find a good answer/);
+    expect(answer.evidence.map((e) => e.evidenceId)).toEqual(['e1']);
+    expect(answer.text).toMatch(/Street parking near the Mall is limited/);
+  });
+
+  it('still says it found nothing when there is neither an answer nor an idea', async () => {
+    const answer = await answerGuideQuestion(await approvedState(), 'anything?', withAnswer({ answer: undefined }));
+    expect(answer.short).toMatch(/couldn't find a good answer/);
+  });
+});

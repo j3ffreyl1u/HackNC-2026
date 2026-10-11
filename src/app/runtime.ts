@@ -407,11 +407,14 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
       acceptances: [],
     };
     const groupSpaceId = (await repository.getEnrollment(tripId))?.groupSpaceId ?? '';
+    // Asking again at the same revision (after "nothing fits", say) is a new search with its own answer, so each run has its own id.
+    // Without this the second answer was dropped as a duplicate of the first and the trip stayed stuck on "researching".
+    const attempt = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
     const messages = researchReplies
-      ? researchReplies.map((reply, index) => makeMessage(tripId, `research:${sourceState.revision}:${index}`, { ...reply, text: withPlanLink(reply.text), proposalRef: reply.proposalRef ? { ...reply.proposalRef, kind: 'select' } : undefined }))
+      ? researchReplies.map((reply, index) => makeMessage(tripId, `research:${sourceState.revision}:${attempt}:${index}`, { ...reply, text: withPlanLink(reply.text), proposalRef: reply.proposalRef ? { ...reply.proposalRef, kind: 'select' } : undefined }))
       : candidates.flatMap((candidate) => candidateMessages(candidate, tripId, groupSpaceId));
     const outcome = await repository.commitEvent({
-      eventId: `research:${tripId}:${sourceState.revision}`,
+      eventId: `research:${tripId}:${sourceState.revision}:${attempt}`,
       state: next,
       expectedRevision: current.revision,
       messages,

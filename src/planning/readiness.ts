@@ -279,7 +279,20 @@ export function describeGaps(state: TripState, result: Pick<ReadinessResult, 'mi
   items.push(...perPerson('budget', (n) => (n === 'your' ? 'your budget' : `${n}'s budget`)));
   items.push(...perPerson('preferences', (n) => (n === 'your' ? 'your preferences' : `${n}'s preferences`)));
   const parts = items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items.at(-1)}` : (items[0] ?? '');
-  const tail = result.conflicts.length > 0 ? 'Some answers also don\'t match yet, so I need those sorted out.' : '';
+  // Say what is stuck, not just that something is: "Some answers don't match" leaves people guessing.
+  const stuck = [...new Set(result.conflicts.map((c) => {
+    if (c === 'origin') return "where you're leaving from";
+    if (c === 'duration') return 'how many nights';
+    if (c === 'region') return 'where to go';
+    if (c === 'transport') return 'the car situation';
+    if (c === 'dates') return 'the dates';
+    if (c.startsWith('availability_unconfirmed')) return 'dates that still need a firm yes';
+    if (c.startsWith('budget_unconfirmed')) return 'a budget that still needs a firm yes';
+    if (c.startsWith('must_dos_unconfirmed')) return 'a must-have that still needs a firm yes';
+    return 'a detail';
+  }))];
+  const stuckList = stuck.length > 1 ? `${stuck.slice(0, -1).join(', ')} and ${stuck.at(-1)}` : (stuck[0] ?? '');
+  const tail = stuck.length > 0 ? `We also still need to settle ${stuckList}.` : '';
   if (parts === '') return tail === '' ? "I'm not ready to plan yet." : `I'm not ready to plan yet. ${tail}`;
   // Nothing has been told to the assistant yet: "still waiting" would be wrong, so say what the plan needs instead.
   const fresh = Object.values(state.memberConstraints).every((list) => list.length === 0) && state.groupConstraints.length === 0;
