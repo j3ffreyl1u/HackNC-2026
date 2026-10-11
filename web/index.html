@@ -14,10 +14,11 @@
       <span class="live-pill"><span class="pulse"></span> Group plan</span>
     </header>
     <main>
+      <nav class="explorer-bar" aria-label="Plan sections"><span class="explorer-icon" aria-hidden="true">◈</span><span>weekend / group explorer</span><a href="#trip">Saved plans</a><a href="#about">About this view</a></nav>
       <section class="hero">
         <div class="hero-copy">
-          <p class="eyebrow">Good friends. Fresh air. One shared plan.</p>
-          <h1>A little closer<br /><span>to the outdoors.</span></h1>
+          <p class="eyebrow">Your window to a greener weekend</p>
+          <h1>Step outside.<br /><span>Together.</span></h1>
           <p class="lede">Your next weekend starts in the chat. Find your shared plan, clear costs, and a little room to explore right here.</p>
           <a class="aero-button" href="#trip">Explore your group’s plan <span aria-hidden="true">↗</span></a>
         </div>
@@ -41,9 +42,14 @@
         </svg>
         <div class="hero-orb" aria-hidden="true"><span>✦</span></div>
       </section>
+      <div class="feature-dock" aria-label="What you can find here">
+        <a href="#trip"><span class="dock-icon globe-icon" aria-hidden="true">◎</span><span><strong>A world of possibilities</strong><small>Explore your group’s options</small></span></a>
+        <a href="#trip"><span class="dock-icon leaf-icon" aria-hidden="true">❧</span><span><strong>Room to reconnect</strong><small>Your places, dates, and itinerary</small></span></a>
+        <a href="#trip"><span class="dock-icon chat-icon" aria-hidden="true">✦</span><span><strong>Planned in your chat</strong><small>Shared costs. One current revision.</small></span></a>
+      </div>
       <p id="status" class="status" role="status" aria-live="polite">Loading the latest plan…</p>
       <section id="trip" aria-live="polite"></section>
-      <footer><span class="footer-leaf" aria-hidden="true">❧</span> Made for weekends together.<br />Estimates are planning aids, not bookings or guaranteed availability. Check current details with each source.</footer>
+      <footer id="about"><span class="footer-leaf" aria-hidden="true">❧</span> Made for weekends together.<br />Keep planning and accepting in your chat. This is your group’s saved view.<br />Estimates are planning aids, not bookings or guaranteed availability. Check current details with each source.</footer>
     </main>
     <script type="module" src="/app.js"></script>
   </body>
