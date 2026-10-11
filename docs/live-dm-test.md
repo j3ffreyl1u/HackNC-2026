@@ -83,3 +83,9 @@ Coordinate this as a separate run with a new database, setting `RESEARCH_MODE=ge
 Record commit SHA, Node version, topology, research mode, start/end time, each observed step, page/chat revision agreement, restart result and actual live request latency. Keep raw private messages, caps and phones out of the shared report. Label DM transport, group transport, intent parsing and grounded display separately; a passing mock or DM run does not establish group delivery or live affordability.
 
 If any stage fails, stop that stage, record the error and coordinate the next attempt with Jeffrey. C's safe legacy-state error requires author metadata migration or a separate trip; it does not reset existing state automatically. Funding/calendar integrations remain disabled.
+
+## Investigate missing participant constraints
+
+On the operator's machine, point DATABASE_PATH at the actual live run database and run `npm run diagnose:trip -- --trip TRIP_ID`. The command opens SQLite read-only and prints member-specific budget/date record presence, certainty and counts. It never starts transport, drains the outbox or prints amounts, date windows, phones, keys or raw messages. An absent record does not prove a message was sent or received.
+
+If Jeffrey has the normalized event ID, add `--event EVENT_ID` to check whether C recorded it. A recorded event may have been ignored, clarified or rejected; it does not prove a constraint was accepted. Compare the participant's send confirmation, A's normalized sender/enrollment mapping and parse outcome, and the private clarification/rejection received during the coordinated run. Confirm the database path and trip ID first. Keep any sensitive provider logs local.

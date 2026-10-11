@@ -1,7 +1,7 @@
 import { mkdir } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { resolve, dirname } from 'node:path';
-import { loadDemoTrip, loadEnrolledTrip } from './fixture.js';
+import { loadDemoTrip, loadEnrolledTrip, enrollmentWarnings } from './fixture.js';
 import { createChatAdapter } from './conversation-adapter.js';
 import { createPlannerAdapter } from './planning-adapter.js';
 import { createApplicationRuntime } from './runtime.js';
@@ -19,6 +19,7 @@ export async function startApp(): Promise<() => Promise<void>> {
     throw new Error('Calendar and funding extensions are not integrated. Select manual calendar and disabled funding.');
   }
   const trip = config.chatMode === 'photon' ? await loadEnrolledTrip(config.tripConfigPath) : await loadDemoTrip(config.tripConfigPath);
+  if (config.chatMode === 'photon') for (const warning of enrollmentWarnings(trip.enrollment)) console.warn(warning);
   if (config.chatMode === 'photon' && ((trip.enrollment.mode !== 'direct' && trip.enrollment.groupSpaceId.startsWith('mock-')) || trip.enrollment.participants.some(p => p.providerUserId.startsWith('mock-')))) throw new Error('Live chat needs a trip config with actual enrolled provider identities and, in group mode, the actual group space ID.');
   await mkdir(dirname(config.databasePath), { recursive: true });
   const repository = SqliteTripRepository.open(config.databasePath);

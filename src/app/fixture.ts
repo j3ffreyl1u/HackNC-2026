@@ -34,6 +34,12 @@ export interface DemoTripData {
   state: TripState;
 }
 
+export function enrollmentWarnings(enrollment: TripEnrollment): string[] {
+  return enrollment.participants.length < 2
+    ? ['This live trip has fewer than two enrolled participants. Planning needs at least two consenting people. The organizer must update the fixed enrollment and use a separate trip/database; texting the bot does not add a participant.']
+    : [];
+}
+
 export async function loadDemoTrip(path: string): Promise<DemoTripData> {
   const raw: unknown = JSON.parse(await readFile(path, 'utf8'));
   return buildDemoTrip(raw as DemoTripFixture);

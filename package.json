@@ -11,6 +11,7 @@
     "seed": "node --env-file=.env --import tsx scripts/seed.ts",
     "demo": "npm run seed && npm run dev",
     "demo:chat": "node --import tsx scripts/demo-chat.ts",
+    "diagnose:trip": "node --import tsx scripts/diagnose-trip.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "build": "tsc --project tsconfig.build.json"
