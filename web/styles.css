@@ -54,3 +54,41 @@ footer { margin:36px 4px 0; color:#345d60; font-size:.78rem; line-height:1.8; te
 .footer-leaf { color:#337e34; font-size:1.7rem; vertical-align:middle; }
 @media(max-width:620px) { .topbar { height:74px; padding:0 18px; }.brand { font-size:.95rem; }.live-pill { padding:7px 10px; }.hero { min-height:470px; padding:30px 25px 110px; }.hero::after { background:linear-gradient(180deg,#efffffef 0%,#e5faffed 50%,#e4faff10 100%); }.hero-orb { width:80px; height:80px; right:7%; top:auto; bottom:25px; font-size:2rem; }.landscape { object-position:right; } main { padding:0 16px; }.trip-heading { align-items:start; flex-direction:column; gap:8px; }.candidate { padding:23px; }.cost-row { flex-wrap:wrap; }.cost-row strong { margin-left:auto; }.eyebrow { font-size:.65rem; letter-spacing:.08em; } }
 @media(prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } }
+/* Aero Explorer: luminous scenery, reflective chrome, and layered desktop glass. */
+body { background:linear-gradient(#007acb33,#047eba22 65%,#175f492b),url('/aero-landscape.png') center top / cover fixed; }
+.topbar { height:92px; }
+.brand { color:white; font-size:1.25rem; text-shadow:0 2px 3px #004c83; }
+.brand-mark { width:44px; height:44px; border-radius:50%; font-size:1.4rem; }
+main { border:1px solid #e0faffb3; border-radius:18px; padding:9px; background:linear-gradient(135deg,#e6ffff63,#5aafd540); box-shadow:inset 0 0 0 1px #166a9366,0 25px 70px #003d615e; backdrop-filter:blur(12px); }
+.explorer-bar { min-height:48px; display:flex; align-items:center; gap:14px; padding:0 15px; color:#063e65; text-shadow:0 1px #ffffffc0; font-size:.82rem; }
+.explorer-icon { font-size:1.6rem; color:#007bcb; text-shadow:0 1px white; }
+.explorer-bar a { color:#12486a; text-decoration:none; padding:7px 12px; border:1px solid #ffffff7a; border-radius:5px; background:linear-gradient(#ffffff90,#e1f4ff2a); }
+.explorer-bar a:first-of-type { margin-left:auto; }
+.hero { border-radius:8px; min-height:490px; padding:44px 55px; background:url('/aero-landscape.png') center 48% / cover; box-shadow:inset 0 0 0 1px #00598766,0 2px 4px #04517333; }
+.landscape,.hero-orb { display:none; }
+.hero::after { background:linear-gradient(90deg,#e9ffffd9,#e8ffffa6 30%,#d8faff15 65%); }
+h1 { font-size:clamp(3.8rem,7vw,6rem); font-weight:700; letter-spacing:-.065em; line-height:.96; color:#064d88; text-shadow:0 2px 0 white,0 4px 8px #0d76b32e; }
+h1 span { color:#19763b; }
+.eyebrow { display:inline-block; padding:7px 13px; border:1px solid #ffffffc2; border-radius:999px; background:#ffffff80; font-size:.66rem; }
+.lede { max-width:350px; color:#174965; text-shadow:0 1px #ffffffa1; }
+.aero-button { border-radius:8px; padding:13px 21px; background:linear-gradient(#bfefff,#61c6f1 46%,#007fd1 49%,#0069ad); box-shadow:inset 0 0 0 1px #d8f9ff8c,inset 0 2px 4px white,0 6px 14px #00689752; }
+.feature-dock { display:grid; grid-template-columns:repeat(3,1fr); gap:1px; padding:16px 9px; border-bottom:1px solid #f2ffffaa; background:linear-gradient(#f6ffffe0,#daf3f9bf 49%,#add9e9c2 50%,#e2fbffcf); box-shadow:inset 0 1px white,0 3px 9px #00547826; }
+.feature-dock a { display:flex; gap:13px; align-items:center; color:#134a65; text-decoration:none; padding:8px 16px; border-right:1px solid #8bb6c680; }
+.feature-dock a:last-child { border-right:0; }
+.feature-dock strong { font-size:.87rem; display:block; font-weight:650; }
+.feature-dock small { display:block; font-size:.73rem; margin-top:5px; color:#36586b; line-height:1.4; }
+.dock-icon { flex-shrink:0; display:grid; place-items:center; width:52px; height:52px; border-radius:50%; border:1px solid #cfffff; color:#efffff; font-size:2.3rem; text-shadow:0 2px 3px #03596d; background:radial-gradient(ellipse at 30% 13%,white,#8ff5fe 22%,#12acd6 49%,#0675b5 70%,#62e9e2); box-shadow:inset 0 -3px 5px #01457470,0 5px 7px #055b7938; }
+.leaf-icon { background:radial-gradient(ellipse at 30% 13%,#fff,#d2ffa2 22%,#78c93e 49%,#328c39 70%,#c5f787); }
+.chat-icon { border-radius:16px; font-size:1.9rem; }
+#trip { padding:0 22px 26px; scroll-margin-top:16px; }
+.status { padding:12px 20px; margin:0; background:#e9faffbc; border-bottom:1px solid #82b7c64d; }
+.trip-heading { margin-top:23px; }.trip-heading h2 { color:#104b77; }
+.candidate { border-radius:10px; padding:0 24px 24px; border-color:#d7f6ff; background:linear-gradient(135deg,#ffffffed,#e7f8ffef); box-shadow:inset 0 0 0 1px #6594ad40,0 8px 20px #0040642a; }
+.candidate::before { height:6px; background:linear-gradient(90deg,#087cc7,#75e0fa,#9fd351); }
+.candidate h3 { margin:0 -24px 16px; padding:21px 24px 16px; background:linear-gradient(#f7ffff,#dbf3ff 48%,#c3e7f5 50%,#e5f7ff); border-bottom:1px solid #a5cbdc; text-shadow:0 1px white; color:#064e7d; }
+.costs { padding:14px 13px; background:linear-gradient(#f8feff,#e9f6fb); border:1px solid #bad5e1; border-radius:7px; box-shadow:inset 0 1px white; }
+.cost-row { border-bottom:1px solid #d5e7ee; }.cost-row:last-child { border-bottom:0; }
+.feasibility { box-shadow:inset 0 2px 3px white,0 2px 3px #34723b22; }
+footer { margin:0; padding:22px; background:#e5f9ffd4; border-top:1px solid #ffffffb0; border-radius:0 0 10px 10px; }
+.sky-bubbles { height:1300px; }.sky-bubbles i:nth-child(1) { width:150px; height:150px; top:40px; }
+@media(max-width:760px) { main { margin:0 12px 30px; padding:6px; }.topbar { height:76px; padding:0 20px; }.brand { font-size:1rem; }.hero { min-height:470px; padding:28px; background-position:65% center; }.hero::after { background:linear-gradient(90deg,#e5ffffed,#e8ffff9e 60%,#e8ffff12); } h1 { font-size:3.8rem; }.feature-dock { grid-template-columns:1fr; padding:8px; }.feature-dock a { border-right:0; border-bottom:1px solid #a3c8d0; padding:10px; }.feature-dock a:last-child { border-bottom:0; }.dock-icon { width:40px; height:40px; font-size:1.9rem; }.explorer-bar { gap:8px; padding:4px 8px; flex-wrap:wrap; }.explorer-bar a { padding:5px 8px; }.explorer-bar>span:nth-child(2) { flex:1; }.explorer-bar a:first-of-type { margin-left:0; } #trip { padding:0 9px 20px; }.candidate { padding:0 18px 18px; }.candidate h3 { margin-left:-18px; margin-right:-18px; padding-left:18px; padding-right:18px; } body { background-attachment:scroll; } }
