@@ -20,6 +20,18 @@ function allAccept(state: TripState, candidateId: string): TripState {
   return s;
 }
 
+/** Ask for plans hourly until every open question is on cooldown, then return that last, question-free turn. */
+function askUntilSummary(start: TripState): ApplyResult {
+  let state = start;
+  let result = run(state, 'mason', { kind: 'request_plans' });
+  for (let hour = 1; hour <= 10; hour++) {
+    state = result.state;
+    result = applyCommand(state, command('alex', { kind: 'request_plans' }), { now: new Date(Date.parse(NOW) + hour * 3_600_000).toISOString() });
+    if (result.replies.some((r) => /still waiting on/i.test(r.text))) return result;
+  }
+  return result;
+}
+
 describe('request_plans', () => {
   it('starts research when the trip is ready', () => {
     const result = run(readyState(), 'mason', { kind: 'request_plans' });
@@ -43,6 +55,28 @@ describe('request_plans', () => {
     const second = run(first.state, 'alex', { kind: 'request_plans' });
     const askedAgain = second.replies.some((r) => first.replies.some((f) => f.text === r.text));
     expect(askedAgain).toBe(false);
+  });
+
+  it('says what is still missing instead of staying silent when every question was asked recently', () => {
+    const later = askUntilSummary(createTrip('trip-1', roster));
+    expect(later.rejection?.code).toBe('NOT_READY');
+    expect(later.replies.length).toBeGreaterThan(0);
+    const text = later.replies.map((r) => r.text).join(' ');
+    expect(text).toMatch(/still waiting on/i);
+    expect(text).toMatch(/Mason's budget/);
+    expect(text).toMatch(/Alex's dates/);
+    expect(text).toMatch(/where you're leaving from/);
+    expect(later.replies.every((r) => r.audience.kind === 'group' || r.audience.kind === 'private')).toBe(true);
+  });
+
+  it('never puts a private amount in the summary of what is missing', () => {
+    let state = createTrip('trip-1', roster);
+    state = put(state, 'mason', 'budget', { cents: 123_456 });
+    const later = askUntilSummary(state);
+    const text = later.replies.map((r) => r.text).join(' ');
+    expect(text).not.toMatch(/1,?234/);
+    expect(text).not.toMatch(/Mason's budget/);
+    expect(text).toMatch(/Alex's budget/);
   });
 
   it('is refused for an approved trip', () => {
@@ -329,5 +363,25 @@ describe('purity', () => {
     const snapshot = structuredClone(state);
     setCap(state, 'mason', 18_000);
     expect(state).toEqual(snapshot);
+  });
+});
+
+describe('one turn asks at most two questions', () => {
+  it('holds back further questions when several commands in one message share a timestamp', () => {
+    let state = createTrip('trip-1', roster);
+    const asked: string[] = [];
+    for (const field of ['preferences', 'duration', 'transport'] as const) {
+      const value = field === 'preferences' ? { items: ['hiking'] } : field === 'duration' ? { nights: 2 } : { mode: 'car', vehicleAvailable: true };
+      const result = run(state, 'mason', { kind: 'update_constraint', update: update('mason', field, value as never) });
+      state = result.state;
+      asked.push(...result.replies.map((r) => r.text));
+    }
+    expect(asked.length).toBeLessThanOrEqual(2);
+  });
+
+  it('asks again on a later turn', () => {
+    const first = run(createTrip('trip-1', roster), 'mason', { kind: 'update_constraint', update: update('mason', 'preferences', { items: ['hiking'] }) });
+    const second = applyCommand(first.state, command('mason', { kind: 'update_constraint', update: update('mason', 'duration', { nights: 2 }) }), { now: '2026-10-10T12:05:00.000Z' });
+    expect(second.replies.length).toBeGreaterThan(0);
   });
 });

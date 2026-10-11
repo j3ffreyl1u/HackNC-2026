@@ -58,7 +58,7 @@ function evaluate(state: TripState): Evaluation {
   }
   if (participants(state).length < MIN_PARTICIPANTS) {
     missing.push('roster');
-    if (waiting.length === 0) group('people', 'roster', 'Who is coming on the trip? I need at least two people to plan with.');
+    if (waiting.length === 0) group('people', 'roster', "I need at least two people to plan with. Ask whoever's missing to text me, and I'll get them added.");
   }
 
   const ids = participantIds(state);
@@ -67,7 +67,7 @@ function evaluate(state: TripState): Evaluation {
   const origin = resolveGroupField(state, 'origin');
   if (origin.status === 'unset') {
     missing.push('origin');
-    group('basics', 'origin', origin.tentativeOnly ? 'Just to confirm: is that where you will all be leaving from?' : 'Where will you be leaving from?');
+    group('basics', 'origin', origin.tentativeOnly ? 'Just to confirm: is that where you will all be leaving from?' : 'Where are you all leaving from?');
   } else if (origin.status === 'conflict') {
     conflicts.push('origin');
     const options = origin.positions.map((p) => `${(p.value as ConstraintValues['origin']).city} (${displayName(state, p.memberId)})`);
@@ -77,7 +77,7 @@ function evaluate(state: TripState): Evaluation {
   const duration = resolveGroupField(state, 'duration');
   if (duration.status === 'unset') {
     missing.push('duration');
-    group('basics', 'duration', duration.tentativeOnly ? 'Just to confirm: how many nights is the trip?' : 'How many nights should the trip be?');
+    group('basics', 'duration', duration.tentativeOnly ? 'Just to confirm: how many nights is the trip?' : 'How many nights are you thinking?');
   } else if (duration.status === 'conflict') {
     conflicts.push('duration');
     const options = duration.positions.map((p) => `${nightsText((p.value as ConstraintValues['duration']).nights)} (${displayName(state, p.memberId)})`);
@@ -87,7 +87,7 @@ function evaluate(state: TripState): Evaluation {
   const region = resolveGroupField(state, 'region');
   if (region.status === 'unset') {
     missing.push('region');
-    group('basics', 'region', 'Do you have a destination in mind, or how long are you willing to drive?');
+    group('basics', 'region', 'Got a place in mind, or how far are you up for driving?');
   } else if (region.status === 'conflict') {
     conflicts.push('region');
     group('basics', 'conflict:region', 'I have different ideas for where to go or how far to drive. Which one should I plan around?');
@@ -96,7 +96,7 @@ function evaluate(state: TripState): Evaluation {
   const transport = resolveGroupField(state, 'transport');
   if (transport.status === 'unset') {
     missing.push('transport');
-    group('basics', 'transport', 'Does anyone have a car for the trip?');
+    group('basics', 'transport', 'Does anyone have a car we can take?');
   } else if (transport.status === 'conflict') {
     conflicts.push('transport');
     group('basics', 'conflict:transport', 'I have conflicting answers about whether you have a car. Does anyone have one for the trip?');
@@ -181,4 +181,30 @@ export function checkReadiness(state: TripState, options: ReadinessOptions = {})
 /** The keys of every question that is still open, used to forget answered ones. */
 export function openQuestionKeys(state: TripState): Set<string> {
   return new Set(evaluate(state).candidates.map((c) => c.question.key));
+}
+
+/**
+ * A plain sentence on what the plan is still waiting for, with no values in it, only who and what. Used when
+ * every question was already asked recently, so a request for options is never answered with silence.
+ */
+export function describeGaps(state: TripState, result: Pick<ReadinessResult, 'missing' | 'conflicts'>): string {
+  const items: string[] = [];
+  const perPerson = (key: string, label: (name: string) => string) => {
+    const ids = result.missing.filter((m) => m.startsWith(`${key}:`)).map((m) => m.slice(key.length + 1));
+    return ids.map((id) => label(displayName(state, id)));
+  };
+  const consent = result.missing.filter((m) => m.startsWith('consent:')).map((m) => m.slice('consent:'.length));
+  if (consent.length > 0) items.push(`${names(state, consent)} to agree to plan with me`);
+  if (result.missing.includes('roster')) items.push('who else is coming');
+  items.push(...perPerson('budget', (n) => `${n}'s budget`));
+  items.push(...perPerson('availability', (n) => `${n}'s dates`));
+  items.push(...perPerson('preferences', (n) => `${n}'s preferences`));
+  if (result.missing.includes('origin')) items.push("where you're leaving from");
+  if (result.missing.includes('duration')) items.push('how many nights');
+  if (result.missing.includes('region')) items.push('where you want to go');
+  if (result.missing.includes('transport') || result.missing.includes('vehicle')) items.push('whether someone has a car');
+  const parts = items.length > 1 ? `${items.slice(0, -1).join(', ')} and ${items.at(-1)}` : (items[0] ?? '');
+  const tail = result.conflicts.length > 0 ? 'Some answers also don\'t match yet, so I need those sorted out.' : '';
+  if (parts === '') return tail === '' ? "I'm not ready to plan yet." : `I'm not ready to plan yet. ${tail}`;
+  return `I'm still waiting on ${parts}.${tail === '' ? '' : ` ${tail}`}`;
 }
