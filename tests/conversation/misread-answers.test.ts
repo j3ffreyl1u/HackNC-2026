@@ -47,3 +47,15 @@ describe('more ways to say a budget and dates', () => {
     expect(values(t)).toEqual([{ field: 'availability', value: [{ start: '2026-11-14', end: '2026-11-16' }] }]);
   });
 });
+
+describe('a budget split by category', () => {
+  it.each([
+    'my maximum total is $500 for food and $800 for travel',
+    'I can spend $500 on food and $800 on travel',
+    'my maxium total is $500 for food and $800 for travel (will splitting my costs change the calculations?)',
+  ])('"%s" adds up to $1,300 and waits for a confirmation', (t) => {
+    const found = extractConstraints(t, REF, 'budget');
+    expect(found.map((e) => e.value)).toEqual([{ field: 'budget', value: 130000 }]);
+    expect(found[0]!.hedged).toBe(true);
+  });
+});

@@ -64,13 +64,19 @@ function budgetFrom(sentence: string): number | null {
 const TRAILING_REQUEST = /[,;]\s*(?:and\s+|so\s+)?(?:(?:can|could|would|will)\s+you|please|pls|what|how|where|when)\b[^,;]*$/i;
 
 function extractSentence(s: string, reference: string, pending: ConstraintField | undefined, out: Extracted[]): void {
+  s = s.replace(/\s*\([^()]*\?\s*\)/g, '');   // a question tucked in brackets is not part of the facts
   const hedged = HEDGE.test(s.replace(TRAILING_REQUEST, ''));
   const push = (value: ConstraintValue, extra: Partial<Extracted> = {}) => out.push({ value, hedged, ...extra });
   let m: RegExpExecArray | null;
   let visited: string | undefined;   // a place named as "I'd like to visit Boone": that is where to go, not something they like
 
-  const cents = budgetFrom(s);
-  if (cents !== null) push({ field: 'budget', value: cents });
+  // "$500 for food and $800 for travel": split amounts add up to one total, but they are not a firm answer until the person confirms the sum.
+  const split = [...s.matchAll(/\$\s*([\d,]+(?:\.\d{1,2})?)\s*(?:dollars|bucks)?\s+(?:for|on)\s+(?:the\s+)?[a-z]+/gi)].map((x) => parseDollarsToCents(x[1]!));
+  if (split.length >= 2 && split.every((c): c is number => c !== null)) push({ field: 'budget', value: split.reduce((a, b) => a + b, 0) }, { hedged: true });
+  else {
+    const cents = budgetFrom(s);
+    if (cents !== null) push({ field: 'budget', value: cents });
+  }
 
   const windows = parseDateWindows(s, reference);
   // A message that is only a date range ("11/14-11/16", "Nov 14th - 16th") answers "when are you free?" even without a cue word.
