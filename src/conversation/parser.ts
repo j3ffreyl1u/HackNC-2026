@@ -34,7 +34,7 @@ const NO = /^(no|nope|nah|decline|i decline|not for me|not now|no thanks|pass)[.
 const WRONG = /^(?:(?:no|nope|nah)[ ,]+)?(?:that'?s|that is|it'?s|it is|this is)?\s*(?:not right|not correct|wrong|incorrect|not what i (?:said|meant))[.!]*$/i;
 const ID = '([A-Za-z0-9][\\w:.\\-]*)';
 const REQUEST_PLANS = /^(?:(?:please|pls|ok|okay|alright|so)[,\s]+)?(?:(?:can|could) you\s+)?(?:(?:show|give|get|send)\s+(?:me\s+|us\s+)?(?:the\s+|some\s+|a few\s+|a couple of\s+|a couple\s+)?(?:trip\s+)?(?:options|plans|proposals|itineraries|ideas)|(?:pull|put) together\s+(?:a\s+|some\s+)?(?:(?:few|couple of|couple)\s+)?(?:trip\s+)?(?:options|plans|ideas)(?:\s+for us)?|(?:plan|research)\s+(?:it|this|the trip|our trip)|find\s+(?:us\s+)?(?:trip\s+)?options|what are (?:our|the) options|(?:(?:let'?s|lets|can we|could we|we should|i want to|we want to|i'?d like to)\s+)?(?:start|begin|get started)(?:\s+(?:on\s+)?(?:planning|plan))?(?:\s+(?:a|the|our|this))?(?:\s+(?:road\s+)?trip)?|(?:let'?s|lets|can we|could we|we should|i want to|we want to|i'?d like to)\s+plan(?:\s+(?:a|the|our|this))?(?:\s+(?:road\s+)?trip)?(?:\s+together)?)$/i;
-const STATUS = /^(?:(?:so\s+)?(?:what'?s|whats|what is)\s+(?:happening|going on|up with (?:the |our )?(?:trip|plan))(?:\s+(?:right now|now|so far|with (?:the |our )?(?:trip|plan)))?|(?:so\s+)?(?:what'?s|whats|how'?s|hows)\s+(?:the\s+)?(?:status|progress|plan|it going)(?:\s+(?:so far|looking|going))?|where (?:are we|do we stand)(?:\s+(?:at|on this))?|what do you have(?:\s+so far)?|any (?:updates?|news|progress)|status(?: update)?)$/i;
+const STATUS = /^(?:(?:so\s+)?(?:what'?s|whats|what is)\s+(?:happening|going on|up with (?:the |our )?(?:trip|plan))(?:\s+(?:right now|now|so far|with (?:the |our )?(?:trip|plan)))?|(?:so\s+)?(?:what'?s|whats|how'?s|hows)\s+(?:the\s+)?(?:status|progress|plan|it going)(?:\s+(?:so far|looking|going))?|where (?:are we|do we stand)(?:\s+(?:at|on this))?|what do you have(?:\s+so far)?|any (?:updates?|news|progress)|what'?s next|whats next|what now|now what|what happened|status(?: update)?)$/i;
 const ABOUT_SOMEONE = /^(?:so\s+)?(?:what(?:'s|s| did| has| does| is)\s+(\w+)\s+(?:say|said|tell you|told you|put|give you|gave you|send|sent|want|think|thinking|saying)|(?:did|has)\s+(\w+)\s+(?:answer|reply|respond|text|say anything|send anything|tell you anything)|(?:any word from|have you heard from|heard from|anything from)\s+(\w+)|how(?:'s| is)\s+(\w+)\s+doing|how(?:'s| is)\s+(\w+?)(?:'s|s)?\s+(?:planning|progress)(?:\s+going)?|(?:is|has|did)\s+(\w+)\s+(?:still\s+)?(?:planning|done|finished|finish|ready|all set|set|in|on board|there|responded|replied)(?:\s+(?:planning|yet|so far))?)(?:\s+(?:yet|so far))?$/i;
 const GREETING = /^(?:hi|hey|hello|yo|hiya|good (?:morning|afternoon|evening))\b[,!.\s]*/i;
 const REQUEST_FUNDING = /^(?:request|start|set up|send)\s+(?:the\s+)?(?:contributions?|funding|contribution requests)$/i;
@@ -609,7 +609,7 @@ export function createParser(deps: ConversationDependencies) {
         ? `Still waiting on ${list(waiting)}. Say "show us some options" and I'll nudge them and check what else is open.`
         : `I have what I need from the others. Say "show us some options" when you're ready, and I'll check what's still open.`, 'status-gathering', true);
     }
-    if (/^(?:help(?:\s+me)?|menu|commands|what can i say|how does this work)[?!.\s]*$/i.test(plain) && (msg.visibility === 'private' || trip.mode === 'direct')) {
+    if (/^(?:help(?:\s+me)?|menu|commands|what can i say|how does this work|what (?:can|do) (?:you|u) (?:do|know)|what are you|who are you|what is this|what'?s this|how do i (?:use|start)(?: this)?)[?!.\s]*$/i.test(plain) && (msg.visibility === 'private' || trip.mode === 'direct')) {
       return reply(msg, 'Happy to help. Tell me your budget, free dates and what you\'re into, say "show us some options" when you\'re ready, or ask me about the trip. You can also say things like "ask Mason if he has a car".', 'help-menu', true);
     }
     if (REQUEST_PLANS.test(plain)) return one(msg, ctx, { kind: 'request_plans' });
@@ -657,6 +657,14 @@ export function createParser(deps: ConversationDependencies) {
     budget: "What's your maximum total for this trip, including food and travel?",
     availability: 'Which dates could you do for the trip?',
     preferences: 'What would you like out of this trip? "No preference" is a fine answer.',
+  };
+
+  /** Not understood: when a question is open, put that question back (with an example) instead of the generic menu. */
+  const EXAMPLE: Partial<Record<string, string>> = { budget: ' A number is fine, like "$200".', availability: ' Dates like "Nov 14-16" work.', duration: ' Like "2 nights".', origin: ' A city, like "Raleigh".' };
+  const helpFor = (ctx: TripConversationContext): string => {
+    const field = ctx.pendingQuestion?.field;
+    const open = field ? REASK[field] : undefined;
+    return open ? `Hmm, I didn't quite catch that. ${open}${EXAMPLE[field!] ?? ''}` : HELP;
   };
 
   /** Hellos, thanks and filler. Needs no model: warm in a one-on-one chat, silent in a group. Never a place, a date or a number. */
@@ -776,7 +784,7 @@ export function createParser(deps: ConversationDependencies) {
     if (!extracted.length && (msg.visibility === 'private' || trip.mode === 'direct') && /^(?:where (?:i|we) (?:want|wanna|would like|'d like) to go|where (?:i|we)(?:'m| am|'re| are) (?:leaving|going)(?: from)?|the (?:destination|origin)|(?:to|from) (?:go|there)|going there|leaving from|that'?s (?:where|the place))[.!?]*$/i.test(text)) {
       return reply(msg, 'Which place do you mean? Say it with the city, like "going to Boone" or "leaving from Raleigh".', 'place-which-missing', true);
     }
-    if (!extracted.length && (msg.visibility === 'private' || trip.mode === 'direct') && NOT_A_WORD_PLACE.test(text)) return reply(msg, HELP, 'help-word', true);
+    if (!extracted.length && (msg.visibility === 'private' || trip.mode === 'direct') && NOT_A_WORD_PLACE.test(text)) return reply(msg, helpFor(ctx), 'help-word', true);
     if (!extracted.length && (msg.visibility === 'private' || trip.mode === 'direct') && BARE_PLACE.test(text) && !/\b(?:i|we|my|you|yes|no)\b/i.test(text)) {
       const place = text.replace(/[.!]+$/, '').trim();
       return reply(msg, `Is ${place} where you're leaving from, or where you want to go? You can say "leaving from ${place}" or "going to ${place}".`, 'place-which', true);
@@ -831,13 +839,13 @@ export function createParser(deps: ConversationDependencies) {
         // is addressed to us, so staying silent just looks broken.
         if (msg.visibility === 'private' || trip.mode === 'direct') noteMiss('help', msg, ctx);
         return msg.visibility === 'private' || trip.mode === 'direct'
-          ? reply(msg, HELP, 'help')
+          ? reply(msg, helpFor(ctx), 'help')
           : { kind: 'ignored', reason: 'not addressed to the assistant' };
       case 'chat': {
         if (!(msg.visibility === 'private' || trip.mode === 'direct')) return { kind: 'ignored', reason: 'casual chat in a group' };
         const answer = safeChatAnswer(intent.answer, `${facts.join(' ')} ${handoffText}`);
         if (!answer) noteMiss('unclear', msg, ctx);
-        return reply(msg, answer ?? HELP, answer ? 'chat' : 'help', true);
+        return reply(msg, answer ?? helpFor(ctx), answer ? 'chat' : 'help', true);
       }
       case 'unavailable':
         // Same rule as an unclear message: in a group, friends talking are none of our business even when the service is down.
@@ -849,7 +857,7 @@ export function createParser(deps: ConversationDependencies) {
         // In a group, an unclear message is usually just friends talking: stay quiet there.
         if (msg.visibility === 'private' || trip.mode === 'direct') noteMiss('help', msg, ctx);
         return msg.visibility === 'private' || trip.mode === 'direct'
-          ? reply(msg, HELP, 'help')
+          ? reply(msg, helpFor(ctx), 'help')
           : { kind: 'ignored', reason: 'unclear group message' };
       case 'constraints':
         return fromConstraints(msg, ctx, text, intent.items.map((value) => ({ value, hedged })));

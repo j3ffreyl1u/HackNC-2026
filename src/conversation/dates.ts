@@ -94,7 +94,7 @@ export function parseDateWindows(input: string, reference: string): ParsedWindow
     if (em !== undefined && ed !== undefined) {
       if (em < 1 || em > 12) return;
       end = iso(y, em, ed);
-      if (isValidIsoDate(end) && end < start) end = iso(y + 1, em, ed);
+      if (isValidIsoDate(end) && end < start) { if (em === sm) return; end = iso(y + 1, em, ed); }   // "Nov 17-14" is a typo, not a year
       if (!isValidIsoDate(end)) return;
     }
     out.push({ start, end });

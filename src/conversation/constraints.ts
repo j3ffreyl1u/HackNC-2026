@@ -54,7 +54,7 @@ export const properCase = (text: string): string => (text === text.toLowerCase()
 const CORRECTION = /^(?:oh\s+|um+\s+|hmm+\s+)?(?:wait\b|actually\b|scratch that|i mean\b|sorry\b|oops\b|correction\b|make that\b|no,?\s+(?:wait|make|i mean|actually))/i;
 /** "not into breweries anymore", "drop the museums", "take hiking off": the person is taking a liking back, not adding one. */
 const TAKE_BACK_PHRASE = /^(?:(?:actually|wait|oh|um|hmm|ok(?:ay)?|so)[,\s]+)*(?:(?:i(?:'m| am)\s+)?(?:not into|don'?t (?:like|want)|do not (?:like|want))\s+(.+?)\s+(?:anymore|any more|now)|(?:i(?:'m| am)\s+)?no longer (?:into|like|want|interested in)\s+(.+)|(?:drop|remove|forget|scratch|skip)\s+(?:the\s+)?(.+?)(?:\s+from (?:my|the) (?:list|likes))?|take\s+(.+?)\s+off(?:\s+(?:my|the) list)?|changed my mind about\s+(.+))[.!]*$/i;
-const NOT_ORIGIN = /^(?:there|here|home|it|that|this|them|where|somewhere|anywhere)$/i;
+const NOT_ORIGIN = /^(?:there|here|home|it|that|this|them|where|somewhere|anywhere|nowhere|undo|back|redo|change|nothing|everywhere|wherever|nc|north carolina)$/i;
 /** A sentence that is a question ("how long is the drive to Asheville") is not a statement of where we are going. */
 const QUESTION_START = /^(?:how|what|what's|whats|where|when|which|who|why|is|are|does|do|can|could|will|would|should)\b/i;
 
@@ -198,9 +198,13 @@ function pendingAnswer(text: string, reference: string, pending: ConstraintField
   let m: RegExpExecArray | null;
   switch (pending) {
     case 'budget': {
-      const bare = t.replace(new RegExp(HEDGE.source, 'gi'), ' ').replace(/\s+/g, ' ').trim();
-      const cents = (m = BARE_AMOUNT.exec(bare)) ? parseDollarsToCents(m[1]!) : null;
-      return cents === null ? null : { value: { field: 'budget', value: cents }, hedged };
+      // "i have like 150 bucks", "about 150", "150ish", "$1.5k": a number with filler around it still answers the budget question.
+      const loose = /\b(?:about|around|roughly|approximately|approx|like|only|just|up to|at most|tops)\b|\b(?:i|we)(?:'ve| have)?(?: got)?\b|\bish\b/gi;
+      const bare = t.replace(new RegExp(HEDGE.source, 'gi'), ' ').replace(/(?<=\d)ish\b/gi, '').replace(loose, ' ').replace(/\s+/g, ' ').trim();
+      const k = /^\$?\s*(\d+(?:\.\d)?)\s*k[.!]*$/i.exec(bare);
+      const cents = k ? Math.round(Number(k[1]) * 1000) * 100 : (m = BARE_AMOUNT.exec(bare)) ? parseDollarsToCents(m[1]!) : null;
+      const looseHedge = hedged || bare !== t.replace(/\s+/g, ' ').trim() && /\b(?:about|around|roughly|approximately|approx|like|ish)\b|\d\s*ish/i.test(t);
+      return cents === null ? null : { value: { field: 'budget', value: cents }, hedged: looseHedge };
     }
     case 'duration':
       return (m = /^(\d{1,2})\s*(?:nights?)?[.!]*$/i.exec(t)) && Number(m[1]) >= 1 && Number(m[1]) <= 30 ? { value: { field: 'duration', value: Number(m[1]) }, hedged } : null;
@@ -208,7 +212,7 @@ function pendingAnswer(text: string, reference: string, pending: ConstraintField
     case 'region': {
       // Only something that looks like a place: a few words, no pronouns/verbs ("Mason has a car for the trip" is not a destination).
       const place = t.replace(/[.!]+$/, '').replace(/^(?:(?:i'?m\s+)?(?:leaving\s+|coming\s+)?from\s+)+/i, '');   // "from Raleigh" is Raleigh
-      const looksLikePlace = /^[A-Za-z][A-Za-z ,.'-]{1,40}$/.test(place) && place.split(/\s+/).length <= 4 && !NOT_A_PLACE.test(place) && !NOT_A_PLACE_ANSWER.test(place) && parseDateWindows(place, reference).length === 0;
+      const looksLikePlace = /^[A-Za-z][A-Za-z ,.'-]{1,40}$/.test(place) && place.split(/\s+/).length <= 4 && !NOT_A_PLACE.test(place) && !NOT_A_PLACE_ANSWER.test(place) && !(pending === 'origin' && NOT_ORIGIN.test(place)) && parseDateWindows(place, reference).length === 0;
       return looksLikePlace && !hedged ? { value: { field: pending, value: properCase(place) }, hedged } : null;
     }
     case 'preferences':
