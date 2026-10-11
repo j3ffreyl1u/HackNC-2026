@@ -31,11 +31,11 @@ These are proposed entries, not a declaration of eligibility. Confirm the curren
 | Checked | Evidence and limits |
 | --- | --- |
 | Offline three-person trip lifecycle | Real conversation, planning and SQLite modules produce $190/$180 synthetic options; lowering one private cap to $180 invalidates acceptance and removes the expensive option; revision 12 is approved. All costs, dates and research sources are fixtures. |
-| Shared-spending page logic | Actual offline `empty`, `sample`, `uneven`, `even` and tracking-off API responses checked against the page renderer using a DOM boundary harness. An actual stopped-server network failure clears stale amounts. This is not browser layout verification. |
+| Shared-spending page logic | Actual offline `empty`, `sample`, `uneven`, `even` and tracking-off API responses checked against the page renderer using a DOM boundary harness. An actual stopped-server network failure clears stale amounts. Follow-up native Chrome screenshots inspected the approved page at 1440x1000 and 390x844, sample mobile spending rows, and desktop empty/uneven/even panels. Tracking-off/outage checks remain automated; browser control failed before those checks. |
 | Calendar download | Approved offline endpoint returns HTTP 200, `text/calendar` and three events. Link visibility checked for every status. Import into a phone calendar is unverified. |
 | Live integration evidence reported by teammates | `docs/conversation.md` records separate DM, reaction and Gemini probes. `docs/research.md` records separate Gemini and one SerpApi Boone search. These are not verification of the final combined build. |
 
-**Still unverified:** the final flow on real phones; per-friend Nessie provisioning, readback and page/chat together; the changed page at 1440x1000 and 390x844 or on a real phone; a tunnel opened on a phone; calendar-app import; live booking availability and checkout prices; an actual community-source result. Do not replace these gaps with a mocked success claim.
+**Still unverified:** the final flow on real phones; per-friend Nessie provisioning, readback and page/chat together; whole-document overflow, expanded sources and keyboard/accessibility checks; the page on a real phone; a tunnel opened on a phone; calendar-app import; live booking availability and checkout prices; an actual community-source result. Do not replace these gaps with a mocked success claim.
 
 ## Recording and judging
 
