@@ -184,7 +184,9 @@ describe('requests, guide questions, and the model', () => {
   it('maps plain requests without calling the model', async () => {
     const { service, model } = setup();
     expect(cmds(await service.parseInbound(msg({ text: 'show us the options' })))[0]!.action.kind).toBe('request_plans');
-    expect(cmds(await service.parseInbound(msg({ text: 'can you show me the plans?' })))[0]!.action.kind).toBe('request_plans');
+    for (const t of ['can you show me the plans?', 'Can you show us some options?', 'show us a few ideas', 'can you pull together a couple options for us', 'give us some trip options']) {
+      expect(cmds(await service.parseInbound(msg({ text: t })))[0]?.action.kind, t).toBe('request_plans');
+    }
     expect(cmds(await service.parseInbound(msg({ text: 'guide: what if it rains on Saturday?' })))[0]!.action).toEqual({ kind: 'ask_guide', question: 'what if it rains on Saturday?' });
     expect(cmds(await service.parseInbound(msg({ text: 'request contributions' })))[0]!.action.kind).toBe('request_funding');
     expect(model.calls).toHaveLength(0);

@@ -67,6 +67,8 @@ describe('other fields', () => {
   });
   it('preferences, must-dos, dietary', () => {
     expect(one('I like hiking and a town visit', 'preferences')?.value).toMatchObject({ value: ['hiking', 'town visit'] });
+    expect(one('I want to be able to visit a bunch of historical places.', 'preferences')?.value).toMatchObject({ value: ['historical places'] });
+    expect(one("I'd like to check out some small towns", 'preferences')?.value).toMatchObject({ value: ['small towns'] });
     expect(one('I like that idea', 'preferences')).toBeUndefined();
     expect(one("no preference, I'm easy", 'preferences')?.value).toMatchObject({ value: ['no preference'] });
     expect(one('must see a waterfall', 'must_dos')?.value).toMatchObject({ value: ['waterfall'] });

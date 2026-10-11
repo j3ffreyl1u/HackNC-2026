@@ -34,7 +34,7 @@ export function parseMaxTravelMinutes(text: string): number | undefined {
 const NOT_A_PLACE = /\b(i|we|you|he|she|they|has|have|had|is|are|was|am|can|will|would|want|like|need|car|trip|my|our|it|not|but|with|for|please|thanks|yes|no)\b/i;
 const THIRD_PERSON_VEHICLE = /\b(?:[Ww]e|[Ss]omeone|[Ss]omebody|[Aa]nyone|[Ee]veryone|[A-Z][a-z]+)\s+(?:has|have|got)\s+(?:a\s+|an\s+|the\s+)?(?:car|vehicle|truck|suv)\b/;
 
-const clean = (s: string) => s.trim().replace(/^(?:a|an|the|some)\s+/i, '').replace(/[.!,;]+$/, '').trim();
+const clean = (s: string) => s.trim().replace(/^(?:(?:a bunch of|a lot of|lots of|a few|some|a|an|the)\s+)+/i, '').replace(/[.!,;]+$/, '').trim();
 const GENERIC = /^(?:that|it|this|those|these|them|the idea|to|doing)\b/i;
 
 function splitItems(raw: string): string[] {
@@ -85,7 +85,7 @@ function extractSentence(s: string, reference: string, pending: ConstraintField 
 
   if (/\b(?:no (?:real )?preferences?|don'?t (?:really )?care|i'?m (?:easy|flexible|open to anything))\b/i.test(s)) {
     push({ field: 'preferences', value: ['no preference'] });
-  } else if ((m = /\b(?:i|we)\s+(?:really\s+)?(?:prefer|like|love|enjoy|(?:am|'m)\s+into|want to (?:do|go|try|see))\s+(.+)$/i.exec(s))) {
+  } else if ((m = /\b(?:i|we)(?:\s+really)?(?:\s+|(?='d\s))(?:prefer|like|love|enjoy|(?:am|'m)\s+into|(?:want|'d like|would like) to (?:be able to )?(?:do|go to|go|try|see|visit|explore|check out))\s+(.+)$/i.exec(s))) {
     const items = splitItems(m[1]!.split(/\b(?:but|so|because)\b/i)[0]!);
     if (items.length) push({ field: 'preferences', value: items });
   }
