@@ -548,7 +548,7 @@ function basicsChangeNotes(before: TripState, after: TripState, actorId: string)
   for (const b of now) {
     const a = was.find((x) => x.field === b.field);
     if (!a || JSON.stringify(a) === JSON.stringify(b) || open(b.field) || wasOpen(b.field)) continue;   // new, unchanged, or already being sorted out as a disagreement
-    const ask = " Shout if that doesn't work for you.";
+    const ask = " Does that still work for you?";
     if (b.field === 'origin') notes.push(`${who} changed the starting point to ${b.value}.${ask}`);
     else if (b.field === 'duration') notes.push(`${who} changed the trip to ${b.value} night${b.value === 1 ? '' : 's'}.${ask}`);
     else if (b.field === 'region') notes.push(`${who} changed the place to ${b.value}.${ask}`);

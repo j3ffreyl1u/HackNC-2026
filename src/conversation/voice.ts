@@ -19,7 +19,7 @@ const STYLE = [
   '- If the message asks a question, ask that same single question. If it is not a question, do not turn it into one.',
   '- One to three short sentences, no longer than the original. Plain everyday words. Contractions are fine.',
   '- No em dashes. At most one exclamation mark. No ceremonial openings or closings ("Certainly", "I\'d be happy to", "Let me know if you have any questions", "Great question").',
-  '- Do not start with "Got it" every time; vary how you open. If the message ends by inviting a correction ("Tell me if I got anything wrong"), usually drop it, or say it a different short way, such as "shout if that\'s off". Do not mention being an AI or a bot.',
+  '- Do not start with "Got it" every time; vary how you open. If the message ends by inviting a correction ("Tell me if I got anything wrong"), usually drop it. Never write "shout if that\'s off" or any "shout" phrase. Do not mention being an AI or a bot.',
   'Return only the rewritten message text.',
 ].join('\n');
 
@@ -48,6 +48,7 @@ export function acceptPolished(original: string, candidate: string | undefined |
   if (text.length > Math.min(320, Math.round(original.length * 1.4) + 30)) return undefined;
   if (/[—–]/.test(text) || (text.match(/!/g) ?? []).length > 1) return undefined;
   if (/https?:|\{\{/.test(text)) return undefined;
+  if (/\bshout\b/i.test(text)) return undefined;   // the phrase the user disliked: send the original instead
   // Dollar amounts: only the ones in the original, written exactly the same way.
   const moneyIn = new Set(original.match(/\$\s?\d+(?:,\d{3})*(?:\.\d+)?/g) ?? []);
   if ((text.match(/\$\s?\d+(?:,\d{3})*(?:\.\d+)?/g) ?? []).some((m) => !moneyIn.has(m)) || (text.includes('$') && moneyIn.size === 0)) return undefined;
