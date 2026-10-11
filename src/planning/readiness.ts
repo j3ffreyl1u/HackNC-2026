@@ -122,7 +122,7 @@ function evaluate(state: TripState): Evaluation {
     group('basics', 'origin', origin.tentativeOnly ? Q.originConfirm : Q.origin);
   } else if (origin.status === 'conflict') {
     conflicts.push('origin');
-    const options = origin.positions.map((p) => `${displayName(state, p.memberId)} is leaving from ${(p.value as ConstraintValues['origin']).city}`);
+    const options = origin.positions.map((p) => `${displayName(state, p.memberId)} is leaving from ${titleCase((p.value as ConstraintValues['origin']).city)}`);
     group('basics', 'conflict:origin', `${options.join(' and ')}. Which city should I plan the trip from?`);
   }
 

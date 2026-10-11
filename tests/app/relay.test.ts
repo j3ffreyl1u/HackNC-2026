@@ -482,3 +482,19 @@ describe('the order of the basics questions', () => {
     await t.stop();
   });
 });
+
+describe('final-merge fixes', () => {
+  it('"I\'m in" plus their own facts keeps both, and "mine" or "the first one" is never saved as a city', async () => {
+    const t = await live();
+    await t.say(JEFF, "leaving from Chapel Hill, flying, 2 nights, Miami, my max is 1500, free Nov 10-14, I like the beach");
+    const mason = await t.say(MASON, "I'm in, my max is 1200, free Nov 10-14, I like food");
+    expect(mason.mason.join(' ')).toMatch(/your max is \$1,200/);
+    expect(mason.mason.join(' ')).toMatch(/you're free Nov 10-14/);
+    const clash = await t.say(MASON, 'from durham');
+    expect([...clash.jeff, ...clash.mason].join(' ')).toMatch(/Mason is leaving from Durham/);
+    for (const text of ['mine', 'the first one']) {
+      expect((await t.say(JEFF, text)).jeff.join(' '), text).not.toMatch(/leaving from (?:Mine|The First One)/i);
+    }
+    await t.stop();
+  });
+});

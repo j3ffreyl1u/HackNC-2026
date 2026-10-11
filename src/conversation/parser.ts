@@ -780,7 +780,12 @@ export function createParser(deps: ConversationDependencies) {
     }
     // "Does the plan so far work for you?": yes adopts it as their own answer, no asks what they would change.
     if (ctx.confirmBasics?.length && ctx.actionable.length === 0 && !ctx.pendingConfirmation) {
-      if (YES.test(text) || YES.test(plain) || BASICS_OK.test(plain)) return fromConstraints(msg, ctx, text, ctx.confirmBasics.map((value) => ({ value, hedged: false })));
+      if (YES.test(text) || YES.test(plain) || BASICS_OK.test(plain)) {
+        // "I'm in, my max is 800, free Nov 10-14": agreeing and adding their own facts in one message keeps both.
+        const own = BASICS_OK.test(plain) && !YES.test(plain) ? extractWithCoverage(text, localReference(msg.occurredAt, trip.timezone)).items : [];
+        const taken = new Set(own.map((e) => e.value.field));
+        return fromConstraints(msg, ctx, text, [...ctx.confirmBasics.filter((b) => !taken.has(b.field)).map((value) => ({ value, hedged: false })), ...own]);
+      }
       if (NO.test(text) || NO.test(plain)) return reply(msg, `No problem, what would you change? Something like "leaving from Raleigh", "3 nights" or "somewhere closer" works.`, 'basics-no', true);
     }
     // A bare yes/no to "does anyone have a car?" is the answer, not a confirmation of something else.
