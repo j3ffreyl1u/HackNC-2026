@@ -1,11 +1,17 @@
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
+import { toPlanningState } from '../app/planning-adapter.js';
 import type { TripState } from '../contracts/index.js';
 import { createNessieReader } from './nessie-reader.js';
-import { depositTag } from '../planning/funding.js';
+import { depositTag, planContributions } from '../planning/funding.js';
 import { createFundService, type FundService } from './service.js';
 
 /** A fund that can also take a simulated deposit. Only the sandbox and the offline mock implement it; the app never moves real money. */
-export type PayableFundService = FundService & { deposit?(memberId: string, dollars: number, revision: number): Promise<void> };
+export type PayableFundService = FundService & {
+  deposit?(memberId: string, dollars: number, revision: number): Promise<void>;
+  /** Forget the sandbox account (a fresh start). The next approved plan gets a new one. */
+  forget?(): Promise<void>;
+};
 
 export interface BoundFundOptions {
   /** JSON written by `npm run fund:sim -- provision`: { accountId, revision }. Read on every call, so setting up an account needs no restart. */
@@ -41,6 +47,46 @@ export function createBoundFundService(options: BoundFundOptions): PayableFundSe
     return current.service;
   };
   const notReady = (state: TripState) => ({ status: 'not_ready' as const, reason: 'The sandbox fund account is not set up for this approved plan yet.', mode: 'nessie' as const, revision: state.revision });
+  const sandboxUrl = (path: string) => {
+    const base = new URL(options.baseUrl);
+    const url = new URL(`${base.pathname.replace(/\/$/, '')}/${path}`, base.origin);
+    url.searchParams.set('key', options.apiKey);
+    return url;
+  };
+  const create = async (path: string, body: unknown): Promise<string> => {
+    const response = await (options.fetcher ?? fetch)(sandboxUrl(path), { method: 'POST', redirect: 'error', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(15_000) });
+    if (!response.ok) throw new Error(`The sandbox refused that (HTTP ${response.status}).`);
+    const json = await response.json() as { _id?: string; objectCreated?: { _id?: string } };
+    const id = json.objectCreated?._id ?? json._id;
+    if (!id) throw new Error('The sandbox did not return an id.');
+    return id;
+  };
+  // One account per approved revision, created the first time anyone asks about the fund. Concurrent callers share one attempt.
+  const creating = new Map<number, Promise<void>>();
+  const ensureAccount = (revision: number): Promise<void> => {
+    let attempt = creating.get(revision);
+    if (!attempt) {
+      attempt = (async () => {
+        const address = { street_number: '1', street_name: 'Simulation Way', city: 'Chapel Hill', state: 'NC', zip: '27514' };
+        const customer = await create('customers', { first_name: 'SIMULATED', last_name: 'Trip Group', address });
+        const accountId = await create(`customers/${encodeURIComponent(customer)}/accounts`, { type: 'Checking', nickname: `SIMULATED trip revision ${revision}`, rewards: 0, balance: 0 });
+        await mkdir(dirname(options.bindingPath), { recursive: true });
+        await writeFile(options.merchantsPath, '{}');
+        await writeFile(options.bindingPath, JSON.stringify({ simulated: true, accountId, revision }, null, 2));
+        current = undefined;
+      })().finally(() => creating.delete(revision));
+      creating.set(revision, attempt);
+    }
+    return attempt;
+  };
+  const prepare = async (state: TripState): Promise<{ reason: string } | undefined> => {
+    const plan = planContributions(toPlanningState(state));
+    if (!plan.ok) return undefined;   // nothing approved yet: the underlying service explains
+    const binding = await readJson(options.bindingPath) as { revision?: unknown } | undefined;
+    if (binding?.revision === plan.revision) return undefined;
+    try { await ensureAccount(plan.revision); return undefined; }
+    catch { return { reason: "I couldn't set up the sandbox fund account just now. Try again in a moment." }; }
+  };
   const deposit = async (memberId: string, dollars: number, revision: number) => {
     const binding = await readJson(options.bindingPath) as { accountId?: unknown; revision?: unknown } | undefined;
     if (!binding || typeof binding.accountId !== 'string' || binding.revision !== revision) throw new Error('The sandbox fund account is not set up for this plan.');
@@ -55,7 +101,8 @@ export function createBoundFundService(options: BoundFundOptions): PayableFundSe
   };
   return {
     deposit,
-    async inspect(state: TripState) { const service = await bound(); return service ? service.inspect(state) : notReady(state); },
-    async publicView(state: TripState) { const service = await bound(); return service ? service.publicView(state) : notReady(state); },
+    async forget() { current = undefined; creating.clear(); await rm(options.bindingPath, { force: true }); await rm(options.merchantsPath, { force: true }); },
+    async inspect(state: TripState) { const failed = await prepare(state); if (failed) return { ...notReady(state), reason: failed.reason }; const service = await bound(); return service ? service.inspect(state) : notReady(state); },
+    async publicView(state: TripState) { const failed = await prepare(state); if (failed) return { ...notReady(state), reason: failed.reason }; const service = await bound(); return service ? service.publicView(state) : notReady(state); },
   } as unknown as PayableFundService;
 }

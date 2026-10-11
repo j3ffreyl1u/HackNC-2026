@@ -132,6 +132,31 @@ describe('paying into the simulated fund from the chat', () => {
     await t.stop();
   });
 
+  it('"fresh restart" wipes the trip for both people, drops a pending payment, and lets them start over', async () => {
+    const t = await approvedTrip();
+    await t.say(JEFF, 'pay my share');                         // a payment is waiting for a yes
+    const reset = await t.say(MASON, 'fresh restart');
+    expect(reset.mason.join(' ')).toMatch(/Fresh start! I cleared everything/);
+    expect(reset.jeff.join(' ')).toMatch(/Fresh start! Mason cleared the trip/);
+    expect((await t.say(JEFF, "how's the fund?")).jeff.join(' ')).toMatch(/approved by everyone/);
+    await t.say(JEFF, 'yes');                                  // the old payment question is gone
+    expect(t.ledger.deposits).toEqual([]);
+    const status = await t.say(JEFF, "what's the status?");
+    expect(status.jeff.join(' ')).not.toMatch(/approved/i);
+    // and a new trip can be planned straight away
+    const again = await t.say(JEFF, "I'm leaving from Chapel Hill, 2 nights");
+    expect(again.jeff.join(' ')).toMatch(/leaving from Chapel Hill/);
+    await t.stop();
+  });
+
+  it('"Fresh Restart!" works with any capitals, but a sentence that merely contains it does not', async () => {
+    const t = await approvedTrip();
+    expect((await t.say(JEFF, 'Fresh Restart!')).jeff.join(' ')).toMatch(/Fresh start/);
+    const t2 = await approvedTrip();
+    expect((await t2.say(JEFF, 'should we do a fresh restart?')).jeff.join(' ')).not.toMatch(/Fresh start! I cleared/);
+    await t.stop(); await t2.stop();
+  });
+
   it('"I paid my share" explains that only the fund counts', async () => {
     const t = await approvedTrip();
     expect((await t.say(JEFF, 'I paid my share')).jeff.join(' ')).toMatch(/Say "pay my share"/);

@@ -174,6 +174,20 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
         return;
       }
 
+      // "fresh restart": wipe the trip back to a blank slate for everyone (for testing and demos), and forget the sandbox fund account.
+      if (!message.reaction && /^fresh restart[.!\s]*$/i.test((message.text ?? '').trim()) && (message.visibility === 'private' || enrollment.mode === 'direct')) {
+        payPending.clear();
+        relayAsks.clear();
+        try { await fundService?.forget?.(); } catch { /* the next approved plan gets its account either way */ }
+        const { selectedCandidateId: _selected, fundingNoticeKeys: _keys, pendingConfirmations: _confirmations, costConfirmations: _costs, itineraryConfirmations: _items, ...kept } = state;
+        const blank: TripState = { ...kept, revision: state.revision + 1, status: 'gathering', memberConstraints: [], groupConstraints: [], candidates: [], acceptances: [], pendingQuestions: [], fundingStatus: fundService_disabled(fundService) ? 'disabled' : 'unknown' };
+        const told = (state.roster ?? enrollment.participants.map((p) => ({ memberId: p.memberId, displayName: p.displayName, consented: true }))).filter((m) => m.consented)
+          .map((m) => makeMessage(tripId, `fresh-restart:${message.eventId}:${m.memberId}`, { audience: { kind: 'private', memberId: m.memberId }, text: m.memberId === member.memberId ? 'Fresh start! I cleared everything, so we are starting from scratch. Text me whenever you want to plan a trip.' : `Fresh start! ${member.displayName} cleared the trip, so we are starting from scratch. Text me whenever you want to plan a trip.` }));
+        const result = await repository.commitEvent({ eventId: message.eventId, state: blank, expectedRevision: state.revision, messages: told });
+        if (result === 'stale') continue;
+        if (result === 'committed') await runtime.drainOutbox();
+        return;
+      }
       // A simulated payment is waiting for a yes from this person. A yes adds it, a no drops it, and any other message just cancels it.
       const waitingPay = payPending.get(member.memberId);
       if (waitingPay && message.text && !message.reaction) {
@@ -611,6 +625,8 @@ function dayRange(startAt: string, endAt: string, timeZone: string): string {
   const e = part(part(endMs).h === 0 ? endMs - 3_600_000 : endMs);
   return s.m === e.m && s.d === e.d ? `${MONTHS[s.m - 1]} ${s.d}` : s.m === e.m ? `${MONTHS[s.m - 1]} ${s.d}-${e.d}` : `${MONTHS[s.m - 1]} ${s.d}-${MONTHS[e.m - 1]} ${e.d}`;
 }
+
+const fundService_disabled = (fund: unknown) => fund === undefined;
 
 /** "if he can pick me up at 8" -> "if you can pick Jeffrey up at 8": a question carried to someone else is spoken to them. */
 function toSecondPerson(text: string, asker: string): string {
