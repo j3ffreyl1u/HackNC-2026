@@ -86,12 +86,7 @@ describe('first live DM scenario, end to end (A parser + C runtime + B planner, 
     await t.stop();
   });
 
-  /**
-   * Regression for the live-trace bug: in direct mode, "Mason, which dates could you do for the trip?" was sent to
-   * Jeffrey as well. B currently marks it as a group question, which C fans out to everyone. EXPECTED TO FAIL until B emits
-   * it as a private question with Mason's memberId; when it starts passing, vitest fails this `it.fails`: change it to `it`.
-   */
-  it.fails("a question addressed to Mason ('Mason, which dates...') reaches only Mason's phone, never Jeffrey's", async () => {
+  it("Mason's dates question reaches only Mason's phone, never Jeffrey's, and names nobody", async () => {
     const t = await live();
     const steps = [
       await t.say(JEFF, "Hi, let's plan a trip"),
@@ -99,17 +94,40 @@ describe('first live DM scenario, end to end (A parser + C runtime + B planner, 
       await t.say(JEFF, 'Can you show us some options?'),
       await t.say(JEFF, 'Can you show us some options?'),
     ];
-    const addressedToMason = /^Mason,/;
-    const sentToMason = steps.flatMap((r) => r.mason).filter((x) => addressedToMason.test(x));
-    const sentToJeffrey = steps.flatMap((r) => r.jeff).filter((x) => addressedToMason.test(x));
-    expect(sentToMason.length).toBeGreaterThan(0);   // Mason does get his question
-    expect(sentToJeffrey).toEqual([]);               // and Jeffrey does not
+    const datesQuestion = /which dates/i;
+    const toMason = steps.flatMap((r) => r.mason).filter((x) => datesQuestion.test(x));
+    const toJeffrey = steps.flatMap((r) => r.jeff).filter((x) => datesQuestion.test(x));
+    expect(toMason.length).toBeGreaterThan(0);   // Mason gets his question
+    expect(toJeffrey).toEqual([]);               // Jeffrey already gave his dates, so he is not asked
+    for (const q of toMason) expect(q).not.toMatch(/Mason|Jeffrey/); // addressed by routing, not by name
     await t.stop();
   });
 
-  // Found in the live DM trace (2026-10-10). Owned by B (wording/summaries) and C (routing); not asserted until fixed.
-  it.todo('the FIRST early options request also gets the "what is missing" summary, not just a question');
-  it.todo('the missing-details summary says "your" to the person it is about instead of "Mason\'s"');
+  it('the very first early request already gets a private "what is missing" message, then at most two questions', async () => {
+    const t = await live();
+    const first = await t.say(JEFF, "Hi, let's plan a trip");
+    expect(first.jeff[0]).toMatch(/still waiting on/i);          // the summary comes first, to the person who asked
+    expect(first.mason.some((x) => /still waiting on/i.test(x))).toBe(false); // and only to them
+    expect(questions(first.jeff).length).toBeLessThanOrEqual(2);
+    await t.say(JEFF, "I'm leaving from Chapel Hill, 2 nights, I have a car, I'm free Nov 14-16, my max is $250");
+    const options = await t.say(JEFF, 'Can you show us some options?');
+    expect(options.jeff.some((x) => /still waiting on/i.test(x))).toBe(true);
+    await t.stop();
+  });
+
+  it('the missing-details summary says "your" to the person it is about and names them to everyone else', async () => {
+    const t = await live();
+    await t.say(JEFF, "I'm leaving from Chapel Hill, 2 nights, I have a car, I'm free Nov 14-16, my max is $250");
+    const toJeff = await t.say(JEFF, 'Can you show us some options?');
+    const jeffSummary = toJeff.jeff.find((x) => /still waiting on/i.test(x))!;
+    expect(jeffSummary).toMatch(/Mason's dates/);                // about Mason, so it names him
+    expect(jeffSummary).not.toMatch(/your (dates|budget)/);      // Jeffrey has given both
+    const toMason = await t.say(MASON, 'Can you show us some options?');
+    const masonSummary = toMason.mason.find((x) => /still waiting on/i.test(x))!;
+    expect(masonSummary).toMatch(/your dates/);                  // about Mason, so it says "your"
+    expect(masonSummary).not.toMatch(/Mason's/);
+    await t.stop();
+  });
 
   it('later preferences add to earlier ones, and "no preference" resets them', async () => {
     const t = await live();
