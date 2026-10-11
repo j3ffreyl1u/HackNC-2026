@@ -253,6 +253,7 @@ export function createParser(deps: ConversationDependencies) {
       // Nothing is waiting on an answer, so this is probably a reply to our "Got it ... tell me if I got anything wrong".
       // In a one-on-one chat never go silent; in a group, stay out of it.
       if (msg.visibility !== 'private' && trip.mode !== 'direct') return { kind: 'ignored', reason: 'nothing to answer' };
+      if (yes && ctx.approval?.youIn) return reply(msg, ctx.approval.waitingNames.length ? `You're already in on ${ctx.approval.title}. Still waiting on ${ctx.approval.waitingNames.join(" and ")}.` : `You're in, and so is everyone else. ${ctx.approval.title} is approved.`, 'already-in', true);
       if (ctx.status === 'approved') return reply(msg, yes ? 'Sounds good! The trip is all set. Ask me anything about it, or tell me if a detail changes.' : 'No worries. The trip is locked in. Tell me if a detail changes and I will look again.', yes ? 'approved-ok' : 'approved-no', true);
       return yes
         ? reply(msg, `Great! Anything else to add? When you're ready, say "show us some options".`, 'thanks')
@@ -371,6 +372,18 @@ export function createParser(deps: ConversationDependencies) {
     };
     const joinNames = (names: string[]) => list(names);
     // Exact answers about who has said "I'm in" on the picked plan.
+    // "did he answer?" after the bot asked someone something: that is about the question, not about "I'm in".
+    if (talkativeChat && ctx.relays?.length) {
+      const answered = /^(?:has|have|did|is|was)\s+(\w+)\s+(?:already\s+|yet\s+|also\s+)?(?:answer(?:ed)?|respond(?:ed)?|repl(?:y|ied)(?:\s+back)?|(?:get|got)\s+back(?:\s+to\s+(?:us|me))?|say\s+anything|said\s+anything)$/i.exec(lean);
+      const who = answered ? personFor(answered[1]!) : undefined;
+      const asks = who ? ctx.relays.filter((r) => r.withName === who.name && r.byMe && r.kind === 'ask') : [];
+      if (who && asks.length > 0) {
+        const lastAskAt = ctx.relays.lastIndexOf(asks[asks.length - 1]!);
+        const back = ctx.relays.slice(lastAskAt + 1).filter((r) => r.withName === who.name && !r.byMe);
+        if (back.length > 0) return reply(msg, `Yes, ${who.name} said: "${back[back.length - 1]!.text}"`, 'relay-answer', true);
+        return reply(msg, `Not yet. I asked ${who.name}, and I'll tell you as soon as they answer.`, 'relay-answer', true);
+      }
+    }
     if (ctx.approval && talkativeChat) {
       const ap = ctx.approval;
       const V = String.raw`(?:say|said|confirm(?:ed)?|approve(?:d)?|accept(?:ed)?|agree(?:d)?|lock(?:ed)?(?:\s+it)?(?:\s+in)?|done(?:\s+it)?|finish(?:ed)?|ok(?:ay)?|okayed|gone\s+for\s+it|go\s+for\s+it|answer(?:ed)?|respond(?:ed)?|repl(?:y|ied)|decid(?:e|ed)|signed\s+off|do(?:ne)?\s+it)`;

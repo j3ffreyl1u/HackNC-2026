@@ -246,6 +246,22 @@ describe('asking and telling through the bot', () => {
     return t;
   }
 
+  it('"did he answer?" is about the question that was passed on, not about "I\'m in"', async () => {
+    const t = await waitingOnMason();
+    await t.say(JEFF, 'ask mason if he can drive');
+    expect((await t.say(JEFF, 'did he answer')).jeff.join(' ')).toMatch(/Not yet\. I asked Mason/);
+    await t.say(MASON, 'yeah i can drive');
+    expect((await t.say(JEFF, 'did he answer')).jeff.join(' ')).toMatch(/Yes, Mason said: "yeah i can drive"/);
+    await t.stop();
+  });
+
+  it('a second "I\'m in" says they are already in, and thanks that name a person are just thanks', async () => {
+    const t = await waitingOnMason();
+    expect((await t.say(JEFF, "I'm in")).jeff.join(' ')).toMatch(/already in on .+ Still waiting on Mason/);
+    expect((await t.say(JEFF, 'thanks mason is the best')).jeff.join(' ')).not.toMatch(/didn't quite catch/);
+    await t.stop();
+  });
+
   it('"remind Mason to lock it in" asks Mason for the I\'m in, naming the plan', async () => {
     const t = await waitingOnMason();
     const r = await t.say(JEFF, 'Can you remind mason to lock it in');

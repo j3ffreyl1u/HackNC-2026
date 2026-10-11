@@ -86,6 +86,8 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
   const researchRevisions = new Set<number>();
   /** Who asked whom what through the bot, so the answer can be passed back. Kept in memory: lost if the app restarts mid-question. */
   const relayAsks = new Map<string, { askerId: string; field?: string }>();
+  /** What people answered to a question the bot passed on, kept per asker (in memory) so "did he answer?" can be answered. Never money. */
+  const relayReplies = new Map<string, Array<{ withName: string; text: string }>>();
   /** The last few messages with each person, so follow-ups ("the second one", "how much was that?") can be understood. In memory only. */
   const recentTurns = new Map<string, Array<{ from: 'you' | 'bot'; text: string }>>();
   const memberIds = new Set<string>();
@@ -106,6 +108,7 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
     const fresh = heard(after).filter((x) => !was.includes(x));
     const to = { kind: 'private' as const, memberId: asked.askerId };
     relayAsks.delete(member.memberId);
+    if (!/\$|\bbudgets?\b|\bmax(?:imum)?\b|\b\d{3,}\b|\bdollars?\b|\bbucks\b/i.test(said)) relayReplies.set(asked.askerId, [...(relayReplies.get(asked.askerId) ?? []), { withName: member.displayName, text: said.slice(0, 200) }].slice(-6));
     if (asked.field && fresh.length > 0) return [makeMessage(tripId, `relay-answer:${message.eventId}`, { audience: to, text: `${member.displayName} ${fresh.join(' and ')}.` })];
     if (/\$|\bbudgets?\b|\bmax(?:imum)?\b|\b\d{3,}\b|\bdollars?\b|\bbucks\b/i.test(said)) return [makeMessage(tripId, `relay-answer:${message.eventId}`, { audience: to, text: `${member.displayName} answered, but I keep anything about money private.` })];
     // A free-form question has no field to read the answer from: pass the words on as they were said.
@@ -191,6 +194,7 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
       if (!message.reaction && /^fresh restart[.!\s]*$/i.test((message.text ?? '').trim()) && (message.visibility === 'private' || enrollment.mode === 'direct')) {
         payPending.clear();
         relayAsks.clear();
+        relayReplies.clear();
         try { await fundService?.forget?.(); } catch { /* the next approved plan gets its account either way */ }
         const { selectedCandidateId: _selected, relayLog: _relays, fundingNoticeKeys: _keys, pendingConfirmations: _confirmations, costConfirmations: _costs, itineraryConfirmations: _items, ...kept } = state;
         const blank: TripState = { ...kept, revision: state.revision + 1, status: 'gathering', memberConstraints: [], groupConstraints: [], candidates: [], acceptances: [], pendingQuestions: [], fundingStatus: fundService_disabled(fundService) ? 'disabled' : 'unknown' };
@@ -242,7 +246,7 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
           return;
         }
       }
-      const context = await conversationContext(repository, state, message, recentTurns.get(member.memberId) ?? []);
+      const context = await conversationContext(repository, state, message, recentTurns.get(member.memberId) ?? [], relayReplies.get(member.memberId) ?? []);
       if (message.text && !message.reaction) remember(member.memberId, 'you', message.text);
       // Someone was just asked a specific question through the bot: a bare "yes" or "no" from them answers it.
       const relayed = relayAsks.get(member.memberId);
@@ -632,7 +636,7 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
   return runtime;
 }
 
-async function conversationContext(repository: Repository, state: TripState, message: InboundMessage, recent: Array<{ from: 'you' | 'bot'; text: string }> = []): Promise<ConversationContext> {
+async function conversationContext(repository: Repository, state: TripState, message: InboundMessage, recent: Array<{ from: 'you' | 'bot'; text: string }> = [], answers: Array<{ withName: string; text: string }> = []): Promise<ConversationContext> {
   const actorId = message.senderId;
   // What was asked of this person comes first (a private question is theirs alone), then the shared one that anyone may answer.
   const relevant = state.pendingQuestions
@@ -655,8 +659,9 @@ async function conversationContext(repository: Repository, state: TripState, mes
   // Someone who has not weighed in on the shared basics can agree with a plain "yes" or "sounds good" whether or not the bot got to ask yet
   // (a hello does not trigger the question), so the search is not left waiting on an answer nobody was asked for.
   const nameOf = (id: string) => (state.roster ?? []).find((m) => m.memberId === id)?.displayName ?? 'them';
-  const relays = (state.relayLog ?? []).filter((e) => e.fromId === actorId || e.toId === actorId).slice(-12)
+  const relays: NonNullable<ConversationContext['relays']> = (state.relayLog ?? []).filter((e) => e.fromId === actorId || e.toId === actorId).slice(-12)
     .map((e) => ({ withName: nameOf(e.fromId === actorId ? e.toId : e.fromId), byMe: e.fromId === actorId, kind: e.kind, text: e.text }));
+  for (const r of answers) relays.push({ withName: r.withName, byMe: false, kind: 'answer' as const, text: r.text });
   // The options on offer in plain words, for answering "how much is the second one?" (costs are the group's, never anyone's budget).
   const optionFacts = (state.status === 'proposed' || state.status === 'awaiting_acceptance') ? describeOptions(state, true)
     : state.status === 'approved' ? describeOptions(state, true, state.selectedCandidateId) : [];
