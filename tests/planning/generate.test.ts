@@ -99,7 +99,7 @@ describe('planTrip: the acceptance fixture', () => {
     expect(text).not.toContain('https://fixtures.invalid/');
     expect(text).toMatch(/about \$[\d,.]+-\$[\d,.]+ each/);
     expect(text).toMatch(/demo data/i);
-    expect(text).toMatch(/Maybe: /);                       // the option whose prices are incomplete is flagged, not proposed
+    expect(text).toMatch(/couldn't price all of it yet/);   // the option with incomplete prices is flagged as a maybe, not proposed
     for (const reply of outcome.replies) expect(reply.text.length).toBeLessThan(420);
   });
 
