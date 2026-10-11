@@ -86,6 +86,7 @@ export type TripAction =
   | { kind: 'confirm_cost'; candidateId: string; revision: number; costId: string; lowCents: number; highCents: number; sourceMessageId: string }
   | { kind: 'confirm_stop'; candidateId: string; revision: number; item: ItineraryItem; sourceMessageId: string }
   | { kind: 'request_funding'; topic?: 'status' | 'remind' | 'wrap_up' }
+  | { kind: 'log_purchase'; category: string; what: string; dollars?: number }
   | { kind: 'relay'; to: string; mode: 'ask' | 'tell' | 'request' | 'invite'; text: string; field?: string };
 
 export interface TripCommand {

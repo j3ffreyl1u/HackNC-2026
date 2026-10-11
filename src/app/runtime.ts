@@ -52,6 +52,8 @@ export interface ApplicationRuntimeDependencies {
   stillLookingMs?: number;
   /** How long `stop()` waits for work in flight (a search) before giving up on it. A search cut off here is resumed on the next start. Default 5 seconds. */
   stopWaitMs?: number;
+  /** Records a purchase someone says they made in their simulated Nessie account. Demo only; the assistant never moves real money. */
+  purchaseLogger?: { log(memberId: string, category: string, dollars: number, what: string): Promise<void> };
   /** The scripted bank walk-through shown once a plan is approved (demo only). Receives what it needs to message everyone and read the settle-up. */
   demoLedger?: (run: import('../funding/demo-sequence.js').DemoRun) => Promise<void>;
   /** How often the bank is read for purchases worth asking the buyer about (default 2 minutes, 0 turns it off). */
@@ -94,6 +96,8 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
   let purchaseTimer: ReturnType<typeof setInterval> | undefined;
   const researchRevisions = new Set<number>();
   const demoRevisions = new Set<number>();
+  /** A purchase someone said they made, waiting for an amount or a yes before it is logged. In memory: any other message cancels it. */
+  const logPending = new Map<string, { category: string; what: string; dollars?: number; revision: number }>();
   let demoRunning = false;
   /** Who asked whom what through the bot, so the answer can be passed back. Kept in memory: lost if the app restarts mid-question. */
   const relayAsks = new Map<string, { askerId: string; field?: string }>();
@@ -269,6 +273,7 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
       // "fresh restart": wipe the trip back to a blank slate for everyone (for testing and demos), and forget the sandbox fund account.
       if (!message.reaction && /^fresh restart[.!\s]*$/i.test((message.text ?? '').trim()) && (message.visibility === 'private' || enrollment.mode === 'direct')) {
         relayAsks.clear();
+        logPending.clear();
         relayReplies.clear();
         const { selectedCandidateId: _selected, relayLog: _relays, fundingNoticeKeys: _keys, pendingConfirmations: _confirmations, costConfirmations: _costs, itineraryConfirmations: _items, ...kept } = state;
         const blank: TripState = { ...kept, revision: state.revision + 1, status: 'gathering', memberConstraints: [], groupConstraints: [], candidates: [], acceptances: [], pendingQuestions: [], fundingStatus: fundService_disabled(fundService) ? 'disabled' : 'unknown' };
@@ -278,6 +283,50 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
         if (result === 'stale') continue;
         if (result === 'committed') await runtime.drainOutbox();
         return;
+      }
+      // A purchase is waiting for its amount or a yes from this person.
+      const waitingLog = logPending.get(member.memberId);
+      if (waitingLog && message.text && !message.reaction && dependencies.purchaseLogger) {
+        const said = message.text.trim().toLowerCase().replace(/[.!\s]+$/, '');
+        const toPerson = (id: string, text: string, tag: string) => makeMessage(tripId, `${tag}:${message.eventId}:${id}`, { audience: { kind: 'private', memberId: id }, text });
+        const isNo = /^(?:no|nope|nah|cancel|never ?mind|nvm|stop|don'?t|wait|not yet|hold on)$/.test(said);
+        const isYes = /^(?:yes|yep|yeah|yup|sure|ok(?:ay)?|confirm(?:ed)?|y|log it|do it|go ahead|sounds good|that works|👍)(?:[ ,]+(?:please|pls|thanks|thank you|do it|go ahead))*$/.test(said);
+        const amount = waitingLog.dollars === undefined ? /^(?:it was |about |around |like |roughly )?\$?\s*(\d{1,5})(?:\.\d{1,2})?(?:\s*(?:dollars|bucks))?$/.exec(said) : null;
+        const finish = async (out: OutboundMessage[]) => {
+          const result = await repository.commitEvent({ eventId: message.eventId, state, expectedRevision: state.revision, messages: out });
+          if (result === 'stale') return false;
+          if (result === 'committed') await runtime.drainOutbox();
+          return true;
+        };
+        if (isNo) {
+          logPending.delete(member.memberId);
+          if (!await finish([toPerson(member.memberId, "Okay, I didn't log anything.", 'log-cancel')])) continue;
+          return;
+        }
+        if (amount) {
+          const dollars = Math.ceil(Number(amount[1]));
+          if (dollars < 1 || dollars > 10_000) { if (!await finish([toPerson(member.memberId, 'Tell me a whole-dollar amount between $1 and $10,000.', 'log-range')])) continue; return; }
+          logPending.set(member.memberId, { ...waitingLog, dollars });
+          if (!await finish([toPerson(member.memberId, `Log $${dollars} for ${waitingLog.what} to your simulated Nessie account? Say "yes" to add it.`, 'log-confirm')])) continue;
+          return;
+        }
+        if (waitingLog.dollars !== undefined && isYes) {
+          logPending.delete(member.memberId);
+          const out: OutboundMessage[] = [];
+          if (state.status !== 'approved' || state.revision !== waitingLog.revision) out.push(toPerson(member.memberId, "The plan changed while we were talking, so I didn't log anything. Tell me again once it's approved.", 'log-stale'));
+          else {
+            try {
+              await dependencies.purchaseLogger.log(member.memberId, waitingLog.category, waitingLog.dollars, waitingLog.what);
+              out.push(toPerson(member.memberId, `Logged: you paid $${waitingLog.dollars} for ${waitingLog.what}, on your simulated Nessie account. Ask "who covered what?" or open the trip page to see the tally.`, 'log-done'));
+              for (const other of (state.roster ?? []).filter((m) => m.consented && m.memberId !== member.memberId)) out.push(toPerson(other.memberId, `${member.displayName} logged $${waitingLog.dollars} for ${waitingLog.what} (simulated). Ask "who covered what?" to see the tally.`, 'log-told'));
+            } catch {
+              out.push(toPerson(member.memberId, "I couldn't reach the simulated bank just now, so nothing was logged. Try again in a moment.", 'log-error'));
+            }
+          }
+          if (!await finish(out)) continue;
+          return;
+        }
+        logPending.delete(member.memberId);   // anything else drops it and is read as a normal message
       }
       const context = await conversationContext(repository, state, message, recentTurns.get(member.memberId) ?? [], relayReplies.get(member.memberId) ?? []);
       if (message.text && !message.reaction) remember(member.memberId, 'you', message.text);
@@ -314,6 +363,7 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
       if (parsed.kind === 'commands' && parsed.acknowledgement) {
         replies.push(makeMessage(tripId, `ack:${message.eventId}`, { audience: { kind: 'private', memberId: member.memberId }, text: parsed.acknowledgement }));
       }
+      let logRequest: { category: string; what: string; dollars?: number } | undefined;
       let fundRequested = false;
       let fundTopic: 'status' | 'remind' | 'wrap_up' = 'status';
 
@@ -334,6 +384,7 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
           }
         }
         if (command.action.kind === 'request_funding') { fundRequested = true; fundTopic = command.action.topic ?? 'status'; continue; }
+        if (command.action.kind === 'log_purchase') { logRequest = { category: command.action.category, what: command.action.what, ...(command.action.dollars !== undefined ? { dollars: command.action.dollars } : {}) }; continue; }
         if (command.action.kind === 'relay') {
           const relay = command.action;
           const target = (state.roster ?? []).find((m) => m.consented && m.memberId !== member.memberId && m.displayName.toLowerCase() === relay.to.toLowerCase());
@@ -465,6 +516,15 @@ export function createApplicationRuntime(dependencies: ApplicationRuntimeDepende
         if (parsed.kind === 'commands' && parsed.expects) confirmations[member.memberId] = parsed.expects;
         else delete confirmations[member.memberId];
         nextState = { ...nextState, pendingConfirmations: confirmations };
+      }
+      if (logRequest) {
+        const toMe = (text: string) => makeMessage(tripId, `log-ask:${message.eventId}`, { audience: { kind: 'private', memberId: member.memberId }, text });
+        if (!dependencies.purchaseLogger) replies.push(toMe("Logging purchases isn't set up here, so I can't add that."));
+        else if (nextState.status !== 'approved') replies.push(toMe('I can log what you pay for once everyone has approved a plan.'));
+        else {
+          logPending.set(member.memberId, { ...logRequest, revision: nextState.revision });
+          replies.push(toMe(logRequest.dollars === undefined ? `How much was ${/^(?:gas|food|dinner|lunch|breakfast)$/.test(logRequest.what) ? '' : 'the '}${logRequest.what}?` : `Log $${logRequest.dollars} for ${logRequest.what} to your simulated Nessie account? Say "yes" to add it.`));
+        }
       }
       if (fundService && nextState.status !== 'approved') nextState = { ...nextState, fundingStatus: 'unknown' };
       if (fundService && (fundRequested || nextState.status === 'approved')) {

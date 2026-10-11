@@ -18,7 +18,7 @@ const dirs: string[] = [];
 afterEach(() => { for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true }); });
 
 /** The real conversation, runtime and planner over a mock phone line with two enrolled people. */
-async function live() {
+async function live(extra: Partial<Parameters<typeof createApplicationRuntime>[0]> = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'relay-')); dirs.push(dir);
   const path = join(dir, 'trip.json');
   writeFileSync(path, JSON.stringify({ mode: 'direct', tripId: 'dm', groupSpaceId: 'direct:dm', participants: [
@@ -31,7 +31,7 @@ async function live() {
   const messenger = new MockMessenger();
   const chat = await createChatAdapter(trip.enrollment, trip.state.timeZone ?? 'America/New_York', 'mock', process.env, messenger);
   const planner = createPlannerAdapter(createResearchProvider({ mode: 'mock', fixtures: defaultFixtures }), trip.enrollment.groupSpaceId);
-  const runtime = createApplicationRuntime({ repository, conversation: chat.conversation, planner, tripId: 'dm' });
+  const runtime = createApplicationRuntime({ repository, conversation: chat.conversation, planner, tripId: 'dm', ...extra });
   await runtime.start();
   let n = 0;
   /** Send one DM and return exactly what each phone received because of it. */
@@ -78,8 +78,11 @@ describe('asking and telling through the bot', () => {
     await t.say(MASON, "I'm free Nov 14-17");
     await t.say(JEFF, 'maybe Dec 5-7?');
     expect((await t.say(JEFF, 'yes')).jeff.join(' ')).toMatch(/you're free Dec 5-7/);
-    for (const text of ['pay my share', 'i covered everyones dinner', 'venmo mason', 'i spent 60 on gas']) {
+    for (const text of ['pay my share', 'venmo mason']) {
       expect((await t.say(JEFF, text)).jeff.join(' '), text).toMatch(/I can't pay or log spending from here/);
+    }
+    for (const text of ['i covered everyones dinner', 'i spent 60 on gas']) {
+      expect((await t.say(JEFF, text)).jeff.join(' '), text).toMatch(/once everyone has approved a plan/);
     }
     expect((await t.say(JEFF, 'can we do a day earlier')).jeff.join(' ')).toMatch(/exact dates/);
     await t.stop();
@@ -374,5 +377,43 @@ describe('asking and telling through the bot', () => {
     expect((await t.say(MASON, "I'm in")).jeff.join(' ')).toMatch(/approved/i);
     expect((await t.say(JEFF, 'tell Mason to hurry up')).jeff.join(' ')).toMatch(/already in on/);
     await t.stop();
+  });
+});
+
+describe('logging a purchase from chat', () => {
+  async function approvedWithLogger() {
+    const logged: Array<[string, string, number, string]> = [];
+    const t = await live({ purchaseLogger: { log: async (m, c, d, w) => { logged.push([m, c, d, w]); } } });
+    await t.say(JEFF, "I'm leaving from Chapel Hill, 2 nights, NC mountains, I have a car, I'm free Nov 14-17, my max is $340, I like hiking");
+    for (const m of ['hey', 'sounds good', "I'm free Nov 14-17, my max is $310, I like food"]) await t.say(MASON, m);
+    await t.say(JEFF, 'option 1'); await t.say(JEFF, "I'm in"); await t.say(MASON, "I'm in");
+    return { t, logged };
+  }
+  it('"I just paid gas" asks how much, then asks for a yes, then logs it and tells the other person', async () => {
+    const { t, logged } = await approvedWithLogger();
+    expect((await t.say(JEFF, 'I just paid gas')).jeff.join(' ')).toMatch(/How much was gas\?/);
+    expect((await t.say(JEFF, '$60')).jeff.join(' ')).toMatch(/Log \$60 for gas to your simulated Nessie account\? Say "yes"/);
+    expect(logged).toHaveLength(0);
+    const done = await t.say(JEFF, 'yes');
+    expect(done.jeff.join(' ')).toMatch(/Logged: you paid \$60 for gas/);
+    expect(done.mason.join(' ')).toMatch(/Jeffrey logged \$60 for gas \(simulated\)/);
+    expect(logged).toEqual([['jeffrey', 'fuel_parking_tolls', 60, 'gas']]);
+    await t.stop();
+  });
+  it('an amount in the message skips the question, and a no or any other message drops it', async () => {
+    const { t, logged } = await approvedWithLogger();
+    expect((await t.say(MASON, 'I paid $110 for the hotel')).mason.join(' ')).toMatch(/Log \$110 for hotel to your simulated Nessie account\?/);
+    expect((await t.say(MASON, 'no')).mason.join(' ')).toMatch(/didn't log anything/);
+    await t.say(MASON, 'I covered everyones dinner');
+    await t.say(MASON, 'what was the plan again');   // not an amount or a yes: dropped
+    await t.say(MASON, 'yes');
+    expect(logged).toHaveLength(0);
+    await t.stop();
+  });
+  it('before a plan is approved it says to wait', async () => {
+    const { t } = await approvedWithLogger();
+    const fresh = await live({ purchaseLogger: { log: async () => undefined } });
+    expect((await fresh.say(JEFF, 'I paid $60 for gas')).jeff.join(' ')).toMatch(/once everyone has approved a plan/);
+    await fresh.stop(); await t.stop();
   });
 });

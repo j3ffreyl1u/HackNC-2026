@@ -39,6 +39,9 @@ const FUND_REMIND = /^(?:(?:please|pls|can you|could you)\s+)*(?:(?:remind|nudge
 const FUND_WRAP = /^(?:(?:please|pls|can you|could you)\s+)*(?:wrap\s*-?\s*up|settle\s+up|close\s+out)(?:\s+(?:the\s+)?(?:trip|fund|money|pot|trip fund))?$|^(?:who gets what back|how much (?:do (?:i|we) get|(?:will|would) (?:i|we) get) back|what do we get back)$/i;
 /** Nobody pays or logs a purchase through the assistant: it only reads the simulated spending log. */
 const READ_ONLY_MONEY = 'I can\'t pay or log spending from here. I only read the trip\'s simulated spending log. Ask "who covered what?" to see it, or "wrap up the trip" for who owes whom.';
+const LOG_AFTER_APPROVAL = "I can log what you pay for once everyone has approved a plan. Tell me then, like \"I just paid $60 for gas\".";
+/** How a logged purchase reads back: "the hotel", "gas", "dinner". */
+const loggedWhat = (thing: string): string => thing.trim().toLowerCase().replace(/^(?:the|our|some|a|an)\s+/, '').replace(/[.!?]+$/, '').slice(0, 40);
 const GUIDE = /^(?:guide|ask guide|\/guide)\s*[:\-]?\s+(.{3,500})$/is;
 const SELECT = new RegExp(`^(?:pick|choose|select|go with|vote(?: for)?|i vote(?: for)?)\\s+(?:option\\s+|plan\\s+)?${ID}(?:\\s+v(\\d+))?$`, 'i');
 /**
@@ -540,7 +543,7 @@ export function createParser(deps: ConversationDependencies) {
       return one(msg, ctx, { kind: 'request_plans' });
     }
     // Money talk that is not a question about the log: nothing is paid or recorded here.
-    if (talkativeChat && (/^(?:i|we)\s+(?:just\s+)?(?:covered|paid\s+for|bought|treated|got)\s+(?:everyone|everybody|us|all of us|the\s+(?:group|table|whole\s+\w+)|everyone'?s|everybodys)\b/i.test(lean) || /\b(?:venmo|zelle|paypal|cash\s*app|apple\s*pay)\b/i.test(lean) && /^(?:(?:can|could|should|let)\b.*|(?:venmo|zelle|paypal|cash\s*app)\b.*)$/i.test(lean))) return reply(msg, READ_ONLY_MONEY, 'read-only-money', true);
+    if (talkativeChat && /\b(?:venmo|zelle|paypal|cash\s*app|apple\s*pay)\b/i.test(lean) && /^(?:(?:can|could|should|let)\b.*|(?:venmo|zelle|paypal|cash\s*app)\b.*)$/i.test(lean)) return reply(msg, READ_ONLY_MONEY, 'read-only-money', true);
     if (talkativeChat && /\b(?:add|put|send|save|sync)\b.*\b(?:calendar|cal|invite|ics|reminder)\b/i.test(lean) && !/^(?:how|what|when|where|why|who|which|do|does|did|is|are)\b/i.test(lean)) return reply(msg, "I can't add things to a calendar yet. Ask me for the plan and I'll list the dates so you can add them yourself.", 'no-calendar', true);
     // "can we do a day earlier": the dates are theirs to restate.
     if (talkativeChat && /^(?:(?:can|could|would)\s+we|let'?s|how about|what about)\s+(?:do\s+|go\s+|leave\s+|start\s+|make\s+it\s+)?(?:it\s+)?(?:a|one|1|two|2|a\s+couple\s+of)\s+days?\s+(?:earlier|later|before|after)$/i.test(lean)) return reply(msg, 'Tell me the exact dates you want and I\'ll update the plan, like "free Nov 13-15".', 'dates-shift', true);
@@ -565,15 +568,20 @@ export function createParser(deps: ConversationDependencies) {
       const amount = spendFormA ? spendFormA[1]! : spendFormB![2]!;
       const dollars = Math.ceil(Number(amount.replace(/,/g, '')));
       const category = spendCategory(thing);
-      if (Number.isFinite(dollars) && dollars > 0 && category) return reply(msg, READ_ONLY_MONEY, 'read-only-money', true);
-      if (Number.isFinite(dollars) && dollars > 0 && ctx.status === 'approved') return reply(msg, READ_ONLY_MONEY, 'read-only-money', true);
+      if (Number.isFinite(dollars) && dollars > 0 && category) return ctx.status === 'approved' ? one(msg, ctx, { kind: 'log_purchase', category, what: loggedWhat(thing), dollars }) : reply(msg, LOG_AFTER_APPROVAL, 'log-too-early', true);
+      if (Number.isFinite(dollars) && dollars > 0 && ctx.status === 'approved') return reply(msg, `What was the $${dollars} for? Try "I spent $${dollars} on gas", food, the hotel, or park tickets.`, 'spend-what', true);
     }
     // "I spent money", "log a purchase": there is no amount or purpose yet, so ask for both.
     if (talkativeChat && ctx.status === 'approved' && /^(?:(?:please|pls|ok(?:ay)?|so)\s+)*(?:(?:i|we)\s+)?(?:(?:'ve|have|just|also)\s+)*(?:spent|paid|bought|purchased)\s+(?:some\s+|a\s+bit\s+of\s+|more\s+)?(?:money|cash|something|stuff|things)(?:\s+(?:on\s+the\s+trip|today|too))?$|^(?:(?:please|pls)\s+)*(?:log|record|add|enter|track)\s+(?:a\s+|an\s+|some\s+)?(?:purchase|expense|spending|spend|cost)$|^(?:i|we)\s+made\s+(?:a\s+)?purchase$|^(?:i|we)\s+need\s+to\s+(?:log|record|add)\s+(?:a\s+|some\s+)?(?:purchase|expense|spending)$/i.test(lean)) {
-      return reply(msg, READ_ONLY_MONEY, 'read-only-money', true);
+      return reply(msg, 'How much was it, and what was it for? Try \"I paid $60 for gas\".', 'spend-what', true);
     }
     const spentBare = /^(?:i|we)?\s*(?:'ve|have|just)?\s*(?:spent|paid)\s+\$?\s*([\d,]+(?:\.\d{1,2})?)(?:\s*(?:dollars|bucks|usd))?$/i.exec(lean);
-    if (spentBare && talkativeChat && ctx.status === 'approved') return reply(msg, READ_ONLY_MONEY, 'read-only-money', true);
+    if (spentBare && talkativeChat && ctx.status === 'approved') return reply(msg, `What was the $${amountOf(spentBare[1]!) ?? ''} for? Try "I spent $${amountOf(spentBare[1]!) ?? 60} on gas".`, 'spend-what', true);
+    // "I just paid gas", "I covered dinner": no amount yet, so the app asks for it before logging.
+    const spendFormC = /^(?:(?:please|pls|ok(?:ay)?|so)\s+)*(?:i|we)?\s*(?:'ve|have)?\s*(?:just|already)?\s*(?:paid(?:\s+for)?|covered|bought|grabbed|booked|picked\s+up|got)\s+(?:the\s+|our\s+|some\s+|everyone'?s\s+|everybody'?s\s+|all\s+the\s+)?([a-z][a-z' ]{1,30})[.!]*$/i.exec(lean);
+    if (talkativeChat && spendFormC && spendCategory(spendFormC[1]!)) {
+      return ctx.status === 'approved' ? one(msg, ctx, { kind: 'log_purchase', category: spendCategory(spendFormC[1]!)!, what: loggedWhat(spendFormC[1]!) }) : reply(msg, LOG_AFTER_APPROVAL, 'log-too-early', true);
+    }
     // Paying into the simulated fund: "pay my share", "let me chip in $50", "cover Mason's share", "put in $60 for Jeffrey". The app asks for a yes before anything is added.
     const lead = "(?:(?:please|pls|ok(?:ay)?|so)\\s+)*(?:(?:can|could|may|should|shall|would)\\s+(?:i|we)\\s+|let\\s*me\\s+|lemme\\s+|time\\s+to\\s+|(?:i|we)(?:'ll|\\s+will|'d like to|\\s+would like to|\\s+want to|\\s+wanna|\\s+should|\\s+can|\\s+gotta|\\s+need to|\\s+have to)?\\s+)?";
     const tail = "(?:\\s+(?:now|please|pls|today|too|as well|also|real quick|right now))*[?!.]*$";
