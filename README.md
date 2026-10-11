@@ -2,22 +2,32 @@
 
 **Next Excursion Mapped Out.** A trip planner you text.
 
-Planning a trip with friends usually means one person ends up doing all the work: chasing everyone for dates, guessing what people can afford, researching places, and then keeping track of who paid for what. Finding N.E.M.O takes that job over. Each friend texts the same assistant over iMessage, and it collects what it needs from each person, finds options that work for the whole group, gets everyone to agree on one plan, and keeps track of shared spending afterwards.
-
 Built at HackNC 2026.
+
+## The pitch
+
+You know the group chat. Someone says "we should do a trip this fall", everyone replies "omg yes", and then nothing happens. Nobody wants to be the one chasing four people for their dates, guessing what everyone can afford, digging through hotel prices, and then figuring out who owes who for gas afterwards. So the trip quietly dies.
+
+Finding N.E.M.O is the friend who actually makes it happen. It's an assistant you text like anyone else in your contacts. It reaches out to each person, asks for the specific things it still needs, passes messages between everyone, settles disagreements, and turns a vague idea into an organized itinerary that the whole group has agreed to.
+
+**It's convenient.** Nobody downloads an app or fills out a form. You text the way you already do ("i can do like 400 tops", "free the weekend of Nov 21", "ask Mason if he has a car"), and the assistant does the chasing, the research and the follow-ups.
+
+**It saves money.** Every person sets their own private maximum, and every option is checked against all of them before anyone sees it, so nobody gets talked into a trip they can't afford. Options come with a cost breakdown and sourced prices, including real hotel rates when available, so the group can compare before committing. Once the trip happens, shared costs are split evenly from what each person actually paid, so nobody quietly overpays.
 
 ---
 
 ## Contents
 
+- [The pitch](#the-pitch)
 - [How it works](#how-it-works)
 - [Features](#features)
+- [How we built it](#how-we-built-it)
 - [Privacy and honesty](#privacy-and-honesty)
-- [Architecture](#architecture)
 - [Project structure](#project-structure)
 - [Getting started](#getting-started)
 - [Configuration](#configuration)
 - [Testing](#testing)
+- [What's next: a real group chat](#whats-next-a-real-group-chat)
 - [Built with and credits](#built-with-and-credits)
 - [Known limitations](#known-limitations)
 - [Team](#team)
@@ -59,16 +69,14 @@ A read-only trip page shows the itinerary, costs, sources, who has agreed, and t
 - Shared costs (lodging, gas or flights, activities, fees) are split evenly. Food stays personal unless the buyer says it was for everyone.
 - "Who covered what?", "remind everyone" and "wrap up the trip" answer from the ledger. Settle-up amounts are calculated only; nothing is ever paid or transferred.
 
-## Privacy and honesty
+## How we built it
 
-These rules are enforced in code and covered by tests.
+We split the work into three layers and three owners, agreed on shared types first, and built each layer against mocks of the others so nobody was blocked. Every layer is plain TypeScript on Node, and the whole thing is backed by a single SQLite file.
 
-- **Budgets stay private.** A person's maximum is only ever discussed with that person. It is never relayed to anyone else, never shown on the trip page, and left out of the facts the language model answers from.
-- **Free dates are shared** with the other participants (the assistant says so up front) so a date clash can be resolved.
-- **No invented numbers.** Answers written by the language model are rejected if they contain an amount that is not in the plan's own facts. Unknown prices are never treated as zero.
-- **No real money.** All banking runs against the Nessie sandbox with fake accounts. The assistant never books, pays or holds funds.
+The hardest part was making a language model safe to use with people's money and plans. Our rule was that **code decides, the model only interprets**. Deterministic rules read the common phrasing (budgets, dates, nights, places). Gemini handles the messy rest, but its output is checked against a strict schema, and any answer it writes is rejected if it mentions a number that isn't in the plan. All money is handled in integer cents, and every plan has a revision number so an old approval or a slow search result can never overwrite something newer.
 
-## Architecture
+To make the assistant feel like a real person, we ran many scripted conversations (hundreds of messages) through the real bot (typos, slang, changing your mind, two people disagreeing), logged every message it didn't understand, fixed those cases, and ran them again.
+
 
 ```
   iPhone (iMessage)
@@ -90,6 +98,15 @@ These rules are enforced in code and covered by tests.
 - **Planning** is pure TypeScript with no database or network access. It decides what is still missing, validates every candidate against each person's limit in integer cents, and manages revisions and approvals.
 - **Research** finds and prices options. It runs outside any database transaction, and results for an outdated revision are discarded.
 - **The app runtime** wires everything together, stores state in SQLite, and sends replies through a durable outbox so a retried message is never sent twice.
+
+## Privacy and honesty
+
+These rules are enforced in code and covered by tests.
+
+- **Budgets stay private.** A person's maximum is only ever discussed with that person. It is never relayed to anyone else, never shown on the trip page, and left out of the facts the language model answers from.
+- **Free dates are shared** with the other participants (the assistant says so up front) so a date clash can be resolved.
+- **No invented numbers.** Answers written by the language model are rejected if they contain an amount that is not in the plan's own facts. Unknown prices are never treated as zero.
+- **No real money.** All banking runs against the Nessie sandbox with fake accounts. The assistant never books, pays or holds funds.
 
 ## Project structure
 
@@ -169,6 +186,18 @@ npm run build
 ```
 
 The suite has over 1,500 tests. Beyond unit tests, it drives the real conversation, planner and runtime through a simulated phone line to check complete conversations: gathering details, disagreements, picks, approvals, relays and purchase logging. Money calculations are also checked with seeded randomised tests (shares always add up to the cent and settle-up amounts always balance).
+
+## What's next: a real group chat
+
+Right now every friend talks to the assistant in their own private thread, and it relays between them. That works well, and it's what we demoed, but the experience we actually want is the assistant sitting inside your existing group chat, where everyone sees the plan come together at the same time.
+
+The code is already set up for it. The conversation layer has a `group` mode next to the `direct` mode we use: in a group it picks up trip details and requests, stays quiet during normal chatter between friends, posts options and approvals to the whole group, and still moves anything private (like budgets) into a one-on-one message. Switching is a configuration change (`mode: "group"` in the trip file).
+
+We couldn't ship it this time because adding a bot to iMessage group chats requires Photon's Business plan, which we didn't have during the hackathon. With it, the plan is:
+
+- Add the assistant to an existing group chat instead of having everyone text it separately.
+- Keep budgets and other private details in side DMs, exactly as today.
+- Show the itinerary, votes and who has said "I'm in" directly in the group, so nobody has to ask where things stand.
 
 ## Built with and credits
 
